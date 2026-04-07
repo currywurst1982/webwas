@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SSL 인증서 만료 체커</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>SSL 인증서 만료 체커</h1>
+      <p class="subtitle">Apache 서버의 SSL 인증서 만료 기한을 확인합니다</p>
+    </header>
+
+    <section class="input-section">
+      <div class="input-header">
+        <h2>대상 서버 입력</h2>
+        <button id="btn-load-apache" class="btn btn-secondary" title="로컬 Apache VirtualHost에서 도메인 자동 감지">
+          Apache VHost 자동 감지
+        </button>
+      </div>
+      <textarea
+        id="hosts-input"
+        placeholder="도메인 또는 IP를 한 줄에 하나씩 입력하세요.&#10;예시:&#10;example.com&#10;sub.example.com:8443&#10;192.168.1.100"
+        rows="6"
+      ></textarea>
+      <div class="btn-row">
+        <button id="btn-check" class="btn btn-primary">인증서 확인</button>
+        <button id="btn-clear" class="btn btn-ghost">초기화</button>
+      </div>
+    </section>
+
+    <section id="summary-section" class="summary-section hidden">
+      <div class="summary-card" id="card-total">
+        <span class="summary-num" id="num-total">0</span>
+        <span class="summary-label">전체</span>
+      </div>
+      <div class="summary-card ok" id="card-ok">
+        <span class="summary-num" id="num-ok">0</span>
+        <span class="summary-label">정상</span>
+      </div>
+      <div class="summary-card warning" id="card-warning">
+        <span class="summary-num" id="num-warning">0</span>
+        <span class="summary-label">경고 (30일 이내)</span>
+      </div>
+      <div class="summary-card critical" id="card-critical">
+        <span class="summary-num" id="num-critical">0</span>
+        <span class="summary-label">위험 (14일 이내)</span>
+      </div>
+      <div class="summary-card expired" id="card-expired">
+        <span class="summary-num" id="num-expired">0</span>
+        <span class="summary-label">만료됨</span>
+      </div>
+      <div class="summary-card error" id="card-error">
+        <span class="summary-num" id="num-error">0</span>
+        <span class="summary-label">오류</span>
+      </div>
+    </section>
+
+    <div id="checked-at" class="checked-at hidden"></div>
+
+    <section id="results-section" class="results-section hidden">
+      <table class="results-table">
+        <thead>
+          <tr>
+            <th>상태</th>
+            <th>호스트</th>
+            <th>인증서 CN</th>
+            <th>발급기관</th>
+            <th>만료일</th>
+            <th>남은 기간</th>
+          </tr>
+        </thead>
+        <tbody id="results-body"></tbody>
+      </table>
+    </section>
+
+    <div id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <span>인증서 확인 중...</span>
+    </div>
+
+    <div id="error-msg" class="error-msg hidden"></div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

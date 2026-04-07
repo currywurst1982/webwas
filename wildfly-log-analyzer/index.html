@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WildFly 26 로그 분석기</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #0f1117;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+    header {
+      background: #1a1d2e;
+      border-bottom: 2px solid #3b4fd8;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header .logo { font-size: 22px; font-weight: 700; color: #7c8cf8; }
+    header .sub { font-size: 13px; color: #888; }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+    .input-section {
+      background: #1a1d2e;
+      border: 1px solid #2a2d3e;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    .input-section h2 { font-size: 15px; color: #aab; margin-bottom: 12px; }
+    .input-row { display: flex; gap: 10px; margin-bottom: 10px; }
+
+    textarea {
+      width: 100%;
+      height: 220px;
+      background: #0d0f1a;
+      border: 1px solid #2e3250;
+      border-radius: 8px;
+      color: #c8ffa7;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      padding: 12px;
+      resize: vertical;
+      outline: none;
+    }
+    textarea:focus { border-color: #3b4fd8; }
+
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 7px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+      transition: opacity 0.2s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: #3b4fd8; color: #fff; }
+    .btn-secondary { background: #2a2d3e; color: #aab; }
+    .btn-sample { background: #1f4d3e; color: #7fffd4; }
+
+    .summary-bar {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: #1a1d2e;
+      border: 1px solid #2a2d3e;
+      border-radius: 10px;
+      padding: 16px;
+      text-align: center;
+    }
+    .stat-card .num { font-size: 28px; font-weight: 700; }
+    .stat-card .label { font-size: 12px; color: #888; margin-top: 4px; }
+    .stat-card.ok .num { color: #4caf50; }
+    .stat-card.warn .num { color: #ffb300; }
+    .stat-card.error .num { color: #f44336; }
+    .stat-card.total .num { color: #7c8cf8; }
+
+    .results { }
+    .result-group { margin-bottom: 20px; }
+    .result-group h3 {
+      font-size: 14px;
+      padding: 8px 14px;
+      border-radius: 6px 6px 0 0;
+      border-left: 4px solid;
+    }
+    .result-group.error h3 { background: #2a1515; border-color: #f44336; color: #f44336; }
+    .result-group.warn h3  { background: #2a2010; border-color: #ffb300; color: #ffb300; }
+    .result-group.info h3  { background: #10202a; border-color: #29b6f6; color: #29b6f6; }
+    .result-group.ok h3    { background: #102010; border-color: #4caf50; color: #4caf50; }
+
+    .log-entry {
+      background: #13151f;
+      border: 1px solid #1e2130;
+      border-top: none;
+      padding: 12px 14px;
+    }
+    .log-entry + .log-entry { border-top: 1px solid #1e2130; }
+
+    .log-line {
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      margin-bottom: 8px;
+      word-break: break-all;
+    }
+    .log-line .badge {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      margin-right: 6px;
+    }
+    .badge-ERROR { background: #f44336; color: #fff; }
+    .badge-WARN  { background: #ffb300; color: #000; }
+    .badge-INFO  { background: #29b6f6; color: #000; }
+    .badge-DEBUG { background: #555; color: #ddd; }
+    .badge-FATAL { background: #9c27b0; color: #fff; }
+
+    .remedy {
+      background: #0d1a2a;
+      border: 1px solid #1a3050;
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-top: 8px;
+      font-size: 13px;
+    }
+    .remedy .remedy-title {
+      color: #29b6f6;
+      font-weight: 600;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+    .remedy ul { padding-left: 18px; }
+    .remedy li { margin-bottom: 4px; color: #c0d8f0; line-height: 1.5; }
+    .remedy .cmd {
+      background: #0a1520;
+      border: 1px solid #1a3050;
+      border-radius: 4px;
+      padding: 4px 10px;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      color: #7fffd4;
+      display: inline-block;
+      margin: 3px 0;
+    }
+
+    .no-result {
+      text-align: center;
+      padding: 60px;
+      color: #555;
+      font-size: 15px;
+    }
+
+    .all-ok {
+      text-align: center;
+      padding: 40px;
+      background: #102010;
+      border: 1px solid #2a4a2a;
+      border-radius: 10px;
+      color: #4caf50;
+      font-size: 16px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="logo">WildFly 26 Log Analyzer</div>
+    <div class="sub">Linux WildFly 26 서버 로그 분석 및 조치 가이드</div>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="input-section">
+    <h2>로그 붙여넣기 또는 샘플 로드</h2>
+    <div class="input-row">
+      <button class="btn btn-sample" onclick="loadSample()">샘플 로그 불러오기</button>
+      <button class="btn btn-secondary" onclick="clearLog()">초기화</button>
+    </div>
+    <textarea id="logInput" placeholder="WildFly server.log 내용을 여기에 붙여넣으세요...&#10;&#10;예: /opt/wildfly-26/standalone/log/server.log"></textarea>
+    <div style="margin-top:10px;">
+      <button class="btn btn-primary" onclick="analyze()">분석 시작</button>
+    </div>
+  </div>
+
+  <div id="summaryBar" class="summary-bar" style="display:none;"></div>
+  <div id="results"></div>
+
+</div>
+
+<script>
+const RULES = [
+  {
+    id: 'outofmemory',
+    pattern: /OutOfMemoryError|java\.lang\.OutOfMemory/i,
+    level: 'ERROR',
+    title: 'JVM OutOfMemoryError',
+    remedy: {
+      desc: 'Java 힙 메모리가 부족합니다.',
+      steps: [
+        '현재 힙 설정 확인: <span class="cmd">grep -i xmx /opt/wildfly-26/bin/standalone.conf</span>',
+        'standalone.conf 에서 힙 증가: <span class="cmd">JAVA_OPTS="-Xms512m -Xmx2g -XX:MetaspaceSize=256m"</span>',
+        '메모리 덤프 분석: <span class="cmd">jmap -dump:format=b,file=/tmp/heap.hprof &lt;PID&gt;</span>',
+        'GC 로그 활성화하여 메모리 누수 추적',
+        '불필요한 캐시/세션 정리 또는 애플리케이션 코드 최적화',
+      ]
+    }
+  },
+  {
+    id: 'datasource',
+    pattern: /IJ031084|Cannot acquire connection|No managed connections available|DataSource.*timeout/i,
+    level: 'ERROR',
+    title: 'DataSource 커넥션 풀 소진',
+    remedy: {
+      desc: 'DB 커넥션 풀이 부족하거나 커넥션 리크가 발생했습니다.',
+      steps: [
+        'standalone.xml 커넥션 풀 설정 확인: <span class="cmd">grep -A10 "pool" /opt/wildfly-26/standalone/configuration/standalone.xml</span>',
+        'max-pool-size 증가: <span class="cmd">&lt;max-pool-size&gt;50&lt;/max-pool-size&gt;</span>',
+        '커넥션 검증 설정 추가: <span class="cmd">&lt;validate-on-match&gt;true&lt;/validate-on-match&gt;</span>',
+        'DB 서버 접속 상태 확인: <span class="cmd">netstat -an | grep 5432</span> (PostgreSQL)',
+        'WildFly CLI로 실시간 풀 통계: <span class="cmd">./jboss-cli.sh --connect "/subsystem=datasources/data-source=ExampleDS:statistics-enabled(value=true)"</span>',
+      ]
+    }
+  },
+  {
+    id: 'deployerror',
+    pattern: /WFLYCTL0216|WFLYSRV0276|Deployment.*FAILED|MSC000001.*Error/i,
+    level: 'ERROR',
+    title: '배포(Deployment) 실패',
+    remedy: {
+      desc: '애플리케이션 배포 중 오류가 발생했습니다.',
+      steps: [
+        '배포 상태 확인: <span class="cmd">./jboss-cli.sh --connect "deployment-info"</span>',
+        '실패한 배포 제거: <span class="cmd">./jboss-cli.sh --connect "undeploy app.war"</span>',
+        '배포 디렉토리 권한 확인: <span class="cmd">ls -la /opt/wildfly-26/standalone/deployments/</span>',
+        'WAR/EAR 파일 유효성 확인 (클래스패스, 의존성 누락)',
+        '전체 로그 확인: <span class="cmd">tail -200 /opt/wildfly-26/standalone/log/server.log | grep -A5 FAILED</span>',
+      ]
+    }
+  },
+  {
+    id: 'portinuse',
+    pattern: /Address already in use|WFLYSRV0007.*8080|BindException/i,
+    level: 'ERROR',
+    title: '포트 충돌 (Address already in use)',
+    remedy: {
+      desc: '이미 사용 중인 포트로 바인딩 시도가 실패했습니다.',
+      steps: [
+        '포트 점유 프로세스 확인: <span class="cmd">ss -tlnp | grep 8080</span>',
+        '충돌 프로세스 종료: <span class="cmd">kill -9 $(lsof -t -i:8080)</span>',
+        '포트 변경 (standalone.xml): <span class="cmd">&lt;socket-binding name="http" port="${jboss.http.port:8080}"/&gt;</span>',
+        '오프셋으로 포트 변경: <span class="cmd">./standalone.sh -Djboss.socket.binding.port-offset=100</span>',
+      ]
+    }
+  },
+  {
+    id: 'gcoverhead',
+    pattern: /GC overhead limit exceeded|GCOverheadLimitExceeded/i,
+    level: 'ERROR',
+    title: 'GC 오버헤드 초과',
+    remedy: {
+      desc: 'GC 시간이 전체 실행 시간의 98%를 초과했습니다.',
+      steps: [
+        '힙 메모리 증가: <span class="cmd">-Xmx4g</span>',
+        'GC 알고리즘 변경 (G1GC): <span class="cmd">-XX:+UseG1GC -XX:MaxGCPauseMillis=200</span>',
+        'GC 로그 활성화: <span class="cmd">-Xlog:gc*:file=/tmp/gc.log</span>',
+        '힙 덤프 분석으로 메모리 누수 원인 파악',
+      ]
+    }
+  },
+  {
+    id: 'npe',
+    pattern: /NullPointerException/i,
+    level: 'ERROR',
+    title: 'NullPointerException',
+    remedy: {
+      desc: '애플리케이션 코드에서 null 참조 오류가 발생했습니다.',
+      steps: [
+        '스택 트레이스에서 애플리케이션 코드 라인 확인',
+        '해당 코드의 null 검사 추가',
+        'CDI/EJB 인젝션 실패 여부 확인 (null 인젝션)',
+        '배포 순서 문제인 경우 @DependsOn 어노테이션 사용',
+      ]
+    }
+  },
+  {
+    id: 'sessiontimeout',
+    pattern: /Session.*expired|WFLY.*session.*invalidat|ClusteredSso.*expired/i,
+    level: 'WARN',
+    title: '세션 만료/무효화',
+    remedy: {
+      desc: '사용자 세션이 만료되었습니다. 설정에 따라 정상일 수 있습니다.',
+      steps: [
+        '세션 타임아웃 설정 확인 (web.xml): <span class="cmd">&lt;session-timeout&gt;30&lt;/session-timeout&gt;</span>',
+        '세션 클러스터링 상태 확인: <span class="cmd">./jboss-cli.sh --connect "/subsystem=infinispan:read-resource"</span>',
+        '과도한 세션 만료 시 타임아웃 값 조정',
+      ]
+    }
+  },
+  {
+    id: 'txrollback',
+    pattern: /Transaction.*rolled back|javax\.transaction\.RollbackException|ARJUNA/i,
+    level: 'WARN',
+    title: '트랜잭션 롤백',
+    remedy: {
+      desc: '트랜잭션이 롤백되었습니다.',
+      steps: [
+        '롤백 원인 확인 (DB 제약 조건, 타임아웃, 예외)',
+        '트랜잭션 타임아웃 조정: <span class="cmd">&lt;coordinator-environment default-timeout="300"/&gt;</span>',
+        'DB 락 상태 확인: <span class="cmd">SELECT * FROM pg_locks WHERE granted = false;</span>',
+        'ARJUNA 트랜잭션 로그 정리: <span class="cmd">rm -rf /opt/wildfly-26/standalone/data/tx-object-store/*</span> (서버 중지 후)',
+      ]
+    }
+  },
+  {
+    id: 'ssl',
+    pattern: /SSLHandshakeException|PKIX path|certificate.*expired|SSL.*error/i,
+    level: 'ERROR',
+    title: 'SSL/TLS 인증서 오류',
+    remedy: {
+      desc: 'SSL 핸드셰이크 또는 인증서 검증에 실패했습니다.',
+      steps: [
+        '인증서 만료 확인: <span class="cmd">openssl x509 -in /path/to/cert.pem -noout -dates</span>',
+        'Keystore 확인: <span class="cmd">keytool -list -v -keystore /opt/wildfly-26/standalone/configuration/keystore.jks</span>',
+        '신뢰 체인 확인: <span class="cmd">openssl verify -CAfile ca.pem cert.pem</span>',
+        'WildFly SSL 재설정: <span class="cmd">./jboss-cli.sh --connect "/subsystem=undertow/server=default-server/https-listener=https:read-resource"</span>',
+      ]
+    }
+  },
+  {
+    id: 'classnotfound',
+    pattern: /ClassNotFoundException|NoClassDefFoundError/i,
+    level: 'ERROR',
+    title: '클래스 로드 실패',
+    remedy: {
+      desc: '필요한 클래스를 찾을 수 없습니다.',
+      steps: [
+        'WAR/EAR 내 의존성 JAR 누락 확인 (WEB-INF/lib)',
+        'WildFly 모듈 의존성 확인 (jboss-deployment-structure.xml)',
+        '모듈 경로 확인: <span class="cmd">ls /opt/wildfly-26/modules/system/layers/base/</span>',
+        '클래스로더 격리 문제 시 jboss-deployment-structure.xml에 예외 추가',
+      ]
+    }
+  },
+  {
+    id: 'started',
+    pattern: /WFLYSRV0025.*started in|WildFly.*started/i,
+    level: 'INFO',
+    title: '서버 정상 기동',
+    remedy: null
+  },
+  {
+    id: 'deployed',
+    pattern: /WFLYSRV0010.*Deployed|deployment.*successfully/i,
+    level: 'INFO',
+    title: '애플리케이션 정상 배포',
+    remedy: null
+  },
+];
+
+function loadSample() {
+  document.getElementById('logInput').value = `2024-03-15 08:02:10,123 INFO  [org.jboss.as] (MSC service thread 1-1) WFLYSRV0049: WildFly Full 26.1.3.Final (WildFly Core 18.1.1.Final) starting
+2024-03-15 08:02:15,456 INFO  [org.jboss.as.server] (Controller Boot Thread) WFLYSRV0025: WildFly Full 26.1.3.Final (WildFly Core 18.1.1.Final) started in 5421ms - Started 290 of 563 services
+2024-03-15 08:02:16,789 INFO  [org.jboss.as.server] (deployment-scanner-threads - 1) WFLYSRV0010: Deployed "myapp.war" (runtime-name : "myapp.war")
+2024-03-15 09:15:33,001 WARN  [com.arjuna.ats.arjuna] (default task-12) ARJUNA012140: Adding multiple last resources is disallowed. Transaction rolled back
+2024-03-15 09:45:11,222 ERROR [org.jboss.as.connector.deployers.jdbc] (MSC service thread 1-3) WFLYJCA0041: Failed to load module for driver [org.postgresql]: org.jboss.modules.ModuleNotFoundException
+2024-03-15 10:02:44,889 ERROR [io.undertow.request] (default task-4) UT005023: Exception handling request to /api/users: java.lang.NullPointerException
+	at com.example.UserService.getUser(UserService.java:45)
+	at com.example.UserRestEndpoint.listUsers(UserRestEndpoint.java:33)
+2024-03-15 10:30:00,100 WARN  [org.jboss.as.security] (MSC service thread 1-2) WFLYSEC0047: Session expired for user admin, session id=ABC123
+2024-03-15 11:00:05,777 ERROR [org.jboss.as] (main) WFLYSRV0276: Suspending the server with no timeout
+2024-03-15 11:15:22,333 ERROR [org.wildfly] (MSC service thread 1-4) java.lang.OutOfMemoryError: Java heap space
+	at java.util.Arrays.copyOf(Arrays.java:3210)
+	at com.example.cache.LargeCache.put(LargeCache.java:88)
+2024-03-15 11:20:01,500 ERROR [org.jboss.as.connector] (C3P0PooledConnectionPoolManager) IJ031084: Unable to get managed connection for java:jboss/datasources/MyDS
+2024-03-15 11:45:10,000 INFO  [com.example.app] (default task-9) User login successful: user@example.com`;
+}
+
+function clearLog() {
+  document.getElementById('logInput').value = '';
+  document.getElementById('summaryBar').style.display = 'none';
+  document.getElementById('results').innerHTML = '';
+}
+
+function detectLevel(line) {
+  if (/\bFATAL\b/.test(line)) return 'FATAL';
+  if (/\bERROR\b/.test(line)) return 'ERROR';
+  if (/\bWARN\b/.test(line))  return 'WARN';
+  if (/\bINFO\b/.test(line))  return 'INFO';
+  if (/\bDEBUG\b/.test(line)) return 'DEBUG';
+  return null;
+}
+
+function analyze() {
+  const raw = document.getElementById('logInput').value.trim();
+  if (!raw) { alert('로그를 입력해주세요.'); return; }
+
+  const lines = raw.split('\n');
+
+  // 멀티라인 로그 그룹핑 (스택 트레이스 포함)
+  const groups = [];
+  let current = null;
+  for (const line of lines) {
+    const lvl = detectLevel(line);
+    if (lvl) {
+      if (current) groups.push(current);
+      current = { level: lvl, text: line, extra: [] };
+    } else if (current) {
+      current.extra.push(line);
+    }
+  }
+  if (current) groups.push(current);
+
+  // 룰 매칭
+  let counts = { FATAL: 0, ERROR: 0, WARN: 0, INFO: 0 };
+  const matched = { ERROR: [], WARN: [], INFO: [] };
+
+  for (const g of groups) {
+    const full = g.text + '\n' + g.extra.join('\n');
+    counts[g.level] = (counts[g.level] || 0) + 1;
+
+    for (const rule of RULES) {
+      if (rule.pattern.test(full)) {
+        const bucket = rule.level === 'WARN' ? 'WARN' : (rule.level === 'INFO' ? 'INFO' : 'ERROR');
+        // 중복 룰 방지
+        if (!matched[bucket].find(m => m.ruleId === rule.id)) {
+          matched[bucket].push({ ruleId: rule.id, rule, entry: g });
+        }
+        break;
+      }
+    }
+    // 룰 미매칭 오류
+    if ((g.level === 'ERROR' || g.level === 'FATAL') && !RULES.some(r => r.pattern.test(full))) {
+      matched.ERROR.push({ ruleId: 'generic_' + g.text.slice(0,30), rule: {
+        title: '일반 오류 (분류되지 않음)',
+        remedy: {
+          desc: '자동 분류되지 않은 오류입니다.',
+          steps: [
+            '전체 스택 트레이스 확인 후 원인 분석',
+            'WildFly 공식 문서 오류 코드 검색',
+            '<span class="cmd">grep -B5 -A20 "ERROR" /opt/wildfly-26/standalone/log/server.log</span>',
+          ]
+        }
+      }, entry: g });
+    }
+  }
+
+  renderSummary(counts, groups.length);
+  renderResults(matched);
+}
+
+function renderSummary(counts, total) {
+  const bar = document.getElementById('summaryBar');
+  bar.style.display = 'grid';
+  bar.innerHTML = `
+    <div class="stat-card total"><div class="num">${total}</div><div class="label">전체 로그 라인</div></div>
+    <div class="stat-card ok"><div class="num">${counts.INFO || 0}</div><div class="label">INFO</div></div>
+    <div class="stat-card warn"><div class="num">${counts.WARN || 0}</div><div class="label">WARN</div></div>
+    <div class="stat-card error"><div class="num">${(counts.ERROR || 0) + (counts.FATAL || 0)}</div><div class="label">ERROR / FATAL</div></div>
+  `;
+}
+
+function renderResults(matched) {
+  const el = document.getElementById('results');
+  const hasIssues = matched.ERROR.length > 0 || matched.WARN.length > 0;
+
+  if (!hasIssues && matched.INFO.length === 0) {
+    el.innerHTML = '<div class="no-result">분석할 로그가 없습니다.</div>';
+    return;
+  }
+
+  let html = '';
+
+  if (!hasIssues) {
+    html += '<div class="all-ok">✔ 오류 및 경고가 감지되지 않았습니다. 서버가 정상 상태입니다.</div>';
+  }
+
+  const sections = [
+    { key: 'ERROR', cls: 'error', label: '오류 (ERROR / FATAL)' },
+    { key: 'WARN',  cls: 'warn',  label: '경고 (WARN)' },
+    { key: 'INFO',  cls: 'info',  label: '정상 정보 (INFO)' },
+  ];
+
+  for (const sec of sections) {
+    const items = matched[sec.key];
+    if (!items.length) continue;
+    html += `<div class="result-group ${sec.cls}">
+      <h3>${sec.label} — ${items.length}건</h3>`;
+
+    for (const m of items) {
+      const lvl = m.entry.level;
+      const escapedText = escapeHtml(m.entry.text);
+      const extraLines = m.entry.extra.map(l => `<div style="color:#666;font-size:11px;padding-left:12px;">${escapeHtml(l)}</div>`).join('');
+
+      html += `<div class="log-entry">
+        <div class="log-line">
+          <span class="badge badge-${lvl}">${lvl}</span>
+          ${escapedText}
+        </div>
+        ${extraLines}
+        <div style="font-size:13px;font-weight:600;color:#ddd;margin-top:8px;">📌 ${m.rule.title}</div>`;
+
+      if (m.rule.remedy) {
+        html += `<div class="remedy">
+          <div class="remedy-title">조치 방법</div>
+          <div style="margin-bottom:8px;color:#aac;">${m.rule.remedy.desc}</div>
+          <ul>${m.rule.remedy.steps.map(s => `<li>${s}</li>`).join('')}</ul>
+        </div>`;
+      } else {
+        html += `<div class="remedy"><div class="remedy-title" style="color:#4caf50;">정상 상태</div><div style="color:#aac;">별도 조치 불필요</div></div>`;
+      }
+
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>

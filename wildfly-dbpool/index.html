@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>WildFly 26 DB Connection Pool Manager</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;background:#0f1117;color:#e0e0e0;min-height:100vh}
+header{background:#1a1d2e;border-bottom:2px solid #3b4fd8;padding:16px 32px}
+header .logo{font-size:22px;font-weight:700;color:#7c8cf8}
+header .sub{font-size:13px;color:#888;margin-top:2px}
+.container{max-width:1100px;margin:0 auto;padding:24px}
+.tabs{display:flex;gap:0;margin-bottom:24px;border-bottom:2px solid #2a2d3e}
+.tab-btn{padding:12px 28px;background:none;border:none;color:#888;font-size:14px;font-weight:600;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s}
+.tab-btn.active{color:#7c8cf8;border-bottom-color:#3b4fd8}
+.tab-btn:hover{color:#aab}
+.tab-pane{display:none}
+.tab-pane.active{display:block}
+.section{background:#1a1d2e;border:1px solid #2a2d3e;border-radius:10px;padding:20px;margin-bottom:20px}
+.section h3{font-size:14px;font-weight:700;color:#7c8cf8;margin-bottom:14px;padding-bottom:8px;border-bottom:1px solid #2a2d3e}
+.cmd-block{position:relative;background:#0d0f1a;border:1px solid #2e3250;border-radius:8px;padding:14px 90px 14px 14px;margin-bottom:10px}
+.cmd-label{font-size:11px;color:#888;margin-bottom:4px}
+.cmd-text{font-family:'Courier New',monospace;font-size:12px;color:#c8ffa7;word-break:break-all;white-space:pre-wrap}
+.copy-btn{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:#2a2d3e;border:1px solid #3a3d5e;color:#aab;font-size:11px;padding:5px 12px;border-radius:5px;cursor:pointer;white-space:nowrap}
+.copy-btn:hover{background:#3b4fd8;color:#fff}
+.stat-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+.stat-table th{background:#0d0f1a;color:#7c8cf8;padding:10px 12px;text-align:left;border:1px solid #2a2d3e}
+.stat-table td{padding:9px 12px;border:1px solid #1e2130;vertical-align:top}
+.stat-table tr:nth-child(even) td{background:#13151f}
+.tag-ok{display:inline-block;padding:2px 8px;background:#1a3a1a;color:#4caf50;border-radius:4px;font-size:11px}
+.tag-warn{display:inline-block;padding:2px 8px;background:#3a2a00;color:#ffb300;border-radius:4px;font-size:11px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-group.full{grid-column:1/-1}
+label{font-size:12px;color:#aab;font-weight:600}
+input[type=text],input[type=number],input[type=password],select{background:#0d0f1a;border:1px solid #2e3250;border-radius:6px;color:#e0e0e0;font-size:13px;padding:8px 12px;outline:none;width:100%}
+input:focus,select:focus{border-color:#3b4fd8}
+.pass-wrap{position:relative}
+.pass-wrap input{padding-right:40px}
+.eye-btn{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:#888;cursor:pointer;font-size:16px}
+.check-row{display:flex;align-items:center;gap:8px;margin-top:6px}
+input[type=checkbox]{width:16px;height:16px;accent-color:#3b4fd8;cursor:pointer}
+.check-label{font-size:13px;color:#c0c0d0;cursor:pointer}
+.btn-generate{width:100%;padding:14px;background:#3b4fd8;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;margin-top:10px;transition:opacity .2s}
+.btn-generate:hover{opacity:.88}
+.err-msg{font-size:11px;color:#f44336;margin-top:2px;display:none}
+.output-section{background:#1a1d2e;border:1px solid #2a2d3e;border-radius:10px;padding:20px;margin-top:20px;display:none}
+.out-tabs{display:flex;gap:6px;margin-bottom:14px}
+.out-tab{padding:7px 18px;background:#0d0f1a;border:1px solid #2e3250;border-radius:6px;color:#888;font-size:13px;cursor:pointer;font-weight:600}
+.out-tab.active{background:#3b4fd8;color:#fff;border-color:#3b4fd8}
+.code-wrap{position:relative}
+.code-block{background:#0d0f1a;border:1px solid #2e3250;border-radius:8px;padding:16px;font-family:'Courier New',monospace;font-size:12px;color:#c8ffa7;white-space:pre;overflow-x:auto;max-height:420px;overflow-y:auto;line-height:1.6}
+.out-actions{display:flex;gap:8px;margin-top:10px}
+.btn-copy2{padding:8px 18px;background:#2a2d3e;border:1px solid #3a3d5e;color:#aab;border-radius:6px;font-size:13px;cursor:pointer}
+.btn-copy2:hover{background:#3b4fd8;color:#fff}
+.btn-dl{padding:8px 18px;background:#1f4d3e;border:1px solid #2a6050;color:#7fffd4;border-radius:6px;font-size:13px;cursor:pointer}
+.btn-dl:hover{opacity:.85}
+@media(max-width:640px){.form-grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">WildFly 26 DB Connection Pool Manager</div>
+  <div class="sub">Linux WildFly 26 DataSource 풀 상태 확인 &amp; 설정 자동 생성</div>
+</header>
+<div class="container">
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('status',this)">풀 상태 확인</button>
+    <button class="tab-btn" onclick="switchTab('gen',this)">풀 설정 생성</button>
+  </div>
+
+  <!-- TAB1 -->
+  <div id="tab-status" class="tab-pane active">
+    <div class="section">
+      <h3>WildFly CLI 명령어 — DS_NAME을 실제 DataSource 이름으로 변경하세요</h3>
+
+      <div class="cmd-block">
+        <div class="cmd-label">① 통계 수집 활성화 (서버 재시작 불필요)</div>
+        <div class="cmd-text">/subsystem=datasources/data-source=DS_NAME:write-attribute(name=statistics-enabled,value=true)</div>
+        <button class="copy-btn" onclick="copyCmd(this)">복사</button>
+      </div>
+
+      <div class="cmd-block">
+        <div class="cmd-label">② 풀 전체 현황 조회</div>
+        <div class="cmd-text">/subsystem=datasources/data-source=DS_NAME:read-resource(include-runtime=true)</div>
+        <button class="copy-btn" onclick="copyCmd(this)">복사</button>
+      </div>
+
+      <div class="cmd-block">
+        <div class="cmd-label">③ 활성 커넥션 수 (현재 사용 중)</div>
+        <div class="cmd-text">/subsystem=datasources/data-source=DS_NAME/statistics=pool:read-attribute(name=ActiveCount)</div>
+        <button class="copy-btn" onclick="copyCmd(this)">복사</button>
+      </div>
+
+      <div class="cmd-block">
+        <div class="cmd-label">④ 사용 가능 커넥션 수</div>
+        <div class="cmd-text">/subsystem=datasources/data-source=DS_NAME/statistics=pool:read-attribute(name=AvailableCount)</div>
+        <button class="copy-btn" onclick="copyCmd(this)">복사</button>
+      </div>
+
+      <div class="cmd-block">
+        <div class="cmd-label">⑤ 기동 후 최대 사용 커넥션 수</div>
+        <div class="cmd-text">/subsystem=datasources/data-source=DS_NAME/statistics=pool:read-attribute(name=MaxUsedCount)</div>
+        <button class="copy-btn" onclick="copyCmd(this)">복사</button>
+      </div>
+
+      <div class="cmd-block">
+        <div class="cmd-label">⑥ 타임아웃 커넥션 수</div>
+        <div class="cmd-text">/subsystem=datasources/data-source=DS_NAME/statistics=pool:read-attribute(name=TimedOut)</div>
+        <button class="copy-btn" onclick="copyCmd(this)">복사</button>
+      </div>
+
+      <div class="cmd-block">
+        <div class="cmd-label">⑦ Linux — Java 프로세스 소켓 상태</div>
+        <div class="cmd-text">ss -tlnp | grep java</div>
+        <button class="copy-btn" onclick="copyCmd(this)">복사</button>
+      </div>
+
+      <div class="cmd-block">
+        <div class="cmd-label">⑧ PostgreSQL DB 연결 수 확인</div>
+        <div class="cmd-text">netstat -an | grep :5432 | grep ESTABLISHED | wc -l</div>
+        <button class="copy-btn" onclick="copyCmd(this)">복사</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>풀 통계 항목 설명</h3>
+      <table class="stat-table">
+        <thead>
+          <tr><th>항목명</th><th>설명</th><th>정상 범위</th><th>주의 조건</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>ActiveCount</td><td>현재 사용 중인 커넥션 수</td><td><span class="tag-ok">max의 80% 이하</span></td><td><span class="tag-warn">max 근접 시 풀 확장</span></td></tr>
+          <tr><td>AvailableCount</td><td>즉시 사용 가능한 커넥션 수</td><td><span class="tag-ok">min 이상 유지</span></td><td><span class="tag-warn">0이면 즉시 조치 필요</span></td></tr>
+          <tr><td>MaxUsedCount</td><td>기동 후 최대 사용량</td><td><span class="tag-ok">max의 70% 이하</span></td><td><span class="tag-warn">max 초과 시 리크 의심</span></td></tr>
+          <tr><td>TimedOut</td><td>타임아웃으로 반환된 커넥션 수</td><td><span class="tag-ok">0</span></td><td><span class="tag-warn">증가 시 쿼리 최적화</span></td></tr>
+          <tr><td>WaitCount</td><td>커넥션 대기 발생 횟수</td><td><span class="tag-ok">0</span></td><td><span class="tag-warn">증가 시 max-pool-size 증가</span></td></tr>
+          <tr><td>InUseCount</td><td>현재 대여 중인 커넥션 수</td><td>-</td><td>ActiveCount와 비교하여 분석</td></tr>
+          <tr><td>CreatedCount</td><td>생성된 총 커넥션 수</td><td>-</td><td>급증 시 커넥션 리크 의심</td></tr>
+          <tr><td>DestroyedCount</td><td>소멸된 총 커넥션 수</td><td>-</td><td>CreatedCount와 비교</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- TAB2 -->
+  <div id="tab-gen" class="tab-pane">
+    <!-- 기본 정보 -->
+    <div class="section">
+      <h3>기본 정보</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>JNDI Name</label>
+          <input type="text" id="jndiName" placeholder="java:jboss/datasources/MyDS"/>
+          <div class="err-msg" id="err-jndi">java:jboss/ 또는 java:/ 로 시작해야 합니다</div>
+        </div>
+        <div class="form-group">
+          <label>DataSource Name</label>
+          <input type="text" id="dsName" placeholder="MyDS"/>
+          <div class="err-msg" id="err-dsName">DataSource Name은 필수입니다</div>
+        </div>
+        <div class="form-group">
+          <label>Driver</label>
+          <select id="driver" onchange="fillUrl()">
+            <option value="postgresql">PostgreSQL</option>
+            <option value="mysql">MySQL</option>
+            <option value="mariadb">MariaDB</option>
+            <option value="oracle">Oracle</option>
+            <option value="mssql">MS SQL Server</option>
+            <option value="h2">H2 (내장)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Connection URL</label>
+          <input type="text" id="connUrl" placeholder="jdbc:postgresql://localhost:5432/mydb"/>
+          <div class="err-msg" id="err-url">Connection URL은 필수입니다</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 인증 -->
+    <div class="section">
+      <h3>인증</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>DB Username</label>
+          <input type="text" id="dbUser" placeholder="postgres"/>
+        </div>
+        <div class="form-group">
+          <label>DB Password</label>
+          <div class="pass-wrap">
+            <input type="password" id="dbPass" placeholder="••••••••"/>
+            <button class="eye-btn" onclick="togglePass()" id="eyeBtn">👁</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 커넥션 풀 -->
+    <div class="section">
+      <h3>커넥션 풀</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Min Pool Size</label>
+          <input type="number" id="minPool" value="5" min="0"/>
+        </div>
+        <div class="form-group">
+          <label>Max Pool Size</label>
+          <input type="number" id="maxPool" value="20" min="1"/>
+          <div class="err-msg" id="err-pool">Max는 Min보다 크거나 같아야 합니다</div>
+        </div>
+        <div class="form-group">
+          <label>Initial Pool Size</label>
+          <input type="number" id="initPool" value="5" min="0"/>
+        </div>
+        <div class="form-group">
+          <label>Idle Timeout (초)</label>
+          <input type="number" id="idleTimeout" value="300" min="0"/>
+        </div>
+        <div class="form-group">
+          <label>Blocking Timeout (ms)</label>
+          <input type="number" id="blockTimeout" value="30000" min="0"/>
+        </div>
+        <div class="form-group">
+          <label>Query Timeout (초)</label>
+          <input type="number" id="queryTimeout" value="60" min="0"/>
+        </div>
+        <div class="form-group full">
+          <div class="check-row">
+            <input type="checkbox" id="prefill" checked/>
+            <label class="check-label" for="prefill">Pool Prefill (서버 기동 시 min 커넥션 미리 생성)</label>
+          </div>
+          <div class="check-row">
+            <input type="checkbox" id="strictMin"/>
+            <label class="check-label" for="strictMin">Use Strict Min (min 이하로 줄이지 않음)</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 검증 -->
+    <div class="section">
+      <h3>검증 (Validation)</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Check Valid Connection SQL</label>
+          <input type="text" id="validSql" placeholder="SELECT 1"/>
+        </div>
+        <div class="form-group">
+          <label>Background Validation Millis</label>
+          <input type="number" id="bgValidationMs" value="60000" min="0"/>
+        </div>
+        <div class="form-group full">
+          <div class="check-row">
+            <input type="checkbox" id="validateOnMatch"/>
+            <label class="check-label" for="validateOnMatch">Validate on Match (커넥션 대여 시 검증)</label>
+          </div>
+          <div class="check-row">
+            <input type="checkbox" id="bgValidation" checked onchange="toggleBgMs()"/>
+            <label class="check-label" for="bgValidation">Background Validation (백그라운드 주기 검증)</label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 고급 -->
+    <div class="section">
+      <h3>고급 설정</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Transaction Isolation</label>
+          <select id="txIsolation">
+            <option value="TRANSACTION_READ_COMMITTED">READ_COMMITTED (기본)</option>
+            <option value="TRANSACTION_READ_UNCOMMITTED">READ_UNCOMMITTED</option>
+            <option value="TRANSACTION_REPEATABLE_READ">REPEATABLE_READ</option>
+            <option value="TRANSACTION_SERIALIZABLE">SERIALIZABLE</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Flush Strategy</label>
+          <select id="flushStrategy">
+            <option value="FailingConnectionOnly">FailingConnectionOnly (기본)</option>
+            <option value="IdleConnections">IdleConnections</option>
+            <option value="EntirePool">EntirePool</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Allocation Retry</label>
+          <input type="number" id="allocRetry" value="3" min="0"/>
+        </div>
+        <div class="form-group">
+          <label>Allocation Retry Wait (ms)</label>
+          <input type="number" id="allocRetryWait" value="1000" min="0"/>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-generate" onclick="generate()">설정 생성</button>
+
+    <!-- 출력 -->
+    <div class="output-section" id="outputSection">
+      <div class="out-tabs">
+        <button class="out-tab active" onclick="switchOut('xml',this)">standalone.xml</button>
+        <button class="out-tab" onclick="switchOut('cli',this)">jboss-cli.sh</button>
+        <button class="out-tab" onclick="switchOut('domain',this)">domain.xml</button>
+      </div>
+      <div class="code-wrap">
+        <pre class="code-block" id="codeOutput"></pre>
+      </div>
+      <div class="out-actions">
+        <button class="btn-copy2" onclick="copyOutput()">클립보드 복사</button>
+        <button class="btn-dl" onclick="downloadOutput()">파일 다운로드</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const URLS = {
+  postgresql:'jdbc:postgresql://localhost:5432/mydb',
+  mysql:'jdbc:mysql://localhost:3306/mydb',
+  mariadb:'jdbc:mariadb://localhost:3306/mydb',
+  oracle:'jdbc:oracle:thin:@localhost:1521:ORCL',
+  mssql:'jdbc:sqlserver://localhost:1433;DatabaseName=mydb',
+  h2:'jdbc:h2:mem:test;DB_CLOSE_DELAY=-1'
+};
+
+function fillUrl(){
+  const d=document.getElementById('driver').value;
+  const u=document.getElementById('connUrl');
+  u.value=URLS[d]||'';
+}
+fillUrl();
+
+function switchTab(id,btn){
+  document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+id).classList.add('active');
+  btn.classList.add('active');
+}
+
+function togglePass(){
+  const p=document.getElementById('dbPass');
+  p.type=p.type==='password'?'text':'password';
+}
+
+function toggleBgMs(){
+  const bg=document.getElementById('bgValidation').checked;
+  document.getElementById('bgValidationMs').closest('.form-group').style.opacity=bg?'1':'0.4';
+  document.getElementById('bgValidationMs').disabled=!bg;
+}
+
+function copyCmd(btn){
+  const txt=btn.closest('.cmd-block').querySelector('.cmd-text').textContent;
+  navigator.clipboard.writeText(txt).then(()=>{
+    btn.textContent='완료!';setTimeout(()=>btn.textContent='복사',1500);
+  });
+}
+
+let currentMode='xml';
+const outputs={};
+
+function switchOut(mode,btn){
+  currentMode=mode;
+  document.querySelectorAll('.out-tab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('codeOutput').textContent=outputs[mode]||'';
+}
+
+function validate(){
+  let ok=true;
+  const jndi=document.getElementById('jndiName').value.trim();
+  const ds=document.getElementById('dsName').value.trim();
+  const url=document.getElementById('connUrl').value.trim();
+  const mn=+document.getElementById('minPool').value;
+  const mx=+document.getElementById('maxPool').value;
+  const e=id=>document.getElementById(id);
+
+  e('err-jndi').style.display=(jndi&&!jndi.startsWith('java:jboss/')&&!jndi.startsWith('java:/'))
+    ?'block':'none';
+  if(jndi&&!jndi.startsWith('java:jboss/')&&!jndi.startsWith('java:/'))ok=false;
+
+  e('err-dsName').style.display=!ds?'block':'none';
+  if(!ds)ok=false;
+
+  e('err-url').style.display=!url?'block':'none';
+  if(!url)ok=false;
+
+  e('err-pool').style.display=(mx<mn)?'block':'none';
+  if(mx<mn)ok=false;
+
+  return ok;
+}
+
+function v(id){return document.getElementById(id).value.trim();}
+function cb(id){return document.getElementById(id).checked;}
+function n(id){return document.getElementById(id).value;}
+
+function generate(){
+  if(!validate())return;
+  const jndi=v('jndiName')||'java:jboss/datasources/MyDS';
+  const ds=v('dsName')||'MyDS';
+  const driver=v('driver');
+  const url=v('connUrl');
+  const user=v('dbUser');
+  const pass=v('dbPass');
+  const minP=n('minPool');
+  const maxP=n('maxPool');
+  const initP=n('initPool');
+  const pf=cb('prefill');
+  const sm=cb('strictMin');
+  const idle=n('idleTimeout');
+  const block=n('blockTimeout');
+  const query=n('queryTimeout');
+  const vom=cb('validateOnMatch');
+  const bgv=cb('bgValidation');
+  const bgms=n('bgValidationMs');
+  const vsql=v('validSql')||'SELECT 1';
+  const tx=v('txIsolation');
+  const fs=v('flushStrategy');
+  const ar=n('allocRetry');
+  const arw=n('allocRetryWait');
+  const idleMin=Math.floor(+idle/60);
+
+  const xmlInner=`<datasource jndi-name="${jndi}" pool-name="${ds}" enabled="true" use-java-context="true">
+    <connection-url>${url}</connection-url>
+    <driver>${driver}</driver>
+    <transaction-isolation>${tx}</transaction-isolation>
+    <pool>
+        <min-pool-size>${minP}</min-pool-size>
+        <max-pool-size>${maxP}</max-pool-size>
+        <initial-pool-size>${initP}</initial-pool-size>
+        <prefill>${pf}</prefill>
+        <use-strict-min>${sm}</use-strict-min>
+        <flush-strategy>${fs}</flush-strategy>
+    </pool>
+    <security>
+        <user-name>${user}</user-name>
+        <password>${pass}</password>
+    </security>
+    <validation>
+        <check-valid-connection-sql>${vsql}</check-valid-connection-sql>
+        <validate-on-match>${vom}</validate-on-match>
+        <background-validation>${bgv}</background-validation>
+        <background-validation-millis>${bgms}</background-validation-millis>
+    </validation>
+    <timeout>
+        <idle-timeout-minutes>${idleMin}</idle-timeout-minutes>
+        <blocking-timeout-millis>${block}</blocking-timeout-millis>
+        <query-timeout>${query}</query-timeout>
+        <allocation-retry>${ar}</allocation-retry>
+        <allocation-retry-wait-millis>${arw}</allocation-retry-wait-millis>
+    </timeout>
+</datasource>`;
+
+  outputs['xml']=xmlInner;
+
+  const now=new Date().toLocaleString('ko-KR');
+  outputs['cli']=`#!/bin/bash
+# WildFly 26 DataSource 등록 스크립트
+# 생성일: ${now}
+WILDFLY_HOME=/opt/wildfly-26
+
+$WILDFLY_HOME/bin/jboss-cli.sh --connect << 'CLIEOF'
+batch
+data-source add \\
+  --name=${ds} \\
+  --jndi-name=${jndi} \\
+  --driver-name=${driver} \\
+  --connection-url=${url} \\
+  --user-name=${user} \\
+  --password=${pass} \\
+  --min-pool-size=${minP} \\
+  --max-pool-size=${maxP} \\
+  --initial-pool-size=${initP} \\
+  --pool-prefill=${pf} \\
+  --use-strict-min=${sm} \\
+  --flush-strategy=${fs} \\
+  --idle-timeout-minutes=${idleMin} \\
+  --blocking-timeout-wait-millis=${block} \\
+  --query-timeout=${query} \\
+  --allocation-retry=${ar} \\
+  --allocation-retry-wait-millis=${arw} \\
+  --validate-on-match=${vom} \\
+  --background-validation=${bgv} \\
+  --background-validation-millis=${bgms} \\
+  --check-valid-connection-sql="${vsql}" \\
+  --transaction-isolation=${tx}
+
+/subsystem=datasources/data-source=${ds}:write-attribute(name=statistics-enabled,value=true)
+run-batch
+CLIEOF
+
+echo "DataSource [${ds}] 등록 완료"`;
+
+  outputs['domain']=`<!--
+  domain.xml 적용 위치:
+  <domain>
+    <profiles>
+      <profile name="full">
+        <subsystem xmlns="urn:jboss:domain:datasources:6.0">
+          <datasources>
+            <!-- 아래 datasource 블록을 이 위치에 추가하세요 -->
+-->
+${xmlInner}
+<!--
+          </datasources>
+        </subsystem>
+      </profile>
+    </profiles>
+  </domain>
+-->`;
+
+  document.getElementById('outputSection').style.display='block';
+  document.getElementById('codeOutput').textContent=outputs[currentMode];
+  document.getElementById('outputSection').scrollIntoView({behavior:'smooth'});
+}
+
+function copyOutput(){
+  navigator.clipboard.writeText(outputs[currentMode]||'').then(()=>{
+    const btn=document.querySelector('.btn-copy2');
+    btn.textContent='복사 완료!';setTimeout(()=>btn.textContent='클립보드 복사',1500);
+  });
+}
+
+function downloadOutput(){
+  const ext=currentMode==='cli'?'sh':'xml';
+  const fn=currentMode==='cli'?'register-datasource.sh':(currentMode==='domain'?'domain-datasource.xml':'standalone-datasource.xml');
+  const blob=new Blob([outputs[currentMode]],{type:'text/plain'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=fn;a.click();
+}
+</script>
+</body>
+</html>

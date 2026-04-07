@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>WildFly 26 보안 점검</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',sans-serif;background:#0f1117;color:#e0e0e0;min-height:100vh}
+header{background:#1a1d2e;border-bottom:2px solid #3b4fd8;padding:16px 32px}
+header .logo{font-size:22px;font-weight:700;color:#7c8cf8}
+header .sub{font-size:13px;color:#888;margin-top:4px}
+.container{max-width:1200px;margin:0 auto;padding:24px}
+.tabs{display:flex;gap:4px;margin-bottom:24px;background:#1a1d2e;border-radius:10px;padding:6px}
+.tab{flex:1;padding:10px;text-align:center;border-radius:7px;cursor:pointer;font-size:14px;font-weight:600;color:#888;border:none;background:transparent;transition:all .2s}
+.tab.active{background:#3b4fd8;color:#fff}
+.tab-content{display:none}
+.tab-content.active{display:block}
+.card{background:#1a1d2e;border:1px solid #2a2d3e;border-radius:10px;padding:18px;margin-bottom:14px;transition:border-color .2s}
+.card.vulnerable{border-color:#f44336;background:#1e1212}
+.card.safe{border-color:#4caf50}
+.card-header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.badge{padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700}
+.badge-HIGH{background:#f44336;color:#fff}
+.badge-MEDIUM{background:#ffb300;color:#000}
+.badge-LOW{background:#3b4fd8;color:#fff}
+.card-title{font-size:15px;font-weight:700;flex:1}
+.card-desc{font-size:13px;color:#aaa;margin-bottom:10px}
+.cmd-block{background:#0d0f1a;border:1px solid #2e3250;border-radius:6px;padding:10px 12px;font-family:'Courier New',monospace;font-size:12px;color:#c8ffa7;display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px}
+.cmd-text{flex:1;word-break:break-all}
+.btn{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;transition:opacity .2s}
+.btn:hover{opacity:.85}
+.btn-sm{padding:4px 10px;font-size:11px}
+.btn-primary{background:#3b4fd8;color:#fff}
+.btn-copy{background:#2a2d3e;color:#aab}
+.btn-green{background:#1f4d3e;color:#7fffd4}
+.btn-red{background:#4d1f1f;color:#ff9090}
+.btn-dl{background:#1a2a4a;color:#7cb8ff}
+.status-row{display:flex;gap:12px;align-items:center;margin-top:8px}
+.status-label{font-size:13px;color:#aaa}
+.radio-group{display:flex;gap:10px}
+.radio-opt{display:flex;align-items:center;gap:5px;cursor:pointer;font-size:13px}
+.radio-opt input{accent-color:#3b4fd8}
+.radio-opt.vuln input{accent-color:#f44336}
+.summary-bar{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:24px}
+.stat-card{background:#1a1d2e;border:1px solid #2a2d3e;border-radius:10px;padding:14px;text-align:center}
+.stat-card .num{font-size:26px;font-weight:700}
+.stat-card .label{font-size:11px;color:#888;margin-top:3px}
+.stat-card.high .num{color:#f44336}
+.stat-card.med .num{color:#ffb300}
+.stat-card.low .num{color:#3b4fd8}
+.stat-card.vuln .num{color:#ff6b6b}
+.stat-card.score .num{color:#4caf50}
+.form-section{background:#1a1d2e;border:1px solid #2a2d3e;border-radius:10px;padding:18px;margin-bottom:14px}
+.form-section h3{font-size:14px;color:#7c8cf8;margin-bottom:14px;border-bottom:1px solid #2a2d3e;padding-bottom:8px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-group.full{grid-column:1/-1}
+.form-group label{font-size:12px;color:#aaa}
+.form-group input,.form-group select{background:#0d0f1a;border:1px solid #2e3250;border-radius:6px;color:#e0e0e0;padding:8px 10px;font-size:13px;outline:none}
+.form-group input:focus,.form-group select:focus{border-color:#3b4fd8}
+.pw-wrap{position:relative;display:flex}
+.pw-wrap input{flex:1;border-radius:6px 0 0 6px}
+.pw-wrap .eye{background:#2a2d3e;border:1px solid #2e3250;border-left:none;border-radius:0 6px 6px 0;padding:0 10px;cursor:pointer;color:#888;font-size:14px}
+.fix-checks{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+.fix-check{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:8px 12px;background:#0d0f1a;border-radius:6px;border:1px solid #2a2d3e}
+.fix-check input{accent-color:#3b4fd8;width:15px;height:15px}
+.output-section{margin-top:20px;display:none}
+.output-section.show{display:block}
+.out-tabs{display:flex;gap:4px;margin-bottom:10px}
+.out-tab{padding:7px 16px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;color:#888;background:#1a1d2e;border:1px solid #2a2d3e}
+.out-tab.active{background:#3b4fd8;color:#fff;border-color:#3b4fd8}
+.code-block{background:#0a0c15;border:1px solid #2a2d3e;border-radius:8px;padding:16px;font-family:'Courier New',monospace;font-size:12px;color:#c8ffa7;white-space:pre;overflow-x:auto;max-height:500px;overflow-y:auto;line-height:1.6}
+.code-actions{display:flex;gap:8px;margin-top:10px}
+/* Score gauge */
+.report-top{display:flex;gap:24px;margin-bottom:24px}
+.gauge-wrap{background:#1a1d2e;border:1px solid #2a2d3e;border-radius:10px;padding:24px;text-align:center;min-width:200px}
+.gauge-title{font-size:13px;color:#aaa;margin-bottom:12px}
+.gauge-circle{width:120px;height:120px;margin:0 auto 12px;position:relative}
+.gauge-circle svg{transform:rotate(-90deg)}
+.gauge-bg{fill:none;stroke:#2a2d3e;stroke-width:10}
+.gauge-fill{fill:none;stroke-width:10;stroke-linecap:round;transition:stroke-dashoffset .6s,stroke .6s}
+.gauge-text{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:26px;font-weight:700}
+.grade-badge{font-size:20px;font-weight:700;padding:4px 18px;border-radius:8px;display:inline-block}
+.report-detail{flex:1;background:#1a1d2e;border:1px solid #2a2d3e;border-radius:10px;padding:18px}
+.report-table{width:100%;border-collapse:collapse;font-size:13px}
+.report-table th{background:#0d0f1a;padding:8px 12px;text-align:left;color:#aaa;border-bottom:1px solid #2a2d3e}
+.report-table td{padding:8px 12px;border-bottom:1px solid #1a1d2e}
+.status-badge{padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700}
+.status-ok{background:#1a3a1a;color:#4caf50}
+.status-vuln{background:#3a1a1a;color:#f44336}
+.status-pending{background:#2a2a2a;color:#888}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">WildFly 26 보안 점검</div>
+  <div class="sub">보안 취약점 자동 탐지 및 조치 스크립트 생성 | Linux WildFly 26</div>
+</header>
+<div class="container">
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('checklist')">취약점 체크리스트</button>
+  <button class="tab" onclick="switchTab('script')">자동 조치 스크립트</button>
+  <button class="tab" onclick="switchTab('report')">보안 진단 결과</button>
+</div>
+<!-- TAB1: 체크리스트 -->
+<div id="tab-checklist" class="tab-content active">
+<div class="summary-bar" id="summaryBar">
+  <div class="stat-card high"><div class="num" id="cntHigh">0</div><div class="label">HIGH 취약</div></div>
+  <div class="stat-card med"><div class="num" id="cntMed">0</div><div class="label">MEDIUM 취약</div></div>
+  <div class="stat-card low"><div class="num" id="cntLow">0</div><div class="label">LOW 취약</div></div>
+  <div class="stat-card vuln"><div class="num" id="cntVuln">0</div><div class="label">총 취약 항목</div></div>
+  <div class="stat-card score"><div class="num" id="scoreNum">100</div><div class="label">보안 점수</div></div>
+</div>
+<div id="checkCards"></div>
+<div style="margin-top:18px;display:flex;gap:10px">
+  <button class="btn btn-primary" onclick="switchTab('script')">자동 조치 스크립트 생성 →</button>
+  <button class="btn btn-green" onclick="switchTab('report')">보안 진단 결과 보기 →</button>
+</div>
+</div>
+<!-- TAB2: 스크립트 -->
+<div id="tab-script" class="tab-content">
+<div class="form-section">
+  <h3>서버 환경 설정</h3>
+  <div class="form-grid">
+    <div class="form-group"><label>WildFly 홈 경로</label><input id="wfHome" value="/opt/wildfly-26"/></div>
+    <div class="form-group"><label>WildFly OS 사용자</label><input id="wfUser" value="wildfly"/></div>
+    <div class="form-group"><label>새 관리자 계정명</label><input id="newAdmin" value="wfadmin"/></div>
+    <div class="form-group"><label>새 관리자 비밀번호</label>
+      <div class="pw-wrap"><input type="password" id="newPass" value=""/><button class="eye" onclick="togglePw('newPass',this)">👁</button></div>
+    </div>
+    <div class="form-group"><label>SSL 인증서 경로</label><input id="sslCert" value="/etc/ssl/certs/wildfly.crt"/></div>
+    <div class="form-group"><label>SSL 키 경로</label><input id="sslKey" value="/etc/ssl/private/wildfly.key"/></div>
+  </div>
+</div>
+<div class="form-section">
+  <h3>적용할 보안 조치 선택</h3>
+  <div class="fix-checks">
+    <label class="fix-check"><input type="checkbox" id="fix1" checked/> 관리 계정 변경</label>
+    <label class="fix-check"><input type="checkbox" id="fix2" checked/> 관리 포트 방화벽 차단 (9990/9999)</label>
+    <label class="fix-check"><input type="checkbox" id="fix3" checked/> 원격 디버그 포트 비활성화</label>
+    <label class="fix-check"><input type="checkbox" id="fix4" checked/> 디렉토리 권한 강화</label>
+    <label class="fix-check"><input type="checkbox" id="fix5" checked/> HTTP 보안 헤더 설정</label>
+    <label class="fix-check"><input type="checkbox" id="fix6" checked/> 세션 타임아웃 설정 (30분)</label>
+    <label class="fix-check"><input type="checkbox" id="fix7" checked/> 서버 버전 헤더 숨김</label>
+    <label class="fix-check"><input type="checkbox" id="fix8" checked/> 로그 레벨 INFO 조정</label>
+    <label class="fix-check"><input type="checkbox" id="fix9" checked/> TLS 1.2/1.3 전용 설정</label>
+    <label class="fix-check"><input type="checkbox" id="fix10" checked/> TRACE 메서드 차단</label>
+  </div>
+  <button class="btn btn-primary" style="width:100%;padding:12px;font-size:15px" onclick="generateScript()">스크립트 생성</button>
+</div>
+<div class="output-section" id="scriptOutput">
+  <div class="out-tabs">
+    <button class="out-tab active" onclick="switchOutTab('bash')">bash 스크립트</button>
+    <button class="out-tab" onclick="switchOutTab('cli')">jboss-cli 단독</button>
+  </div>
+  <div id="outBash"><div class="code-block" id="bashCode"></div>
+  <div class="code-actions">
+    <button class="btn btn-copy" onclick="copyCode('bashCode')">복사</button>
+    <button class="btn btn-dl" onclick="downloadCode('bashCode','wildfly-security-fix.sh')">다운로드 .sh</button>
+  </div></div>
+  <div id="outCli" style="display:none"><div class="code-block" id="cliCode"></div>
+  <div class="code-actions">
+    <button class="btn btn-copy" onclick="copyCode('cliCode')">복사</button>
+    <button class="btn btn-dl" onclick="downloadCode('cliCode','wildfly-cli-fix.sh')">다운로드 .sh</button>
+  </div></div>
+</div>
+</div>
+<!-- TAB3: 보고서 -->
+<div id="tab-report" class="tab-content">
+<div class="report-top">
+  <div class="gauge-wrap">
+    <div class="gauge-title">보안 점수</div>
+    <div class="gauge-circle">
+      <svg width="120" height="120" viewBox="0 0 120 120">
+        <circle class="gauge-bg" cx="60" cy="60" r="50"/>
+        <circle class="gauge-fill" id="gaugeFill" cx="60" cy="60" r="50" stroke="#4caf50"
+          stroke-dasharray="314" stroke-dashoffset="0"/>
+      </svg>
+      <div class="gauge-text" id="gaugeText">100</div>
+    </div>
+    <div id="gradeBadge" class="grade-badge" style="background:#1a3a1a;color:#4caf50">A</div>
+  </div>
+  <div class="report-detail">
+    <h3 style="font-size:14px;color:#7c8cf8;margin-bottom:14px">점검 항목별 현황</h3>
+    <table class="report-table" id="reportTable">
+      <thead><tr><th>항목</th><th>위험도</th><th>상태</th></tr></thead>
+      <tbody id="reportBody"></tbody>
+    </table>
+  </div>
+</div>
+<div class="code-actions" style="margin-top:10px">
+  <button class="btn btn-dl" onclick="downloadReport()">보고서 다운로드 (.txt)</button>
+</div>
+</div>
+</div>
+<script>
+const CHECKS = [
+  {id:'c1',sev:'HIGH',title:'관리 콘솔 기본 계정',desc:'관리 콘솔 기본 계정(admin/admin) 사용 여부 확인',
+   cmd:'cat /opt/wildfly-26/standalone/configuration/mgmt-users.properties',
+   fix:'강력한 패스워드로 관리자 계정 변경 필요'},
+  {id:'c2',sev:'HIGH',title:'관리 포트 외부 노출',desc:'관리 포트(9990, 9999)가 외부에서 접근 가능한지 확인',
+   cmd:"ss -tlnp | grep -E '9990|9999'",
+   fix:'방화벽으로 관리 포트 외부 차단 필요'},
+  {id:'c3',sev:'HIGH',title:'원격 디버그 포트 활성화',desc:'JDWP 디버그 포트(8787)가 열려있으면 원격 코드 실행 가능',
+   cmd:'ss -tlnp | grep 8787',
+   fix:'standalone.conf 에서 -agentlib:jdwp 옵션 제거'},
+  {id:'c4',sev:'HIGH',title:'SSL/TLS 미적용',desc:'HTTPS 미설정으로 평문 통신 가능, 도청·변조 위험',
+   cmd:"grep -i 'https-listener' /opt/wildfly-26/standalone/configuration/standalone.xml",
+   fix:'SSL 인증서 적용 및 HTTPS 리스너 설정'},
+  {id:'c5',sev:'HIGH',title:'HTTP 관리 인터페이스 활성화',desc:'HTTP 관리 인터페이스 활성화 시 HTTPS 강제 설정 필요',
+   cmd:"grep -i 'http-interface' /opt/wildfly-26/standalone/configuration/standalone.xml",
+   fix:'HTTPS 전용 관리 인터페이스 구성'},
+  {id:'c6',sev:'MEDIUM',title:'취약한 TLS 버전 허용',desc:'TLS 1.0/1.1 허용 여부 확인 (TLS 1.2+ 권장)',
+   cmd:"grep -i 'protocol' /opt/wildfly-26/standalone/configuration/standalone.xml | grep -i tls",
+   fix:'TLS 1.2/1.3 만 허용하도록 elytron 설정'},
+  {id:'c7',sev:'MEDIUM',title:'디렉토리 권한 미흡',desc:'WildFly 설정 디렉토리의 파일 권한 확인',
+   cmd:'ls -la /opt/wildfly-26/standalone/configuration/ | head -15',
+   fix:'설정 파일 600, 디렉토리 700 권한으로 변경'},
+  {id:'c8',sev:'MEDIUM',title:'HTTP 보안 헤더 미설정',desc:'X-Frame-Options, CSP 등 보안 헤더 누락',
+   cmd:"grep -i 'response-header' /opt/wildfly-26/standalone/configuration/standalone.xml",
+   fix:'Undertow 필터로 보안 헤더 추가'},
+  {id:'c9',sev:'MEDIUM',title:'TRACE 메서드 허용',desc:'HTTP TRACE 메서드 활성화 시 XST 공격 가능',
+   cmd:"grep -i 'disallowed-methods' /opt/wildfly-26/standalone/configuration/standalone.xml",
+   fix:'TRACE 메서드 차단 설정'},
+  {id:'c10',sev:'MEDIUM',title:'세션 타임아웃 미설정',desc:'세션 타임아웃이 너무 길거나 미설정',
+   cmd:"grep -i 'session-timeout' /opt/wildfly-26/standalone/configuration/standalone.xml",
+   fix:'30분 이하 세션 타임아웃 설정'},
+  {id:'c11',sev:'LOW',title:'서버 버전 정보 노출',desc:'HTTP 응답 헤더에 WildFly 버전 정보 노출',
+   cmd:'curl -I http://localhost:8080 2>/dev/null | grep -i server',
+   fix:'Undertow에서 서버 헤더 값 변경'},
+  {id:'c12',sev:'LOW',title:'로그 레벨 과다 설정',desc:'DEBUG/TRACE 레벨 로그로 민감 정보 노출 가능',
+   cmd:"grep -i 'level' /opt/wildfly-26/standalone/configuration/logging.properties | head -10",
+   fix:'운영 환경에서 INFO 이상으로 로그 레벨 설정'},
+];
+
+const state = {}; // id -> 'ok'|'vuln'|null
+
+function buildCards() {
+  const wrap = document.getElementById('checkCards');
+  wrap.innerHTML = CHECKS.map(c => `
+    <div class="card" id="card-${c.id}">
+      <div class="card-header">
+        <span class="badge badge-${c.sev}">${c.sev}</span>
+        <span class="card-title">${c.title}</span>
+      </div>
+      <div class="card-desc">${c.desc}</div>
+      <div class="cmd-block">
+        <span class="cmd-text">${c.cmd}</span>
+        <button class="btn btn-sm btn-copy" onclick="copyText(\`${c.cmd.replace(/`/g,'\\`')}\`)">복사</button>
+      </div>
+      <div style="font-size:12px;color:#888;margin-bottom:8px">조치: ${c.fix}</div>
+      <div class="status-row">
+        <span class="status-label">점검 결과:</span>
+        <div class="radio-group">
+          <label class="radio-opt"><input type="radio" name="${c.id}" value="ok" onchange="setStatus('${c.id}','ok')"/> 정상</label>
+          <label class="radio-opt vuln"><input type="radio" name="${c.id}" value="vuln" onchange="setStatus('${c.id}','vuln')"/> 취약</label>
+          <label class="radio-opt"><input type="radio" name="${c.id}" value="" onchange="setStatus('${c.id}',null)" checked/> 미점검</label>
+        </div>
+      </div>
+    </div>`).join('');
+  buildReport();
+}
+
+function setStatus(id, val) {
+  state[id] = val;
+  const card = document.getElementById('card-'+id);
+  card.classList.toggle('vulnerable', val==='vuln');
+  card.classList.toggle('safe', val==='ok');
+  updateSummary();
+  buildReport();
+}
+
+function updateSummary() {
+  let h=0,m=0,l=0,v=0,score=100;
+  CHECKS.forEach(c => {
+    if(state[c.id]==='vuln'){
+      v++;
+      if(c.sev==='HIGH'){h++;score-=20;}
+      else if(c.sev==='MEDIUM'){m++;score-=10;}
+      else{l++;score-=5;}
+    }
+  });
+  score=Math.max(0,score);
+  document.getElementById('cntHigh').textContent=h;
+  document.getElementById('cntMed').textContent=m;
+  document.getElementById('cntLow').textContent=l;
+  document.getElementById('cntVuln').textContent=v;
+  document.getElementById('scoreNum').textContent=score;
+  updateGauge(score);
+}
+
+function updateGauge(score) {
+  const r=50, circ=2*Math.PI*r;
+  const fill=document.getElementById('gaugeFill');
+  const offset=circ*(1-score/100);
+  fill.style.strokeDashoffset=offset;
+  const color=score>=90?'#4caf50':score>=75?'#8bc34a':score>=60?'#ffb300':'#f44336';
+  fill.style.stroke=color;
+  document.getElementById('gaugeText').textContent=score;
+  document.getElementById('gaugeText').style.color=color;
+  const grade=score>=90?'A':score>=75?'B':score>=60?'C':'D';
+  const gb=document.getElementById('gradeBadge');
+  gb.textContent=grade;
+  gb.style.color=color;
+  gb.style.background=score>=90?'#1a3a1a':score>=75?'#253a15':score>=60?'#3a2a00':'#3a1a1a';
+}
+
+function buildReport() {
+  const tbody=document.getElementById('reportBody');
+  tbody.innerHTML=CHECKS.map(c=>{
+    const s=state[c.id];
+    const badge=s==='ok'?'<span class="status-badge status-ok">정상</span>':
+                s==='vuln'?'<span class="status-badge status-vuln">취약</span>':
+                '<span class="status-badge status-pending">미점검</span>';
+    return `<tr><td>${c.title}</td><td><span class="badge badge-${c.sev}">${c.sev}</span></td><td>${badge}</td></tr>`;
+  }).join('');
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(el=>el.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  const idx={checklist:0,script:1,report:2}[name];
+  document.querySelectorAll('.tab')[idx].classList.add('active');
+}
+
+function switchOutTab(name) {
+  document.getElementById('outBash').style.display=name==='bash'?'block':'none';
+  document.getElementById('outCli').style.display=name==='cli'?'block':'none';
+  document.querySelectorAll('.out-tab').forEach((el,i)=>el.classList.toggle('active',
+    (name==='bash'&&i===0)||(name==='cli'&&i===1)));
+}
+
+function togglePw(id,btn) {
+  const inp=document.getElementById(id);
+  inp.type=inp.type==='password'?'text':'password';
+  btn.textContent=inp.type==='password'?'👁':'🔒';
+}
+
+function copyText(t) {
+  navigator.clipboard.writeText(t).catch(()=>{});
+}
+function copyCode(id) {
+  navigator.clipboard.writeText(document.getElementById(id).textContent).catch(()=>{});
+}
+function downloadCode(id,fname) {
+  const blob=new Blob([document.getElementById(id).textContent],{type:'text/plain'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=fname;a.click();
+}
+
+function generateScript() {
+  const H=document.getElementById('wfHome').value||'/opt/wildfly-26';
+  const U=document.getElementById('wfUser').value||'wildfly';
+  const ADM=document.getElementById('newAdmin').value||'wfadmin';
+  const PASS=document.getElementById('newPass').value||'Ch@ngeMe123!';
+  const f=id=>document.getElementById(id).checked;
+  const now=new Date().toLocaleString('ko-KR');
+
+  let bash=`#!/bin/bash
+# ============================================================
+# WildFly 26 보안 취약점 자동 조치 스크립트
+# 생성일: ${now}
+# 대상 경로: ${H}
+# ============================================================
+set -euo pipefail
+
+WILDFLY_HOME="${H}"
+WILDFLY_USER="${U}"
+CONFIG="$WILDFLY_HOME/standalone/configuration/standalone.xml"
+LOG_FILE="/tmp/wildfly-security-fix-$(date +%Y%m%d%H%M%S).log"
+
+log()    { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"; }
+backup() { cp "$1" "$1.bak.$(date +%Y%m%d%H%M%S)" && log "  백업 완료: $1"; }
+
+log "=== WildFly 26 보안 조치 시작 ==="
+`;
+
+  if(f('fix1')) bash+=`
+# [1] 관리 계정 변경
+log "[1] 관리 콘솔 계정 변경..."
+$WILDFLY_HOME/bin/add-user.sh -u "${ADM}" -p "${PASS}" -s
+log "  완료: 관리자 계정 [${ADM}] 으로 변경됨"
+`;
+
+  if(f('fix2')) bash+=`
+# [2] 관리 포트 방화벽 차단
+log "[2] 관리 포트(9990/9999) 방화벽 차단..."
+if command -v firewall-cmd &>/dev/null; then
+  firewall-cmd --permanent --remove-port=9990/tcp 2>/dev/null || true
+  firewall-cmd --permanent --remove-port=9999/tcp 2>/dev/null || true
+  firewall-cmd --reload
+  log "  완료: firewalld 규칙 적용됨"
+else
+  iptables -I INPUT -p tcp --dport 9990 -j DROP
+  iptables -I INPUT -p tcp --dport 9999 -j DROP
+  log "  완료: iptables 규칙 적용됨"
+fi
+`;
+
+  if(f('fix3')) bash+=`
+# [3] 원격 디버그 포트 비활성화
+log "[3] 원격 디버그 포트 비활성화..."
+backup "$WILDFLY_HOME/bin/standalone.conf"
+sed -i 's/-agentlib:jdwp=transport=dt_socket[^"]*//g' "$WILDFLY_HOME/bin/standalone.conf"
+sed -i 's/-Xrunjdwp[^ "]*//g' "$WILDFLY_HOME/bin/standalone.conf"
+log "  완료: 디버그 포트 설정 제거됨"
+`;
+
+  if(f('fix4')) bash+=`
+# [4] 디렉토리 권한 강화
+log "[4] 디렉토리 권한 강화..."
+chown -R $WILDFLY_USER:$WILDFLY_USER $WILDFLY_HOME
+chmod 700 $WILDFLY_HOME/standalone/configuration
+chmod 600 $WILDFLY_HOME/standalone/configuration/*.xml
+chmod 600 $WILDFLY_HOME/standalone/configuration/*.properties 2>/dev/null || true
+find $WILDFLY_HOME/bin -name "*.sh" -exec chmod 750 {} \;
+log "  완료: 파일 권한 강화됨"
+`;
+
+  const cliParts=[];
+  if(f('fix5')) cliParts.push(`
+# 보안 헤더 설정
+/subsystem=undertow/configuration=filter/response-header=X-Frame-Options:add(header-name="X-Frame-Options",header-value="SAMEORIGIN")
+/subsystem=undertow/configuration=filter/response-header=X-Content-Type-Options:add(header-name="X-Content-Type-Options",header-value="nosniff")
+/subsystem=undertow/configuration=filter/response-header=X-XSS-Protection:add(header-name="X-XSS-Protection",header-value="1; mode=block")
+/subsystem=undertow/configuration=filter/response-header=Strict-Transport-Security:add(header-name="Strict-Transport-Security",header-value="max-age=31536000; includeSubDomains")
+/subsystem=undertow/configuration=filter/response-header=Content-Security-Policy:add(header-name="Content-Security-Policy",header-value="default-src 'self'")
+/subsystem=undertow/server=default-server/host=default-host/filter-ref=X-Frame-Options:add
+/subsystem=undertow/server=default-server/host=default-host/filter-ref=X-Content-Type-Options:add
+/subsystem=undertow/server=default-server/host=default-host/filter-ref=X-XSS-Protection:add
+/subsystem=undertow/server=default-server/host=default-host/filter-ref=Strict-Transport-Security:add
+/subsystem=undertow/server=default-server/host=default-host/filter-ref=Content-Security-Policy:add`);
+
+  if(f('fix6')) cliParts.push(`
+# 세션 타임아웃 30분
+/subsystem=undertow/server=default-server/http-listener=default:write-attribute(name=no-request-timeout,value=1800000)`);
+
+  if(f('fix7')) cliParts.push(`
+# 서버 헤더 숨김
+/subsystem=undertow/configuration=filter/response-header=Server-Header:add(header-name="Server",header-value="WildFly")
+/subsystem=undertow/server=default-server/host=default-host/filter-ref=Server-Header:add`);
+
+  if(f('fix8')) cliParts.push(`
+# 로그 레벨 INFO
+/subsystem=logging/root-logger=ROOT:write-attribute(name=level,value=INFO)
+/subsystem=logging/logger=org.jboss:write-attribute(name=level,value=INFO)`);
+
+  if(f('fix9')) cliParts.push(`
+# TLS 1.2/1.3 전용
+/subsystem=elytron/server-ssl-context=applicationSSC:write-attribute(name=protocols,value=[TLSv1.2,TLSv1.3])
+/subsystem=elytron/server-ssl-context=applicationSSC:write-attribute(name=cipher-suite-filter,value="TLS_AES_256_GCM_SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-GCM-SHA256")`);
+
+  if(f('fix10')) cliParts.push(`
+# TRACE 메서드 차단
+/subsystem=undertow/server=default-server/http-listener=default:write-attribute(name=disallowed-methods,value=[TRACE])`);
+
+  if(cliParts.length>0) {
+    bash+=`
+# [CLI] WildFly 보안 설정 (jboss-cli)
+log "[CLI] WildFly 보안 설정 적용..."
+$WILDFLY_HOME/bin/jboss-cli.sh --connect << 'CLIEOF'
+batch
+${cliParts.join('\n')}
+run-batch
+CLIEOF
+log "  완료: WildFly CLI 설정 적용됨"
+`;
+  }
+
+  bash+=`
+log "=== 보안 조치 완료 ==="
+log "로그 파일: $LOG_FILE"
+echo ""
+echo "** WildFly 재시작이 필요합니다 **"
+echo "   systemctl restart wildfly"
+echo "   또는: $WILDFLY_HOME/bin/jboss-cli.sh --connect ':shutdown(restart=true)'"
+`;
+
+  const cliOnly=`#!/bin/bash
+# WildFly 26 jboss-cli 보안 설정 (단독 실행)
+# 생성일: ${now}
+WILDFLY_HOME="${H}"
+
+$WILDFLY_HOME/bin/jboss-cli.sh --connect << 'CLIEOF'
+batch
+${cliParts.join('\n')}
+run-batch
+CLIEOF
+echo "CLI 설정 완료. WildFly를 재시작하세요."
+`;
+
+  document.getElementById('bashCode').textContent=bash;
+  document.getElementById('cliCode').textContent=cliOnly;
+  document.getElementById('scriptOutput').classList.add('show');
+}
+
+function downloadReport() {
+  const now=new Date().toLocaleString('ko-KR');
+  let txt=`WildFly 26 보안 진단 보고서\n생성일: ${now}\n${'='.repeat(60)}\n\n`;
+  let score=100;
+  CHECKS.forEach(c=>{
+    const s=state[c.id];
+    const st=s==='ok'?'[정상]':s==='vuln'?'[취약]':'[미점검]';
+    txt+=`${st} [${c.sev}] ${c.title}\n  ${c.desc}\n`;
+    if(s==='vuln'){txt+=`  → 조치: ${c.fix}\n`;
+      score-=c.sev==='HIGH'?20:c.sev==='MEDIUM'?10:5;}
+    txt+='\n';
+  });
+  score=Math.max(0,score);
+  const grade=score>=90?'A':score>=75?'B':score>=60?'C':'D';
+  txt+=`${'='.repeat(60)}\n보안 점수: ${score}/100  등급: ${grade}\n`;
+  const blob=new Blob([txt],{type:'text/plain'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=`wildfly-security-report-${Date.now()}.txt`;a.click();
+}
+
+buildCards();
+updateSummary();
+</script>
+</body>
+</html>

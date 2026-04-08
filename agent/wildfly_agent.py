@@ -403,12 +403,14 @@ class LogEntry:
 
 class AnomalyEvent:
     def __init__(self, rule_name: str, severity: str, description: str, entry: LogEntry,
-                 remedy: Optional[List[str]] = None):
+                 remedy: Optional[List[str]] = None,
+                 cli_commands: Optional[List[str]] = None):
         self.id = str(uuid.uuid4())[:8]
         self.rule_name = rule_name
         self.severity = severity
         self.description = description
         self.remedy = remedy or []
+        self.cli_commands = cli_commands or []
         self.entry = entry
         self.detected_at = datetime.now()
 
@@ -419,6 +421,7 @@ class AnomalyEvent:
             "severity": self.severity,
             "description": self.description,
             "remedy": self.remedy,
+            "cli_commands": self.cli_commands,
             "detected_at": self.detected_at.isoformat(),
             "log_entry": self.entry.to_dict(),
         }

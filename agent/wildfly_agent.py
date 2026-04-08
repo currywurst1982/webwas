@@ -57,25 +57,48 @@ ANOMALY_RULES: List[Dict] = [
         "name": "OutOfMemoryError",
         "pattern": re.compile(r"OutOfMemoryError|java\.lang\.OutOfMemory", re.I),
         "severity": "CRITICAL",
-        "description": "JVM out-of-memory error",
+        "description": "JVM 힙 메모리 부족으로 OutOfMemoryError 발생",
+        "remedy": [
+            "standalone.conf의 -Xmx 값을 증가시켜 힙 메모리를 늘립니다 (예: -Xmx2g → -Xmx4g)",
+            "jmap -dump:format=b,file=heap.hprof <pid> 로 힙 덤프를 수집해 메모리 누수를 분석합니다",
+            "불필요한 캐시, static 컬렉션, 세션 데이터를 점검합니다",
+            "WildFly 재시작 후 메모리 사용량 추세를 모니터링합니다",
+        ],
     },
     {
         "name": "GCOverheadLimit",
         "pattern": re.compile(r"GC overhead limit exceeded", re.I),
         "severity": "CRITICAL",
-        "description": "Garbage collection overhead limit exceeded",
+        "description": "GC가 전체 시간의 98% 이상 점유 — 힙 메모리 거의 고갈 상태",
+        "remedy": [
+            "힙 크기를 증가합니다: standalone.conf에서 -Xmx 값 상향",
+            "GC 알고리즘을 G1GC로 변경합니다: -XX:+UseG1GC",
+            "메모리 누수 여부를 힙 덤프로 확인합니다",
+            "단기 처방으로 -XX:-UseGCOverheadLimit 추가하여 즉시 크래시 방지 후 근본 원인 분석",
+        ],
     },
     {
         "name": "Deadlock",
         "pattern": re.compile(r"deadlock|ARJUNA016051", re.I),
         "severity": "CRITICAL",
-        "description": "Thread or transaction deadlock detected",
+        "description": "스레드 또는 트랜잭션 데드락 감지",
+        "remedy": [
+            "jstack <pid> 로 스레드 덤프를 수집해 데드락 발생 위치를 확인합니다",
+            "트랜잭션 타임아웃을 설정합니다: standalone.xml의 <coordinator-environment default-timeout=\"300\"/>",
+            "락 획득 순서를 코드 전체에서 일관되게 유지하도록 리팩터링합니다",
+            "데드락 발생 시 WildFly 재시작이 필요할 수 있습니다",
+        ],
     },
     {
         "name": "StackOverflow",
         "pattern": re.compile(r"StackOverflowError", re.I),
         "severity": "HIGH",
-        "description": "Stack overflow error",
+        "description": "재귀 호출 과다 또는 스택 크기 부족으로 스택 오버플로우 발생",
+        "remedy": [
+            "스택트레이스에서 반복 호출되는 메서드를 찾아 재귀 종료 조건을 점검합니다",
+            "스택 크기를 늘립니다: standalone.conf에 -Xss512k → -Xss1m",
+            "재귀 로직을 반복문(iterative)으로 변환하는 것을 검토합니다",
+        ],
     },
     {
         "name": "DeploymentFailure",
@@ -83,7 +106,14 @@ ANOMALY_RULES: List[Dict] = [
             r"WFLYSRV\d+.*[Ff]ailed|deployment.*failed|[Ff]ailed.*deploy", re.I
         ),
         "severity": "HIGH",
-        "description": "Application deployment failure",
+        "description": "애플리케이션 WAR/EAR 배포 실패",
+        "remedy": [
+            "server.log 전체에서 'Caused by:' 라인을 찾아 근본 원인을 확인합니다",
+            "WEB-INF/lib 내 jar 파일 중복 또는 버전 충돌을 점검합니다",
+            "jboss-deployment-structure.xml에서 모듈 의존성 설정을 확인합니다",
+            "standalone/deployments/ 디렉토리의 .failed 마커 파일 내용을 확인합니다",
+            "datasource, queue 등 외부 리소스 바인딩이 정상인지 확인합니다",
+        ],
     },
     {
         "name": "ConnectionPoolExhausted",
@@ -92,7 +122,14 @@ ANOMALY_RULES: List[Dict] = [
             re.I,
         ),
         "severity": "HIGH",
-        "description": "Database connection pool exhausted",
+        "description": "데이터베이스 커넥션 풀 고갈",
+        "remedy": [
+            "standalone.xml의 datasource max-pool-size 값을 증가시킵니다 (기본값 20)",
+            "커넥션을 반환하지 않는 코드(finally 블록 누락)를 점검합니다",
+            "슬로우 쿼리를 최적화해 커넥션 점유 시간을 줄입니다",
+            "idle-timeout-minutes, blocking-timeout-wait-millis 설정을 조정합니다",
+            "DB 서버의 max_connections 설정도 함께 확인합니다",
+        ],
     },
     {
         "name": "TransactionTimeout",
@@ -100,13 +137,25 @@ ANOMALY_RULES: List[Dict] = [
             r"transaction.*timed out|ARJUNA016|TransactionRolledback", re.I
         ),
         "severity": "HIGH",
-        "description": "Transaction timeout or rollback",
+        "description": "트랜잭션 시간 초과 또는 롤백 발생",
+        "remedy": [
+            "standalone.xml에서 트랜잭션 타임아웃을 늘립니다: default-timeout 값 조정",
+            "슬로우 쿼리 또는 외부 서비스 호출이 트랜잭션 내에 있는지 점검합니다",
+            "장시간 실행 로직은 트랜잭션 범위 밖으로 분리합니다",
+            "DB 락 경합 여부를 확인합니다 (SHOW PROCESSLIST, pg_stat_activity)",
+        ],
     },
     {
         "name": "JDBCError",
         "pattern": re.compile(r"SQLException|JDBC.*[Ee]rror|could not execute", re.I),
         "severity": "HIGH",
-        "description": "JDBC/SQL database error",
+        "description": "JDBC 데이터베이스 연결 또는 SQL 실행 오류",
+        "remedy": [
+            "DB 서버가 정상 동작 중인지 확인합니다",
+            "커넥션 풀 설정(host, port, 인증정보)이 올바른지 확인합니다",
+            "오류 SQL 구문을 로그에서 추출해 직접 실행하여 원인을 파악합니다",
+            "valid-connection-checker, check-valid-connection-sql 설정으로 끊어진 커넥션을 자동 제거합니다",
+        ],
     },
     {
         "name": "NetworkError",
@@ -115,13 +164,26 @@ ANOMALY_RULES: List[Dict] = [
             re.I,
         ),
         "severity": "MEDIUM",
-        "description": "Network connectivity error",
+        "description": "외부 서비스 또는 DB 네트워크 연결 오류",
+        "remedy": [
+            "원격 호스트 (DB, API, MQ 등)의 상태를 확인합니다",
+            "방화벽 규칙 및 보안 그룹 설정을 점검합니다",
+            "DNS 해석이 정상인지 확인합니다 (nslookup, dig)",
+            "소켓 타임아웃 값을 적절히 설정해 스레드 점유를 방지합니다",
+            "재시도(retry) 로직 및 서킷 브레이커 패턴 적용을 검토합니다",
+        ],
     },
     {
         "name": "NullPointerException",
         "pattern": re.compile(r"NullPointerException", re.I),
         "severity": "MEDIUM",
-        "description": "Null pointer exception",
+        "description": "null 객체 참조로 NullPointerException 발생",
+        "remedy": [
+            "스택트레이스에서 'at com.example...' 라인을 찾아 해당 코드를 점검합니다",
+            "해당 변수에 null 체크(Objects.requireNonNull, Optional 등)를 추가합니다",
+            "의존성 주입(DI) 실패 여부를 확인합니다 (빈 초기화 순서 문제)",
+            "외부 API 응답값에 대한 null 방어 코드를 추가합니다",
+        ],
     },
     {
         "name": "ClassLoadingError",
@@ -129,7 +191,13 @@ ANOMALY_RULES: List[Dict] = [
             r"ClassNotFoundException|NoClassDefFoundError|ClassCastException", re.I
         ),
         "severity": "MEDIUM",
-        "description": "Class loading or casting error",
+        "description": "클래스 로딩 실패 또는 타입 캐스팅 오류",
+        "remedy": [
+            "WEB-INF/lib에 필요한 jar 파일이 있는지 확인합니다",
+            "동일 클래스가 여러 jar에 중복 포함된 경우 제거합니다",
+            "jboss-deployment-structure.xml에서 모듈 격리 설정을 점검합니다",
+            "클래스로더 계층 문제인 경우 parent-first / child-first 설정을 검토합니다",
+        ],
     },
     {
         "name": "SecurityViolation",
@@ -137,7 +205,13 @@ ANOMALY_RULES: List[Dict] = [
             r"SecurityException|AccessControlException|WFLYSEC\d+", re.I
         ),
         "severity": "HIGH",
-        "description": "Security violation or access denied",
+        "description": "보안 정책 위반 또는 접근 권한 오류",
+        "remedy": [
+            "해당 사용자/역할의 권한 설정을 standalone.xml security-domain에서 확인합니다",
+            "접근 시도한 리소스의 보안 어노테이션(@RolesAllowed 등)을 점검합니다",
+            "비정상 접근 시도인 경우 해당 IP를 방화벽에서 차단합니다",
+            "보안 감사 로그를 활성화해 접근 이력을 추적합니다",
+        ],
     },
     {
         "name": "EJBError",
@@ -145,13 +219,26 @@ ANOMALY_RULES: List[Dict] = [
             r"EJBException|EJBTransactionRolled|WFLYEJB\d+.*[Ee]rror", re.I
         ),
         "severity": "MEDIUM",
-        "description": "Enterprise JavaBeans error",
+        "description": "Enterprise JavaBeans 호출 또는 트랜잭션 오류",
+        "remedy": [
+            "Caused by 예외를 추적해 근본 원인을 파악합니다",
+            "EJB 트랜잭션 속성(@TransactionAttribute)이 올바른지 확인합니다",
+            "의존하는 외부 서비스(DB, MQ)의 상태를 확인합니다",
+            "EJB 타임아웃 설정을 조정합니다: @AccessTimeout, transaction-timeout",
+        ],
     },
     {
         "name": "FileDescriptorLimit",
         "pattern": re.compile(r"Too many open files", re.I),
         "severity": "HIGH",
-        "description": "OS file descriptor limit reached",
+        "description": "OS 파일 디스크립터 한도 초과",
+        "remedy": [
+            "현재 한도 확인: ulimit -n (보통 1024)",
+            "/etc/security/limits.conf에서 한도를 증가시킵니다: wildfly soft nofile 65536",
+            "파일/소켓을 닫지 않는 누수 코드를 점검합니다 (lsof -p <pid> | wc -l)",
+            "WildFly 프로세스가 사용 중인 파일 목록: lsof -p <pid>",
+            "systemd 환경이면 /etc/systemd/system/wildfly.service에 LimitNOFILE=65536 추가",
+        ],
     },
     {
         "name": "MessagingError",
@@ -159,7 +246,14 @@ ANOMALY_RULES: List[Dict] = [
             r"JMSException|ActiveMQException|WFLYMSG\d+.*[Ee]rror", re.I
         ),
         "severity": "MEDIUM",
-        "description": "JMS/ActiveMQ messaging error",
+        "description": "JMS/ActiveMQ 메시지 처리 오류",
+        "remedy": [
+            "WildFly 내장 메시징 브로커 상태를 확인합니다 (management console)",
+            "Dead Letter Queue(DLQ)에 쌓인 메시지를 확인합니다",
+            "큐 컨슈머(MDB)가 정상 동작 중인지 확인합니다",
+            "메시지 재전송 횟수(redelivery-delay, max-delivery-attempts) 설정을 점검합니다",
+            "브로커 연결 설정(host, port, 인증)이 올바른지 확인합니다",
+        ],
     },
 ]
 
@@ -227,11 +321,13 @@ class LogEntry:
 
 
 class AnomalyEvent:
-    def __init__(self, rule_name: str, severity: str, description: str, entry: LogEntry):
+    def __init__(self, rule_name: str, severity: str, description: str, entry: LogEntry,
+                 remedy: Optional[List[str]] = None):
         self.id = str(uuid.uuid4())[:8]
         self.rule_name = rule_name
         self.severity = severity
         self.description = description
+        self.remedy = remedy or []
         self.entry = entry
         self.detected_at = datetime.now()
 
@@ -241,6 +337,7 @@ class AnomalyEvent:
             "rule_name": self.rule_name,
             "severity": self.severity,
             "description": self.description,
+            "remedy": self.remedy,
             "detected_at": self.detected_at.isoformat(),
             "log_entry": self.entry.to_dict(),
         }
@@ -381,7 +478,15 @@ class AnomalyDetector:
 
             if entry.level == "FATAL":
                 results.append(
-                    AnomalyEvent("FatalError", "CRITICAL", "FATAL level log message", entry)
+                    AnomalyEvent(
+                        "FatalError", "CRITICAL", "WildFly FATAL 레벨 오류 — 즉시 서버 상태 확인 필요", entry,
+                        remedy=[
+                            "즉시 서버 프로세스 상태를 확인합니다: ps aux | grep wildfly",
+                            "전체 server.log를 수집해 원인을 분석합니다",
+                            "필요 시 WildFly를 재시작합니다: systemctl restart wildfly",
+                            "재발 방지를 위해 heap dump 및 thread dump를 확보합니다",
+                        ],
+                    )
                 )
                 continue
 
@@ -391,14 +496,22 @@ class AnomalyDetector:
                     if rule["pattern"].search(entry.message):
                         results.append(
                             AnomalyEvent(
-                                rule["name"], rule["severity"], rule["description"], entry
+                                rule["name"], rule["severity"], rule["description"], entry,
+                                remedy=rule.get("remedy", []),
                             )
                         )
                         matched = True
                         break
                 if not matched and entry.level == "ERROR":
                     results.append(
-                        AnomalyEvent("GenericError", "LOW", "Unclassified application error", entry)
+                        AnomalyEvent(
+                            "GenericError", "LOW", "분류되지 않은 애플리케이션 오류", entry,
+                            remedy=[
+                                "스택트레이스 전문을 확인해 발생 위치를 파악합니다",
+                                "동일 오류가 반복되는지 빈도를 확인합니다",
+                                "개발팀에 해당 로그를 공유하여 코드 수준 점검을 요청합니다",
+                            ],
+                        )
                     )
 
         return results

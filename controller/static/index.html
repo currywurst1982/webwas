@@ -330,9 +330,137 @@
     .notif-title { font-size:13px; font-weight:600; color:var(--bright); margin-bottom:2px; }
     .notif-body  { font-size:12px; color:var(--dim); }
 
+    /* ── Detail panel ────────────────────────────────────────────────────────── */
+    .panel-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.5);
+      z-index: 200;
+    }
+    .panel-overlay.open { display:block; }
+
+    .detail-panel {
+      position: fixed;
+      top: 0; right: 0;
+      width: min(540px, 100vw);
+      height: 100vh;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      z-index: 201;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform .25s ease;
+      overflow: hidden;
+    }
+    .detail-panel.open { transform: translateX(0); }
+
+    .panel-head {
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .panel-head-left { display:flex; align-items:center; gap:10px; }
+    .panel-title { font-size:16px; font-weight:700; color:var(--bright); }
+
+    .panel-close {
+      background: none;
+      border: none;
+      color: var(--dim);
+      font-size: 20px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+      line-height: 1;
+    }
+    .panel-close:hover { background:var(--surface2); color:var(--bright); }
+
+    .panel-body { padding: 20px; overflow-y: auto; flex: 1; }
+    .panel-body::-webkit-scrollbar { width:4px; }
+    .panel-body::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+    .panel-section { margin-bottom: 22px; }
+    .panel-section-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .panel-meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .panel-meta-item label { display:block; font-size:11px; color:var(--dim); margin-bottom:3px; }
+    .panel-meta-item span  { font-size:13px; color:var(--text); word-break:break-all; }
+
+    .panel-desc {
+      font-size: 14px;
+      color: var(--text);
+      line-height: 1.6;
+      padding: 12px 14px;
+      background: var(--surface2);
+      border-radius: 6px;
+      border-left: 3px solid var(--accent);
+    }
+
+    .remedy-list { list-style: none; display:flex; flex-direction:column; gap:8px; }
+    .remedy-list li {
+      display: flex;
+      gap: 10px;
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.55;
+      padding: 10px 12px;
+      background: var(--surface2);
+      border-radius: 6px;
+    }
+    .remedy-num {
+      background: var(--accent);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .log-block {
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 12px;
+      color: var(--dim);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      line-height: 1.6;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .feed-row { cursor: pointer; }
+
     @media (max-width: 800px) {
       .feed-row { grid-template-columns: 70px 1fr 1fr; }
       .feed-row .feed-time, .feed-row .feed-server { display:none; }
+      .detail-panel { width:100vw; }
     }
   </style>
 </head>
@@ -418,6 +546,55 @@
 </main>
 
 <div id="notif-area"></div>
+
+<!-- Detail panel overlay -->
+<div class="panel-overlay" id="panel-overlay" onclick="closePanel()"></div>
+
+<!-- Detail panel -->
+<div class="detail-panel" id="detail-panel">
+  <div class="panel-head">
+    <div class="panel-head-left">
+      <span class="feed-sev" id="panel-sev"></span>
+      <span class="panel-title" id="panel-rule"></span>
+    </div>
+    <button class="panel-close" onclick="closePanel()">✕</button>
+  </div>
+  <div class="panel-body">
+
+    <!-- 기본 정보 -->
+    <div class="panel-section">
+      <div class="panel-section-title">기본 정보</div>
+      <div class="panel-meta-grid">
+        <div class="panel-meta-item"><label>서버</label><span id="pi-server"></span></div>
+        <div class="panel-meta-item"><label>호스트</label><span id="pi-host"></span></div>
+        <div class="panel-meta-item"><label>감지 시각</label><span id="pi-time"></span></div>
+        <div class="panel-meta-item"><label>로그 레벨</label><span id="pi-level"></span></div>
+        <div class="panel-meta-item" style="grid-column:1/-1"><label>로거</label><span id="pi-logger"></span></div>
+      </div>
+    </div>
+
+    <!-- 오류 설명 -->
+    <div class="panel-section">
+      <div class="panel-section-title">오류 내용</div>
+      <div class="panel-desc" id="pi-desc"></div>
+    </div>
+
+    <!-- 조치 방법 -->
+    <div class="panel-section">
+      <div class="panel-section-title">조치 방법</div>
+      <ol class="remedy-list" id="pi-remedy">
+        <li><span class="remedy-num">!</span><span>조치 정보가 없습니다.</span></li>
+      </ol>
+    </div>
+
+    <!-- 원본 로그 -->
+    <div class="panel-section">
+      <div class="panel-section-title">원본 로그 메시지</div>
+      <div class="log-block" id="pi-log"></div>
+    </div>
+
+  </div>
+</div>
 
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -626,17 +803,18 @@ function renderFeed() {
     return;
   }
 
-  body.innerHTML = list.slice(0, 300).map(a => {
+  const rows = list.slice(0, 300).map((a, i) => {
     const t   = a.detected_at ? new Date(a.detected_at).toLocaleTimeString('ko-KR') : '';
     const msg = (a.log_entry?.message || a.description || '').substring(0, 120);
-    return `<div class="feed-row">
+    return `<div class="feed-row" onclick="openPanel(${i})" title="클릭하여 상세 정보 보기">
       <span class="feed-sev ${a.severity}">${a.severity}</span>
       <span class="feed-time">${esc(t)}</span>
       <span class="feed-server">${esc(a.server_id || '')}</span>
       <span class="feed-rule">${esc(a.rule_name || '')}</span>
-      <span class="feed-msg" title="${esc(a.log_entry?.message||'')}">${esc(msg)}</span>
+      <span class="feed-msg">${esc(msg)}</span>
     </div>`;
   }).join('');
+  body.innerHTML = rows;
 }
 
 // ── Filter & controls ─────────────────────────────────────────────────────────
@@ -687,6 +865,60 @@ function cnt(id, v) {
 function stLabel(s) {
   return { online:'정상', offline:'오프라인', critical:'Critical', warning:'Warning', unknown:'알 수 없음' }[s] || s;
 }
+
+// ── Detail panel ─────────────────────────────────────────────────────────────
+function openPanel(idx) {
+  const list = S.filter === 'ALL'
+    ? S.anomalies
+    : S.anomalies.filter(a => a.severity === S.filter);
+  const a = list[idx];
+  if (!a) return;
+
+  // 기본 정보
+  const sevEl = document.getElementById('panel-sev');
+  sevEl.textContent  = a.severity || '';
+  sevEl.className    = 'feed-sev ' + (a.severity || '');
+
+  document.getElementById('panel-rule').textContent = a.rule_name || '알 수 없음';
+  document.getElementById('pi-server').textContent  = a.server_id || '—';
+  document.getElementById('pi-host').textContent    = a.host || '—';
+  document.getElementById('pi-level').textContent   = a.log_entry?.level || '—';
+  document.getElementById('pi-logger').textContent  = a.log_entry?.logger || '—';
+
+  const dt = a.detected_at ? new Date(a.detected_at).toLocaleString('ko-KR') : '—';
+  document.getElementById('pi-time').textContent = dt;
+
+  // 오류 설명
+  document.getElementById('pi-desc').textContent = a.description || '설명 없음';
+
+  // 조치 방법
+  const remedyEl = document.getElementById('pi-remedy');
+  const remedies = a.remedy || [];
+  if (remedies.length) {
+    remedyEl.innerHTML = remedies.map((r, i) =>
+      `<li><span class="remedy-num">${i + 1}</span><span>${esc(r)}</span></li>`
+    ).join('');
+  } else {
+    remedyEl.innerHTML = '<li><span class="remedy-num">!</span><span>조치 정보가 없습니다. 개발팀에 로그를 공유하세요.</span></li>';
+  }
+
+  // 원본 로그
+  document.getElementById('pi-log').textContent = a.log_entry?.message || '(로그 메시지 없음)';
+
+  // 패널 열기
+  document.getElementById('panel-overlay').classList.add('open');
+  document.getElementById('detail-panel').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closePanel() {
+  document.getElementById('panel-overlay').classList.remove('open');
+  document.getElementById('detail-panel').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+// ESC 키로 패널 닫기
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 connect();

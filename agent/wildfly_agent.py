@@ -499,12 +499,19 @@ class JbossCliExecutor:
             args.append(f"--file={tmp}")
 
             logger.info("jboss-cli: %s %d commands → %s:%d", self.cli_path, len(commands), self.host, self.port)
-            proc = subprocess.run(args, capture_output=True, text=True, timeout=self.timeout)
+            proc = subprocess.run(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=self.timeout,
+            )
+            stdout = proc.stdout.decode("utf-8", errors="replace")
+            stderr = proc.stderr.decode("utf-8", errors="replace")
             return {
                 "success": proc.returncode == 0,
                 "returncode": proc.returncode,
-                "output": proc.stdout[:8192],
-                "error": proc.stderr[:2048],
+                "output": stdout[:8192],
+                "error": stderr[:2048],
             }
         except subprocess.TimeoutExpired:
             return {"success": False, "output": "", "error": f"CLI 실행 타임아웃 ({self.timeout}s)"}

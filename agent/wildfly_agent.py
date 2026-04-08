@@ -711,6 +711,10 @@ def _load_config(path: str) -> Dict:
     with open(path) as f:
         cfg = yaml.safe_load(f)
 
+    if not isinstance(cfg, dict):
+        logger.error("Config file is empty or invalid: %s", path)
+        sys.exit(1)
+
     # Environment overrides (useful for Docker deployments)
     env_map: Dict[Tuple, str] = {
         ("server", "id"):          os.environ.get("AGENT_ID"),
@@ -726,7 +730,97 @@ def _load_config(path: str) -> Dict:
                 d = d.setdefault(k, {})
             d[keys[-1]] = val
 
+    # Validate required sections
+    required = [("server", "id"), ("controller", "url"), ("wildfly", "log_path")]
+    missing = []
+    for section, key in required:
+        if section not in cfg:
+            missing.append("  [%s] 섹션이 없습니다" % section)
+        elif key not in cfg[section]:
+            missing.append("  [%s.%s] 키가 없습니다" % (section, key))
+    if missing:
+        logger.error(
+            "Config '%s'에 필수 항목이 빠져 있습니다:\n%s\n"
+            "→ agent/config.yaml 을 사용하고 있는지 확인하세요 "
+            "(controller/config.yaml 과 혼동하지 마세요).",
+            path, "\n".join(missing)
+        )
+        sys.exit(1)
+
     return cfg
+
+
+# ─── System metrics ────────────────────────────────────────────────────────────
+def _collect_system_metrics() -> dict:
+    """CPU / 메모리 / 디스크 사용량 수집. psutil 우선, 없으면 /proc 폴백."""
+    m = {}
+
+    # ── psutil (권장) ──────────────────────────────────────────────────────────
+    try:
+        import psutil  # type: ignore
+        m["cpu_percent"]   = psutil.cpu_percent(interval=0.2)
+        vm = psutil.virtual_memory()
+        m["mem_total_mb"]  = int(vm.total / 1048576)
+        m["mem_used_mb"]   = int(vm.used  / 1048576)
+        m["mem_percent"]   = vm.percent
+        sw = psutil.swap_memory()
+        m["swap_percent"]  = sw.percent
+        du = psutil.disk_usage("/")
+        m["disk_total_gb"] = round(du.total / 1073741824, 1)
+        m["disk_used_gb"]  = round(du.used  / 1073741824, 1)
+        m["disk_percent"]  = du.percent
+        return m
+    except ImportError:
+        pass
+
+    # ── /proc 폴백 (Linux) ────────────────────────────────────────────────────
+    try:
+        def _stat():
+            with open("/proc/stat") as f:
+                p = list(map(int, f.readline().split()[1:]))
+            return p[3], sum(p)                          # idle, total
+
+        i1, t1 = _stat()
+        time.sleep(0.2)
+        i2, t2 = _stat()
+        dt = (t2 - t1) or 1
+        m["cpu_percent"] = round((1 - (i2 - i1) / dt) * 100, 1)
+    except Exception:
+        pass
+
+    try:
+        info = {}
+        with open("/proc/meminfo") as f:
+            for line in f:
+                k, v = line.split(":", 1)
+                info[k.strip()] = int(v.split()[0])      # kB
+        total = info.get("MemTotal", 0)
+        avail = info.get("MemAvailable", 0)
+        used  = total - avail
+        if total:
+            m["mem_total_mb"] = int(total / 1024)
+            m["mem_used_mb"]  = int(used  / 1024)
+            m["mem_percent"]  = round(used / total * 100, 1)
+        st = info.get("SwapTotal", 0)
+        sf = info.get("SwapFree",  0)
+        if st:
+            m["swap_percent"] = round((st - sf) / st * 100, 1)
+    except Exception:
+        pass
+
+    try:
+        s = os.statvfs("/")
+        total = s.f_blocks * s.f_frsize
+        free  = s.f_bavail * s.f_frsize
+        used  = total - free
+        if total:
+            m["disk_total_gb"] = round(total / 1073741824, 1)
+            m["disk_used_gb"]  = round(used  / 1073741824, 1)
+            m["disk_percent"]  = round(used  / total * 100, 1)
+    except Exception:
+        pass
+
+    return m
 
 
 # ─── Agent ────────────────────────────────────────────────────────────────────
@@ -822,12 +916,14 @@ class WildflyAgent:
             logger.warning("Registration failed — will retry on next heartbeat")
 
     def _heartbeat(self):
+        stats = dict(self._stats)
+        stats.update(_collect_system_metrics())
         self._post(
             "/api/agents/heartbeat",
             {
                 "server_id": self.server_id,
                 "timestamp": datetime.now().isoformat(),
-                "stats": dict(self._stats),
+                "stats": stats,
             },
             timeout=5,
         )

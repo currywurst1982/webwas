@@ -562,6 +562,196 @@
 
     .feed-row { cursor: pointer; }
 
+    /* ── System metrics bars ────────────────────────────────────────────────── */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .metric-item label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      color: var(--dim);
+      margin-bottom: 4px;
+    }
+
+    .metric-item label span { color: var(--bright); font-weight: 600; }
+
+    .metric-bar {
+      height: 5px;
+      background: var(--surface2);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .metric-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width .4s ease;
+    }
+    .metric-fill.cpu  { background: var(--medium); }
+    .metric-fill.mem  { background: var(--high); }
+    .metric-fill.disk { background: var(--low); }
+    .metric-fill.warn { background: var(--high) !important; }
+    .metric-fill.crit { background: var(--critical) !important; }
+
+    /* ── WAS Config Panel ───────────────────────────────────────────────────── */
+    .was-panel {
+      position: fixed;
+      top: 0; right: 0;
+      width: min(580px, 100vw);
+      height: 100vh;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      z-index: 301;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform .25s ease;
+      overflow: hidden;
+    }
+    .was-panel.open { transform: translateX(0); }
+
+    .was-panel-head {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      background: var(--surface2);
+    }
+
+    .was-panel-title { font-size: 15px; font-weight: 700; color: var(--bright); }
+    .was-panel-sub   { font-size: 12px; color: var(--dim); margin-top: 2px; }
+
+    .was-panel-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 18px 20px;
+    }
+    .was-panel-body::-webkit-scrollbar { width:4px; }
+    .was-panel-body::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+    .was-category {
+      margin-bottom: 20px;
+    }
+
+    .was-cat-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      padding: 6px 0;
+      margin-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .was-op-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: border-color .15s;
+    }
+    .was-op-card:hover { border-color: var(--accent); }
+    .was-op-card.selected { border-color: var(--accent); background: rgba(31,111,235,.08); }
+
+    .was-op-name { font-size: 13px; font-weight: 600; color: var(--bright); margin-bottom: 3px; }
+    .was-op-desc { font-size: 12px; color: var(--dim); line-height: 1.5; }
+
+    .was-params {
+      margin-top: 10px;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .was-op-card.selected .was-params { display: flex; }
+
+    .was-param-row { display: flex; flex-direction: column; gap: 4px; }
+    .was-param-row label { font-size: 11px; color: var(--dim); }
+
+    .was-input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 6px 10px;
+      color: var(--bright);
+      font-size: 12px;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      width: 100%;
+    }
+    .was-input:focus { outline: none; border-color: var(--accent); }
+
+    select.was-input { cursor: pointer; }
+
+    .was-preview {
+      margin-top: 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8px 10px;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 11px;
+      color: #79c0ff;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+
+    .was-exec-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 9px;
+      margin-top: 10px;
+      background: rgba(31,111,235,.15);
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .was-exec-btn:hover { background: rgba(31,111,235,.25); }
+    .was-exec-btn:disabled { opacity:.4; cursor:not-allowed; }
+
+    .was-result {
+      margin-top: 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      display: none;
+    }
+    .was-result.visible { display:block; }
+    .was-result-head {
+      padding: 7px 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .was-result-head.done   { background:rgba(63,185,80,.1);  color:var(--low); }
+    .was-result-head.failed { background:rgba(248,81,73,.1);  color:var(--critical); }
+    .was-result-head.running{ background:rgba(210,153,34,.1); color:var(--high); }
+    .was-result-body {
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 11px;
+      color: var(--dim);
+      background: var(--bg);
+      padding: 8px 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+
     /* ── Claude AI Analysis ─────────────────────────────────────────────────── */
     .claude-ask-btn {
       display: flex;
@@ -786,6 +976,19 @@
   </div>
 </div>
 
+<!-- WAS Config Panel -->
+<div class="panel-overlay" id="was-overlay" onclick="closeWasPanel()"></div>
+<div class="was-panel" id="was-panel">
+  <div class="was-panel-head">
+    <div>
+      <div class="was-panel-title">⚙️ WAS 인스턴스 설정</div>
+      <div class="was-panel-sub" id="was-panel-sub">서버 선택됨</div>
+    </div>
+    <button class="panel-close" onclick="closeWasPanel()">✕</button>
+  </div>
+  <div class="was-panel-body" id="was-panel-body"><!-- JS로 채워짐 --></div>
+</div>
+
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
 const S = {
@@ -894,10 +1097,12 @@ function handle(msg) {
       const td = msg.data;
       const isOk = td.status === 'done';
 
-      // 패널이 해당 task를 기다리고 있으면 결과 표시
+      // 이상 상세 패널이 해당 task를 기다리고 있으면 결과 표시
       if (_activeTaskId === td.task_id) {
         showTaskResult(td.status, td.result);
       }
+      // WAS 설정 패널에도 결과 반영
+      _handleWasTaskResult(td);
 
       notify(
         isOk ? 'LOW' : 'CRITICAL',
@@ -989,13 +1194,44 @@ function fillCard(el, id, a) {
   const stats = a.stats || {};
   const simBadge = a.simulate ? ' <em style="color:var(--dim);font-weight:400;font-size:11px;">[시뮬레이션]</em>' : '';
 
+  // ── System metrics bars ─────────────────────────────────────────────────────
+  function metricBar(label, pct, cls, sub) {
+    if (pct == null) return `<div class="metric-item">
+      <label>${label} <span>—</span></label>
+      <div class="metric-bar"><div class="metric-fill ${cls}" style="width:0%"></div></div>
+    </div>`;
+    const p = Math.min(Math.max(pct, 0), 100);
+    const lvl = p >= 90 ? 'crit' : p >= 75 ? 'warn' : '';
+    return `<div class="metric-item">
+      <label>${label} <span>${sub || pct + '%'}</span></label>
+      <div class="metric-bar"><div class="metric-fill ${cls} ${lvl}" style="width:${p}%"></div></div>
+    </div>`;
+  }
+
+  const cpuBar  = metricBar('CPU', stats.cpu_percent, 'cpu',
+                    stats.cpu_percent != null ? stats.cpu_percent.toFixed(1) + '%' : null);
+  const memSub  = stats.mem_used_mb != null
+                    ? `${stats.mem_used_mb}/${stats.mem_total_mb} MB`
+                    : null;
+  const memBar  = metricBar('메모리', stats.mem_percent, 'mem', memSub);
+  const diskSub = stats.disk_used_gb != null
+                    ? `${stats.disk_used_gb}/${stats.disk_total_gb} GB`
+                    : null;
+  const diskBar = metricBar('디스크', stats.disk_percent, 'disk', diskSub);
+
   el.innerHTML = `
     <div class="srv-head">
       <div>
         <div class="srv-id">${esc(id)}${simBadge}</div>
         <div class="srv-host">${esc(a.host || '')}</div>
       </div>
-      <div class="status-pill ${st}">${stLabel(st)}</div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button onclick="event.stopPropagation();openWasPanel('${esc(id)}')"
+          style="background:rgba(56,139,253,.12);border:1px solid rgba(56,139,253,.35);
+                 border-radius:5px;padding:3px 9px;font-size:11px;color:var(--medium);
+                 cursor:pointer;font-weight:600;">⚙️ WAS 설정</button>
+        <div class="status-pill ${st}">${stLabel(st)}</div>
+      </div>
     </div>
     <div class="srv-meta">
       <div class="meta-item"><label>마지막 Heartbeat</label><span>${hb}</span></div>
@@ -1003,6 +1239,7 @@ function fillCard(el, id, a) {
       <div class="meta-item"><label>처리 로그 수</label><span>${stats.entries_processed ?? '—'}</span></div>
       <div class="meta-item"><label>감지 이상 수</label><span>${stats.anomalies_detected ?? '—'}</span></div>
     </div>
+    <div class="metrics-grid">${cpuBar}${memBar}${diskBar}</div>
     <div class="sev-badges">${badges}</div>
     <div class="log-preview">
       <div class="log-preview-lbl">최근 이상 로그</div>
@@ -1301,7 +1538,278 @@ function closePanel() {
 }
 
 // ESC 키로 패널 닫기
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePanel(); closeWasPanel(); } });
+
+// ── WAS Config Panel ──────────────────────────────────────────────────────────
+let _wasServerId = null;
+let _wasTaskId   = null;
+let _wasSelOp    = null;
+
+// 카테고리별 jboss-cli 설정 작업 정의
+const WAS_OPS = [
+  // ── 데이터소스 ──────────────────────────────────────────────────────────────
+  { cat:'데이터소스', id:'ds_max_pool', name:'최대 커넥션 풀 크기 변경',
+    desc:'데이터소스 최대 동시 커넥션 수를 설정합니다. 기본값 20, 권장 10~50.',
+    params:[{id:'ds',  lbl:'데이터소스 이름', def:'ExampleDS'},
+            {id:'val', lbl:'최대 커넥션 수',  def:'20', type:'number'}],
+    cmd: p => [`/subsystem=datasources/data-source=${p.ds}:write-attribute(name=max-pool-size,value=${p.val})`],
+  },
+  { cat:'데이터소스', id:'ds_min_pool', name:'최소 커넥션 풀 크기 변경',
+    desc:'유휴 상태에서 유지할 최소 커넥션 수입니다.',
+    params:[{id:'ds',  lbl:'데이터소스 이름', def:'ExampleDS'},
+            {id:'val', lbl:'최소 커넥션 수',  def:'5', type:'number'}],
+    cmd: p => [`/subsystem=datasources/data-source=${p.ds}:write-attribute(name=min-pool-size,value=${p.val})`],
+  },
+  { cat:'데이터소스', id:'ds_timeout', name:'커넥션 획득 타임아웃 변경',
+    desc:'커넥션 풀에서 커넥션을 얻기까지 최대 대기 시간(초)입니다.',
+    params:[{id:'ds',  lbl:'데이터소스 이름', def:'ExampleDS'},
+            {id:'val', lbl:'타임아웃(초)',     def:'30', type:'number'}],
+    cmd: p => [`/subsystem=datasources/data-source=${p.ds}:write-attribute(name=blocking-timeout-wait-millis,value=${p.val * 1000})`],
+  },
+  { cat:'데이터소스', id:'ds_validate', name:'커넥션 유효성 검사 활성화',
+    desc:'커넥션을 빌릴 때마다 유효성을 검사합니다. 끊긴 커넥션 문제 해결에 유용합니다.',
+    params:[{id:'ds',  lbl:'데이터소스 이름', def:'ExampleDS'},
+            {id:'val', lbl:'활성화 여부', def:'true', type:'select', opts:['true','false']}],
+    cmd: p => [
+      `/subsystem=datasources/data-source=${p.ds}:write-attribute(name=validate-on-match,value=${p.val})`,
+      `/subsystem=datasources/data-source=${p.ds}:write-attribute(name=background-validation,value=${p.val === 'true' ? 'false' : 'true'})`,
+    ],
+  },
+  { cat:'데이터소스', id:'ds_query', name:'커넥션 검증 쿼리 설정',
+    desc:'커넥션 유효성 검사에 사용할 SQL 쿼리를 지정합니다.',
+    params:[{id:'ds',  lbl:'데이터소스 이름', def:'ExampleDS'},
+            {id:'val', lbl:'검증 쿼리', def:'SELECT 1'}],
+    cmd: p => [`/subsystem=datasources/data-source=${p.ds}:write-attribute(name=check-valid-connection-sql,value="${p.val}")`],
+  },
+  // ── 스레드풀 ────────────────────────────────────────────────────────────────
+  { cat:'스레드풀', id:'io_threads', name:'IO 워커 스레드 수 변경',
+    desc:'비동기 IO 처리에 사용되는 스레드 수입니다. 보통 CPU 코어 수 * 2.',
+    params:[{id:'val', lbl:'IO 스레드 수', def:'4', type:'number'}],
+    cmd: p => [`/subsystem=io/worker=default:write-attribute(name=io-threads,value=${p.val})`],
+  },
+  { cat:'스레드풀', id:'task_threads', name:'Task 최대 스레드 수 변경',
+    desc:'블로킹 작업 처리를 위한 최대 스레드 수입니다.',
+    params:[{id:'val', lbl:'최대 스레드 수', def:'64', type:'number'}],
+    cmd: p => [`/subsystem=io/worker=default:write-attribute(name=task-max-threads,value=${p.val})`],
+  },
+  { cat:'스레드풀', id:'ejb_threads', name:'EJB 스레드풀 최대 크기 변경',
+    desc:'EJB 요청 처리를 위한 최대 스레드 수입니다.',
+    params:[{id:'val', lbl:'최대 스레드 수', def:'10', type:'number'}],
+    cmd: p => [`/subsystem=ejb3/thread-pool=default:write-attribute(name=max-threads,value=${p.val})`],
+  },
+  // ── 로깅 ────────────────────────────────────────────────────────────────────
+  { cat:'로깅', id:'log_root', name:'ROOT 로그 레벨 변경',
+    desc:'전체 애플리케이션의 기본 로그 레벨을 변경합니다.',
+    params:[{id:'val', lbl:'로그 레벨', def:'INFO', type:'select',
+             opts:['TRACE','DEBUG','INFO','WARN','ERROR','FATAL']}],
+    cmd: p => [`/subsystem=logging/root-logger=ROOT:write-attribute(name=level,value=${p.val})`],
+  },
+  { cat:'로깅', id:'log_category', name:'카테고리 로그 레벨 변경',
+    desc:'특정 패키지/클래스의 로그 레벨을 개별 설정합니다.',
+    params:[{id:'cat', lbl:'로거 카테고리', def:'org.jboss'},
+            {id:'val', lbl:'로그 레벨', def:'WARN', type:'select',
+             opts:['TRACE','DEBUG','INFO','WARN','ERROR','FATAL']}],
+    cmd: p => [
+      `/subsystem=logging/logger=${p.cat}:add(level=${p.val})`,
+      `/subsystem=logging/logger=${p.cat}:write-attribute(name=level,value=${p.val})`,
+    ],
+  },
+  // ── 트랜잭션 ────────────────────────────────────────────────────────────────
+  { cat:'트랜잭션', id:'tx_timeout', name:'기본 트랜잭션 타임아웃 변경',
+    desc:'트랜잭션이 완료되지 않을 때 롤백할 최대 시간(초)입니다. 기본값 300.',
+    params:[{id:'val', lbl:'타임아웃(초)', def:'300', type:'number'}],
+    cmd: p => [`/subsystem=transactions:write-attribute(name=default-timeout,value=${p.val})`],
+  },
+  // ── HTTP/웹 ─────────────────────────────────────────────────────────────────
+  { cat:'HTTP/웹', id:'http_timeout', name:'HTTP Keep-Alive 타임아웃 설정',
+    desc:'HTTP 연결 유지 최대 시간(초)입니다.',
+    params:[{id:'val', lbl:'타임아웃(초)', def:'15', type:'number'}],
+    cmd: p => [`/subsystem=undertow/server=default-server/http-listener=default:write-attribute(name=keep-alive-timeout,value=${p.val * 1000})`],
+  },
+  { cat:'HTTP/웹', id:'http_io_threads', name:'HTTP IO 스레드 수 변경',
+    desc:'HTTP 요청 수신에 사용하는 IO 스레드 수입니다.',
+    params:[{id:'val', lbl:'IO 스레드 수', def:'2', type:'number'}],
+    cmd: p => [`/subsystem=undertow/server=default-server/http-listener=default:write-attribute(name=tcp-backlog,value=${p.val * 100})`],
+  },
+  // ── 서버 제어 ────────────────────────────────────────────────────────────────
+  { cat:'서버 제어', id:'srv_state', name:'서버 상태 조회',
+    desc:'현재 WildFly 서버의 상태 정보를 조회합니다.',
+    params:[],
+    cmd: () => [':read-attribute(name=server-state)', ':read-attribute(name=running-mode)'],
+  },
+  { cat:'서버 제어', id:'srv_reload', name:'서버 Reload (설정 반영)',
+    desc:'설정 변경 후 서비스 중단 없이 재로드합니다. 권장 방식.',
+    params:[],
+    cmd: () => [':reload'],
+  },
+  { cat:'서버 제어', id:'srv_suspend', name:'서버 일시 중단 (Graceful)',
+    desc:'신규 요청을 거부하고 기존 요청을 완료 후 중단합니다.',
+    params:[{id:'timeout', lbl:'대기 시간(초, -1=무제한)', def:'60', type:'number'}],
+    cmd: p => [`:suspend(timeout=${p.timeout})`],
+  },
+  { cat:'서버 제어', id:'srv_resume', name:'서버 재개',
+    desc:'일시 중단된 서버를 다시 활성화합니다.',
+    params:[],
+    cmd: () => [':resume'],
+  },
+  { cat:'서버 제어', id:'jvm_gc', name:'GC 강제 실행',
+    desc:'JVM 가비지 컬렉션을 즉시 실행합니다. 메모리 부족 임시 대응에 사용합니다.',
+    params:[],
+    cmd: () => ['/core-service=platform-mbean/type=memory:invoke-operation(name=gc)'],
+  },
+  { cat:'서버 제어', id:'jvm_heap', name:'JVM 힙 메모리 사용량 조회',
+    desc:'현재 JVM 힙 메모리 사용 현황을 조회합니다.',
+    params:[],
+    cmd: () => ['/core-service=platform-mbean/type=memory:read-attribute(name=heap-memory-usage)'],
+  },
+];
+
+function openWasPanel(serverId) {
+  _wasServerId = serverId;
+  _wasTaskId   = null;
+  _wasSelOp    = null;
+  document.getElementById('was-panel-sub').textContent = '서버: ' + serverId;
+  _buildWasPanel();
+  document.getElementById('was-overlay').classList.add('open');
+  document.getElementById('was-panel').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeWasPanel() {
+  document.getElementById('was-overlay').classList.remove('open');
+  document.getElementById('was-panel').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function _buildWasPanel() {
+  // Group ops by category
+  const cats = {};
+  WAS_OPS.forEach(op => {
+    if (!cats[op.cat]) cats[op.cat] = [];
+    cats[op.cat].push(op);
+  });
+
+  let html = '';
+  for (const [cat, ops] of Object.entries(cats)) {
+    html += `<div class="was-category">
+      <div class="was-cat-title">${esc(cat)}</div>`;
+    ops.forEach(op => {
+      const paramRows = op.params.map(p => {
+        const inputEl = p.type === 'select'
+          ? `<select class="was-input" id="wp-${op.id}-${p.id}" onchange="_updatePreview('${op.id}')">${p.opts.map(o=>`<option${o===p.def?' selected':''}>${o}</option>`).join('')}</select>`
+          : `<input class="was-input" id="wp-${op.id}-${p.id}" type="${p.type||'text'}" value="${esc(p.def)}" oninput="_updatePreview('${op.id}')">`;
+        return `<div class="was-param-row"><label>${esc(p.lbl)}</label>${inputEl}</div>`;
+      }).join('');
+      html += `<div class="was-op-card" id="wop-${op.id}" onclick="_selectWasOp('${op.id}')">
+        <div class="was-op-name">${esc(op.name)}</div>
+        <div class="was-op-desc">${esc(op.desc)}</div>
+        <div class="was-params">
+          ${paramRows}
+          <div class="was-preview" id="wprev-${op.id}"></div>
+          <button class="was-exec-btn" id="wexec-${op.id}" onclick="event.stopPropagation();executeWasOp('${op.id}')">▶ 실행</button>
+          <div class="was-result" id="wres-${op.id}">
+            <div class="was-result-head" id="wres-head-${op.id}"></div>
+            <div class="was-result-body" id="wres-body-${op.id}"></div>
+          </div>
+        </div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+  document.getElementById('was-panel-body').innerHTML = html;
+}
+
+function _selectWasOp(opId) {
+  if (_wasSelOp === opId) {
+    // 토글 닫기
+    document.getElementById('wop-' + opId)?.classList.remove('selected');
+    _wasSelOp = null;
+    return;
+  }
+  if (_wasSelOp) {
+    document.getElementById('wop-' + _wasSelOp)?.classList.remove('selected');
+  }
+  _wasSelOp = opId;
+  document.getElementById('wop-' + opId)?.classList.add('selected');
+  _updatePreview(opId);
+}
+
+function _getWasOpParams(op) {
+  const p = {};
+  op.params.forEach(param => {
+    const el = document.getElementById('wp-' + op.id + '-' + param.id);
+    p[param.id] = el ? el.value : param.def;
+  });
+  return p;
+}
+
+function _updatePreview(opId) {
+  const op = WAS_OPS.find(o => o.id === opId);
+  if (!op) return;
+  const cmds = op.cmd(_getWasOpParams(op));
+  const prev = document.getElementById('wprev-' + opId);
+  if (prev) prev.textContent = cmds.join('\n');
+}
+
+async function executeWasOp(opId) {
+  const op = WAS_OPS.find(o => o.id === opId);
+  if (!op || !_wasServerId) return;
+  const cmds = op.cmd(_getWasOpParams(op));
+
+  const btn  = document.getElementById('wexec-' + opId);
+  const res  = document.getElementById('wres-' + opId);
+  const head = document.getElementById('wres-head-' + opId);
+  const body = document.getElementById('wres-body-' + opId);
+
+  btn.disabled = true;
+  btn.textContent = '⏳ 실행 중…';
+  res.className = 'was-result visible';
+  head.className = 'was-result-head running';
+  head.textContent = '⏳ 에이전트에 전송 중…';
+  body.textContent = '';
+
+  try {
+    const r = await fetch(`/api/agents/${encodeURIComponent(_wasServerId)}/remediate`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({rule_name: op.id, cli_commands: cmds, description: op.name}),
+    });
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.detail || `HTTP ${r.status}`);
+    _wasTaskId = json.task_id;
+    btn.textContent = `⏳ 대기 중 (${json.task_id})`;
+    head.textContent = '⏳ 에이전트 실행 대기 중…';
+  } catch(e) {
+    head.className = 'was-result-head failed';
+    head.textContent = '❌ 전송 실패';
+    body.textContent = e.message;
+    btn.disabled = false;
+    btn.textContent = '▶ 실행';
+  }
+}
+
+// task_result 이벤트를 WAS 패널에도 반영
+function _handleWasTaskResult(td) {
+  if (td.task_id !== _wasTaskId) return;
+  const opId = td.rule_name;
+  const res  = document.getElementById('wres-' + opId);
+  const head = document.getElementById('wres-head-' + opId);
+  const body = document.getElementById('wres-body-' + opId);
+  const btn  = document.getElementById('wexec-' + opId);
+  if (!res) return;
+
+  const ok = td.status === 'done';
+  res.className  = 'was-result visible';
+  head.className = 'was-result-head ' + td.status;
+  head.textContent = ok ? '✅ 완료' : '❌ 실패';
+  if (td.result) {
+    body.textContent = [
+      td.result.output ? '[출력]\n' + td.result.output : '',
+      td.result.error  ? '[오류]\n' + td.result.error  : '',
+    ].filter(Boolean).join('\n\n') || '(결과 없음)';
+  }
+  if (btn) { btn.disabled = false; btn.textContent = '▶ 재실행'; }
+}
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 connect();

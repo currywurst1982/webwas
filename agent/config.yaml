@@ -1,0 +1,26 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# WildFly Agent Configuration
+# All values can be overridden with environment variables (useful in Docker):
+#   AGENT_ID, AGENT_HOST, CONTROLLER_URL, API_KEY, WILDFLY_LOG_PATH
+# ──────────────────────────────────────────────────────────────────────────────
+
+server:
+  id: "wildfly-server-01"           # Unique identifier for this server
+  host: "192.168.1.101"             # Hostname or IP of this server
+
+wildfly:
+  # Absolute path to WildFly 26 server log
+  log_path: "/opt/wildfly-26.1.3.Final/standalone/log/server.log"
+
+controller:
+  url: "http://localhost:8080"      # Controller URL
+  api_key: ""                       # Shared secret (leave empty to disable auth)
+
+monitoring:
+  poll_interval: 5                  # Seconds between log reads
+  report_interval: 30               # Seconds between periodic status reports
+
+anomaly:
+  error_storm_threshold: 10         # Number of errors within the window to trigger storm alert
+  error_storm_window: 60            # Sliding window size in seconds for storm detection
+  simulation_anomaly_rate: 0.08     # Fraction of entries that are anomalies in --simulate mode

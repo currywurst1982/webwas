@@ -1,0 +1,102 @@
+version: "3.8"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# WildFly 26 Agent Monitoring Stack
+#
+# Services:
+#   controller  - Central hub: REST API + WebSocket + dashboard  (port 8080)
+#   agent-01    - Simulated WildFly agent for "app-server-01"
+#   agent-02    - Simulated WildFly agent for "app-server-02"
+#   agent-03    - Simulated WildFly agent for "app-server-03"
+#
+# Quick start:
+#   docker compose up --build
+#   Open: http://localhost:8080
+#
+# Production (real WildFly log):
+#   Override WILDFLY_LOG_PATH and mount the log directory, e.g.:
+#     volumes:
+#       - /opt/wildfly-26.1.3.Final/standalone/log:/logs:ro
+#     environment:
+#       WILDFLY_LOG_PATH: /logs/server.log
+#   Remove --simulate from the command.
+# ──────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Controller ──────────────────────────────────────────────────────────────
+  controller:
+    build:
+      context: ./controller
+      dockerfile: Dockerfile
+    container_name: wf-controller
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/stats')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+    networks:
+      - wf-net
+
+  # ── Agent 01 ────────────────────────────────────────────────────────────────
+  agent-01:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: wf-agent-01
+    environment:
+      AGENT_ID:       wildfly-server-01
+      AGENT_HOST:     app-server-01.internal
+      CONTROLLER_URL: http://controller:8080
+      API_KEY:        ""
+    depends_on:
+      controller:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - wf-net
+
+  # ── Agent 02 ────────────────────────────────────────────────────────────────
+  agent-02:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: wf-agent-02
+    environment:
+      AGENT_ID:       wildfly-server-02
+      AGENT_HOST:     app-server-02.internal
+      CONTROLLER_URL: http://controller:8080
+      API_KEY:        ""
+    depends_on:
+      controller:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - wf-net
+
+  # ── Agent 03 ────────────────────────────────────────────────────────────────
+  agent-03:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: wf-agent-03
+    environment:
+      AGENT_ID:       wildfly-server-03
+      AGENT_HOST:     app-server-03.internal
+      CONTROLLER_URL: http://controller:8080
+      API_KEY:        ""
+    depends_on:
+      controller:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - wf-net
+
+networks:
+  wf-net:
+    driver: bridge

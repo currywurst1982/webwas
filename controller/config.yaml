@@ -1,0 +1,15 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# WildFly Agent Controller Configuration
+# ──────────────────────────────────────────────────────────────────────────────
+
+controller:
+  host: "0.0.0.0"                 # Bind address (0.0.0.0 = all interfaces)
+  port: 8080                      # HTTP port for API and dashboard
+
+  api_key: ""                     # Shared secret for agent authentication.
+                                  # Leave empty to disable auth (local/trusted network).
+                                  # Must match api_key in each agent's config.yaml.
+
+  agent_timeout: 90               # Seconds without a heartbeat before agent is "offline"
+  max_anomalies_per_agent: 200    # Per-agent in-memory anomaly history size
+  max_global_anomalies: 1000      # Global in-memory anomaly ring-buffer size

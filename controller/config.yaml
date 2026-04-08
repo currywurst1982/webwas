@@ -15,7 +15,7 @@ controller:
   max_global_anomalies: 1000      # Global in-memory anomaly ring-buffer size
 
 claude:
-  enabled: true                   # Set to false to disable Claude AI integration
+  enabled: false                  # Set to true to enable Claude AI integration
   api_key: ""                     # Anthropic API key (or set ANTHROPIC_API_KEY env var)
   model: "claude-opus-4-6"        # Claude model to use for analysis
   auto_analyze: false             # Automatically analyze CRITICAL anomalies as they arrive

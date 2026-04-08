@@ -455,6 +455,111 @@
       overflow-y: auto;
     }
 
+    /* CLI commands block */
+    .cli-block {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .cli-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .cli-toolbar-label {
+      font-size: 11px;
+      color: var(--dim);
+      font-family: monospace;
+    }
+
+    .cli-copy-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--dim);
+      font-size: 11px;
+      padding: 2px 8px;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .cli-copy-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+    .cli-commands {
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 12px;
+      padding: 12px 14px;
+      margin: 0;
+      white-space: pre;
+      overflow-x: auto;
+      line-height: 1.7;
+      color: #79c0ff;
+    }
+
+    .cli-commands .cli-prompt { color: var(--low); user-select: none; }
+
+    .execute-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      margin-top: 12px;
+      padding: 10px 16px;
+      background: rgba(31,111,235,.15);
+      border: 1px solid var(--accent);
+      border-radius: 6px;
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+      justify-content: center;
+    }
+    .execute-btn:hover { background: rgba(31,111,235,.25); }
+    .execute-btn:disabled { opacity:.4; cursor:not-allowed; }
+    .execute-btn.running { color:var(--high); border-color:var(--high); background:rgba(210,153,34,.1); }
+    .execute-btn.done    { color:var(--low);  border-color:var(--low);  background:rgba(63,185,80,.1); }
+    .execute-btn.failed  { color:var(--critical); border-color:var(--critical); background:rgba(248,81,73,.1); }
+
+    /* Task result area */
+    .task-result {
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      display: none;
+    }
+    .task-result.visible { display:block; }
+
+    .task-result-head {
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .task-result-head.done   { background:rgba(63,185,80,.1);  color:var(--low); }
+    .task-result-head.failed { background:rgba(248,81,73,.1); color:var(--critical); }
+    .task-result-head.running { background:rgba(210,153,34,.1); color:var(--high); }
+
+    .task-result-body {
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 11px;
+      color: var(--dim);
+      background: var(--bg);
+      padding: 10px 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
     .feed-row { cursor: pointer; }
 
     @media (max-width: 800px) {
@@ -587,6 +692,25 @@
       </ol>
     </div>
 
+    <!-- jboss-cli 명령 -->
+    <div class="panel-section">
+      <div class="panel-section-title">jboss-cli.sh 진단 명령</div>
+      <div class="cli-block">
+        <div class="cli-toolbar">
+          <span class="cli-toolbar-label">jboss-cli.sh --connect</span>
+          <button class="cli-copy-btn" onclick="copyCli()">복사</button>
+        </div>
+        <pre class="cli-commands" id="pi-cli"></pre>
+      </div>
+      <button class="execute-btn" id="exec-btn" onclick="executeRemediation()">
+        ▶ 자동 조치 실행 (jboss-cli)
+      </button>
+      <div class="task-result" id="task-result">
+        <div class="task-result-head" id="task-result-head"></div>
+        <div class="task-result-body" id="task-result-body"></div>
+      </div>
+    </div>
+
     <!-- 원본 로그 -->
     <div class="panel-section">
       <div class="panel-section-title">원본 로그 메시지</div>
@@ -692,6 +816,28 @@ function handle(msg) {
     case 'agent_offline': {
       const ag = S.agents[msg.data.server_id];
       if (ag) { ag.status = 'offline'; refreshCard(msg.data.server_id); renderStats(); }
+      break;
+    }
+
+    case 'task_queued':
+      notify('info', `조치 요청 전송 [${msg.data.server_id}]`,
+        `${msg.data.rule_name} — ${msg.data.cli_commands.length}개 명령 대기 중`);
+      break;
+
+    case 'task_result': {
+      const td = msg.data;
+      const isOk = td.status === 'done';
+
+      // 패널이 해당 task를 기다리고 있으면 결과 표시
+      if (_activeTaskId === td.task_id) {
+        showTaskResult(td.status, td.result);
+      }
+
+      notify(
+        isOk ? 'LOW' : 'CRITICAL',
+        `${isOk ? '✅' : '❌'} 조치 ${isOk ? '완료' : '실패'} [${td.server_id}]`,
+        `${td.rule_name}: ${td.result?.output?.substring(0, 60) || td.result?.error || ''}`
+      );
       break;
     }
 
@@ -866,6 +1012,91 @@ function stLabel(s) {
   return { online:'정상', offline:'오프라인', critical:'Critical', warning:'Warning', unknown:'알 수 없음' }[s] || s;
 }
 
+// ── Current panel anomaly reference ───────────────────────────────────────────
+let _panelAnomaly = null;
+let _activeTaskId = null;
+
+// ── CLI helpers ───────────────────────────────────────────────────────────────
+function copyCli() {
+  const text = (document.getElementById('pi-cli').textContent || '')
+    .replace(/^\$ /gm, '');  // strip prompt
+  navigator.clipboard?.writeText(text).then(() => {
+    const btn = document.querySelector('.cli-copy-btn');
+    const orig = btn.textContent;
+    btn.textContent = '복사됨 ✓';
+    setTimeout(() => btn.textContent = orig, 1500);
+  }).catch(() => alert('클립보드 복사 실패 — 수동으로 선택하여 복사하세요'));
+}
+
+async function executeRemediation() {
+  if (!_panelAnomaly) return;
+  const a = _panelAnomaly;
+  const cmds = a.cli_commands || [];
+  if (!cmds.length) { alert('실행할 CLI 명령이 없습니다'); return; }
+
+  const btn = document.getElementById('exec-btn');
+  btn.disabled = true;
+  btn.className = 'execute-btn running';
+  btn.textContent = '⏳ 실행 중…';
+
+  document.getElementById('task-result').className = 'task-result visible';
+  showTaskResult('running', null);
+
+  try {
+    const res = await fetch(`/api/agents/${encodeURIComponent(a.server_id)}/remediate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rule_name:    a.rule_name,
+        cli_commands: cmds,
+        anomaly_id:   a.id || '',
+        description:  a.description || '',
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    _activeTaskId = json.task_id;
+    btn.textContent = `⏳ 에이전트 실행 대기 중… (task: ${json.task_id})`;
+  } catch (e) {
+    btn.className = 'execute-btn failed';
+    btn.textContent = `❌ 요청 실패: ${e.message}`;
+    btn.disabled = false;
+    showTaskResult('failed', { error: e.message, output: '' });
+  }
+}
+
+function showTaskResult(status, result) {
+  const wrap  = document.getElementById('task-result');
+  const head  = document.getElementById('task-result-head');
+  const body  = document.getElementById('task-result-body');
+  const btn   = document.getElementById('exec-btn');
+
+  wrap.className = 'task-result visible';
+
+  if (status === 'running') {
+    head.className = 'task-result-head running';
+    head.textContent = '⏳ 에이전트가 jboss-cli.sh 실행 중…';
+    body.textContent = '';
+    return;
+  }
+
+  const ok = status === 'done';
+  head.className = `task-result-head ${status}`;
+  head.textContent = ok ? '✅ 조치 완료' : '❌ 조치 실패';
+
+  if (result) {
+    const out = [
+      result.output ? `[출력]\n${result.output}` : '',
+      result.error  ? `[오류]\n${result.error}`  : '',
+    ].filter(Boolean).join('\n\n') || '(결과 없음)';
+    body.textContent = out;
+  }
+
+  btn.disabled = false;
+  btn.className = `execute-btn ${status}`;
+  btn.textContent = ok ? '✅ 조치 완료' : '❌ 실패 — 다시 시도';
+}
+
 // ── Detail panel ─────────────────────────────────────────────────────────────
 function openPanel(idx) {
   const list = S.filter === 'ALL'
@@ -873,6 +1104,9 @@ function openPanel(idx) {
     : S.anomalies.filter(a => a.severity === S.filter);
   const a = list[idx];
   if (!a) return;
+
+  _panelAnomaly = a;
+  _activeTaskId = null;
 
   // 기본 정보
   const sevEl = document.getElementById('panel-sev');
@@ -901,6 +1135,26 @@ function openPanel(idx) {
   } else {
     remedyEl.innerHTML = '<li><span class="remedy-num">!</span><span>조치 정보가 없습니다. 개발팀에 로그를 공유하세요.</span></li>';
   }
+
+  // CLI 명령
+  const cliCmds = a.cli_commands || [];
+  const cliEl = document.getElementById('pi-cli');
+  if (cliCmds.length) {
+    cliEl.innerHTML = cliCmds.map(c =>
+      `<span class="cli-prompt">$ </span>${esc(c)}`
+    ).join('\n');
+  } else {
+    cliEl.textContent = '(CLI 명령 없음)';
+  }
+
+  // 실행 버튼 초기화
+  const btn = document.getElementById('exec-btn');
+  btn.className = 'execute-btn';
+  btn.disabled = false;
+  btn.textContent = '▶ 자동 조치 실행 (jboss-cli)';
+
+  // 결과 영역 초기화
+  document.getElementById('task-result').className = 'task-result';
 
   // 원본 로그
   document.getElementById('pi-log').textContent = a.log_entry?.message || '(로그 메시지 없음)';

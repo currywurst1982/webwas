@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import sys
+import uuid
 from collections import deque, defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -57,6 +58,35 @@ MAX_PER_AGENT = int(_ctrl.get("max_anomalies_per_agent", 200))
 MAX_GLOBAL = int(_ctrl.get("max_global_anomalies", 1000))
 
 # ─── Data models ──────────────────────────────────────────────────────────────
+class RemediationTask:
+    def __init__(self, server_id: str, rule_name: str, cli_commands: List[str],
+                 anomaly_id: str = "", description: str = ""):
+        self.task_id: str = str(uuid.uuid4())[:12]
+        self.server_id: str = server_id
+        self.rule_name: str = rule_name
+        self.cli_commands: List[str] = cli_commands
+        self.anomaly_id: str = anomaly_id
+        self.description: str = description
+        self.created_at: str = datetime.now().isoformat()
+        self.status: str = "pending"   # pending | done | failed
+        self.result: Optional[dict] = None
+        self.executed_at: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "task_id": self.task_id,
+            "server_id": self.server_id,
+            "rule_name": self.rule_name,
+            "cli_commands": self.cli_commands,
+            "anomaly_id": self.anomaly_id,
+            "description": self.description,
+            "created_at": self.created_at,
+            "status": self.status,
+            "result": self.result,
+            "executed_at": self.executed_at,
+        }
+
+
 class AgentRecord:
     def __init__(self, data: dict):
         self.server_id: str = data["server_id"]
@@ -105,6 +135,10 @@ class AgentRecord:
 agents: Dict[str, AgentRecord] = {}
 global_anomalies: deque = deque(maxlen=MAX_GLOBAL)
 ws_clients: Set[WebSocket] = set()
+
+# Task store
+agent_task_queues: Dict[str, List[RemediationTask]] = defaultdict(list)  # pending tasks per agent
+all_tasks: Dict[str, RemediationTask] = {}                                # all tasks by task_id
 
 
 # ─── WebSocket broadcast ──────────────────────────────────────────────────────
@@ -371,6 +405,102 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.debug("WebSocket closed: %s", e)
     finally:
         ws_clients.discard(websocket)
+
+
+# ─── Remediation task endpoints ───────────────────────────────────────────────
+
+@app.post("/api/agents/{server_id}/remediate")
+async def request_remediation(server_id: str, request: Request):
+    """Dashboard → Controller: request jboss-cli remediation on a specific agent."""
+    if not _check_key(request):
+        raise HTTPException(403, "Invalid API key")
+
+    data = await request.json()
+    rule_name    = data.get("rule_name", "unknown")
+    cli_commands = data.get("cli_commands", [])
+    anomaly_id   = data.get("anomaly_id", "")
+    description  = data.get("description", "")
+
+    if not cli_commands:
+        raise HTTPException(400, "cli_commands 필드가 비어 있습니다")
+    if server_id not in agents:
+        raise HTTPException(404, f"Agent '{server_id}'를 찾을 수 없습니다")
+
+    task = RemediationTask(server_id, rule_name, cli_commands, anomaly_id, description)
+    agent_task_queues[server_id].append(task)
+    all_tasks[task.task_id] = task
+
+    logger.info("Remediation task %s queued for %s [%s]", task.task_id, server_id, rule_name)
+
+    await broadcast("task_queued", {
+        "task_id":     task.task_id,
+        "server_id":   server_id,
+        "rule_name":   rule_name,
+        "cli_commands": cli_commands,
+        "created_at":  task.created_at,
+    })
+
+    return JSONResponse({"status": "queued", "task_id": task.task_id})
+
+
+@app.get("/api/agents/{server_id}/tasks")
+async def get_agent_tasks(server_id: str, request: Request):
+    """Agent → Controller: fetch pending remediation tasks (polling)."""
+    if not _check_key(request):
+        raise HTTPException(403, "Invalid API key")
+
+    pending = agent_task_queues.get(server_id, [])
+    if not pending:
+        return JSONResponse([])
+
+    # Hand off all pending tasks; agent will report results back
+    tasks_out = [t.to_dict() for t in pending]
+    for t in pending:
+        t.status = "running"
+    agent_task_queues[server_id].clear()
+
+    return JSONResponse(tasks_out)
+
+
+@app.post("/api/tasks/{task_id}/result")
+async def task_result(task_id: str, request: Request):
+    """Agent → Controller: report execution result of a remediation task."""
+    if not _check_key(request):
+        raise HTTPException(403, "Invalid API key")
+
+    data = await request.json()
+    result = data.get("result", {})
+
+    if task_id not in all_tasks:
+        raise HTTPException(404, "Task not found")
+
+    task = all_tasks[task_id]
+    task.result      = result
+    task.executed_at = data.get("executed_at", datetime.now().isoformat())
+    task.status      = "done" if result.get("success") else "failed"
+
+    logger.info("Task %s [%s] → %s", task_id, task.rule_name, task.status)
+
+    await broadcast("task_result", {
+        "task_id":     task_id,
+        "server_id":   task.server_id,
+        "rule_name":   task.rule_name,
+        "status":      task.status,
+        "result":      result,
+        "executed_at": task.executed_at,
+    })
+
+    return JSONResponse({"status": "ok"})
+
+
+@app.get("/api/tasks")
+async def list_tasks(server_id: Optional[str] = None, limit: int = 50):
+    """List recent remediation tasks."""
+    tasks = list(all_tasks.values())
+    if server_id:
+        tasks = [t for t in tasks if t.server_id == server_id]
+    tasks.sort(key=lambda t: t.created_at, reverse=True)
+    return JSONResponse([t.to_dict() for t in tasks[:limit]])
 
 
 # ─── Entry point ───────────────────────────────────────────────────────────────

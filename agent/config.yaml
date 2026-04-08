@@ -24,3 +24,21 @@ anomaly:
   error_storm_threshold: 10         # Number of errors within the window to trigger storm alert
   error_storm_window: 60            # Sliding window size in seconds for storm detection
   simulation_anomaly_rate: 0.08     # Fraction of entries that are anomalies in --simulate mode
+
+jboss_cli:
+  # jboss-cli.sh 경로 (WildFly 설치 경로에 맞게 수정)
+  path: "/opt/wildfly-26.1.3.Final/bin/jboss-cli.sh"
+
+  # WildFly Management 인터페이스 접속 정보
+  host: "localhost"
+  port: 9990
+
+  # Management 사용자 인증 (management-users.properties에 등록된 계정)
+  user: "admin"
+  password: "admin123"
+
+  # CLI 명령 실행 최대 대기 시간 (초)
+  timeout: 60
+
+  # false로 설정하면 자동 조치 실행 비활성화
+  enabled: true

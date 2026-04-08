@@ -15,7 +15,9 @@ import logging
 import os
 import random
 import socket
+import subprocess
 import sys
+import tempfile
 import time
 import uuid
 from collections import deque, defaultdict
@@ -51,7 +53,7 @@ LOG_RE = re.compile(
     r"(?P<message>.*)"
 )
 
-# ─── Anomaly detection rules ──────────────────────────────────────────────────
+# ─── Anomaly detection rules (description + remedy + cli_commands) ────────────
 ANOMALY_RULES: List[Dict] = [
     {
         "name": "OutOfMemoryError",
@@ -63,6 +65,12 @@ ANOMALY_RULES: List[Dict] = [
             "jmap -dump:format=b,file=heap.hprof <pid> 로 힙 덤프를 수집해 메모리 누수를 분석합니다",
             "불필요한 캐시, static 컬렉션, 세션 데이터를 점검합니다",
             "WildFly 재시작 후 메모리 사용량 추세를 모니터링합니다",
+        ],
+        "cli_commands": [
+            "/core-service=platform-mbean/type=memory:read-attribute(name=heap-memory-usage)",
+            "/core-service=platform-mbean/type=memory:read-attribute(name=non-heap-memory-usage)",
+            "/core-service=platform-mbean/type=garbage-collector=*:read-resource(include-runtime=true)",
+            "/core-service=platform-mbean/type=memory-pool=*:read-resource(include-runtime=true)",
         ],
     },
     {
@@ -76,6 +84,11 @@ ANOMALY_RULES: List[Dict] = [
             "메모리 누수 여부를 힙 덤프로 확인합니다",
             "단기 처방으로 -XX:-UseGCOverheadLimit 추가하여 즉시 크래시 방지 후 근본 원인 분석",
         ],
+        "cli_commands": [
+            "/core-service=platform-mbean/type=memory:read-attribute(name=heap-memory-usage)",
+            "/core-service=platform-mbean/type=garbage-collector=*:read-resource(include-runtime=true)",
+            "/core-service=platform-mbean/type=runtime:read-attribute(name=input-arguments)",
+        ],
     },
     {
         "name": "Deadlock",
@@ -88,6 +101,11 @@ ANOMALY_RULES: List[Dict] = [
             "락 획득 순서를 코드 전체에서 일관되게 유지하도록 리팩터링합니다",
             "데드락 발생 시 WildFly 재시작이 필요할 수 있습니다",
         ],
+        "cli_commands": [
+            "/core-service=platform-mbean/type=threading:find-deadlocked-threads()",
+            "/core-service=platform-mbean/type=threading:dump-all-threads(locked-monitors=true,locked-synchronizers=true)",
+            "/subsystem=transactions:read-attribute(name=default-timeout)",
+        ],
     },
     {
         "name": "StackOverflow",
@@ -98,6 +116,11 @@ ANOMALY_RULES: List[Dict] = [
             "스택트레이스에서 반복 호출되는 메서드를 찾아 재귀 종료 조건을 점검합니다",
             "스택 크기를 늘립니다: standalone.conf에 -Xss512k → -Xss1m",
             "재귀 로직을 반복문(iterative)으로 변환하는 것을 검토합니다",
+        ],
+        "cli_commands": [
+            "/core-service=platform-mbean/type=threading:read-attribute(name=thread-count)",
+            "/core-service=platform-mbean/type=threading:dump-all-threads(locked-monitors=true,locked-synchronizers=true)",
+            "/core-service=platform-mbean/type=runtime:read-attribute(name=input-arguments)",
         ],
     },
     {
@@ -113,6 +136,12 @@ ANOMALY_RULES: List[Dict] = [
             "jboss-deployment-structure.xml에서 모듈 의존성 설정을 확인합니다",
             "standalone/deployments/ 디렉토리의 .failed 마커 파일 내용을 확인합니다",
             "datasource, queue 등 외부 리소스 바인딩이 정상인지 확인합니다",
+        ],
+        "cli_commands": [
+            "deployment-info",
+            ":read-children-resources(child-type=deployment,include-runtime=true)",
+            "/subsystem=datasources/data-source=*:read-resource(include-runtime=true)",
+            "/subsystem=naming/binding=*:read-resource(include-runtime=true)",
         ],
     },
     {
@@ -130,6 +159,12 @@ ANOMALY_RULES: List[Dict] = [
             "idle-timeout-minutes, blocking-timeout-wait-millis 설정을 조정합니다",
             "DB 서버의 max_connections 설정도 함께 확인합니다",
         ],
+        "cli_commands": [
+            "/subsystem=datasources/data-source=*/statistics=pool:read-resource(include-runtime=true)",
+            "/subsystem=datasources/data-source=*/statistics=jdbc:read-resource(include-runtime=true)",
+            "/subsystem=datasources/data-source=*:flush-idle-connection-in-pool()",
+            "/subsystem=datasources/data-source=*:test-connection-in-pool()",
+        ],
     },
     {
         "name": "TransactionTimeout",
@@ -144,6 +179,11 @@ ANOMALY_RULES: List[Dict] = [
             "장시간 실행 로직은 트랜잭션 범위 밖으로 분리합니다",
             "DB 락 경합 여부를 확인합니다 (SHOW PROCESSLIST, pg_stat_activity)",
         ],
+        "cli_commands": [
+            "/subsystem=transactions:read-attribute(name=default-timeout)",
+            "/subsystem=transactions:read-resource(include-runtime=true)",
+            "/subsystem=transactions:write-attribute(name=default-timeout,value=300)",
+        ],
     },
     {
         "name": "JDBCError",
@@ -155,6 +195,11 @@ ANOMALY_RULES: List[Dict] = [
             "커넥션 풀 설정(host, port, 인증정보)이 올바른지 확인합니다",
             "오류 SQL 구문을 로그에서 추출해 직접 실행하여 원인을 파악합니다",
             "valid-connection-checker, check-valid-connection-sql 설정으로 끊어진 커넥션을 자동 제거합니다",
+        ],
+        "cli_commands": [
+            "/subsystem=datasources/data-source=*/statistics=pool:read-resource(include-runtime=true)",
+            "/subsystem=datasources/data-source=*:test-connection-in-pool()",
+            "/subsystem=datasources/data-source=*:flush-invalid-connection-in-pool()",
         ],
     },
     {
@@ -172,6 +217,11 @@ ANOMALY_RULES: List[Dict] = [
             "소켓 타임아웃 값을 적절히 설정해 스레드 점유를 방지합니다",
             "재시도(retry) 로직 및 서킷 브레이커 패턴 적용을 검토합니다",
         ],
+        "cli_commands": [
+            "/subsystem=io/worker=default:read-resource(include-runtime=true)",
+            "/core-service=platform-mbean/type=operating-system:read-resource(include-runtime=true)",
+            "/subsystem=undertow/server=default-server:read-resource(include-runtime=true)",
+        ],
     },
     {
         "name": "NullPointerException",
@@ -183,6 +233,10 @@ ANOMALY_RULES: List[Dict] = [
             "해당 변수에 null 체크(Objects.requireNonNull, Optional 등)를 추가합니다",
             "의존성 주입(DI) 실패 여부를 확인합니다 (빈 초기화 순서 문제)",
             "외부 API 응답값에 대한 null 방어 코드를 추가합니다",
+        ],
+        "cli_commands": [
+            "/core-service=platform-mbean/type=threading:dump-all-threads(locked-monitors=true,locked-synchronizers=true)",
+            "/core-service=platform-mbean/type=threading:read-attribute(name=thread-count)",
         ],
     },
     {
@@ -198,6 +252,11 @@ ANOMALY_RULES: List[Dict] = [
             "jboss-deployment-structure.xml에서 모듈 격리 설정을 점검합니다",
             "클래스로더 계층 문제인 경우 parent-first / child-first 설정을 검토합니다",
         ],
+        "cli_commands": [
+            "/core-service=platform-mbean/type=class-loading:read-resource(include-runtime=true)",
+            ":read-children-names(child-type=deployment)",
+            ":read-children-resources(child-type=deployment,include-runtime=true)",
+        ],
     },
     {
         "name": "SecurityViolation",
@@ -211,6 +270,11 @@ ANOMALY_RULES: List[Dict] = [
             "접근 시도한 리소스의 보안 어노테이션(@RolesAllowed 등)을 점검합니다",
             "비정상 접근 시도인 경우 해당 IP를 방화벽에서 차단합니다",
             "보안 감사 로그를 활성화해 접근 이력을 추적합니다",
+        ],
+        "cli_commands": [
+            "/subsystem=elytron:read-resource(recursive=false,include-runtime=true)",
+            "/subsystem=undertow/application-security-domain=*:read-resource(include-runtime=true)",
+            "/subsystem=elytron/security-domain=*:read-resource(include-runtime=true)",
         ],
     },
     {
@@ -226,6 +290,12 @@ ANOMALY_RULES: List[Dict] = [
             "의존하는 외부 서비스(DB, MQ)의 상태를 확인합니다",
             "EJB 타임아웃 설정을 조정합니다: @AccessTimeout, transaction-timeout",
         ],
+        "cli_commands": [
+            "/subsystem=ejb3:read-resource(include-runtime=true)",
+            "/subsystem=ejb3/thread-pool=default:read-resource(include-runtime=true)",
+            "/subsystem=ejb3/strict-max-bean-instance-pool=*:read-resource(include-runtime=true)",
+            "/subsystem=transactions:read-attribute(name=default-timeout)",
+        ],
     },
     {
         "name": "FileDescriptorLimit",
@@ -238,6 +308,11 @@ ANOMALY_RULES: List[Dict] = [
             "파일/소켓을 닫지 않는 누수 코드를 점검합니다 (lsof -p <pid> | wc -l)",
             "WildFly 프로세스가 사용 중인 파일 목록: lsof -p <pid>",
             "systemd 환경이면 /etc/systemd/system/wildfly.service에 LimitNOFILE=65536 추가",
+        ],
+        "cli_commands": [
+            "/core-service=platform-mbean/type=operating-system:read-attribute(name=open-file-descriptor-count)",
+            "/core-service=platform-mbean/type=operating-system:read-attribute(name=max-file-descriptor-count)",
+            "/core-service=platform-mbean/type=operating-system:read-resource(include-runtime=true)",
         ],
     },
     {
@@ -253,6 +328,12 @@ ANOMALY_RULES: List[Dict] = [
             "큐 컨슈머(MDB)가 정상 동작 중인지 확인합니다",
             "메시지 재전송 횟수(redelivery-delay, max-delivery-attempts) 설정을 점검합니다",
             "브로커 연결 설정(host, port, 인증)이 올바른지 확인합니다",
+        ],
+        "cli_commands": [
+            "/subsystem=messaging-activemq/server=default:read-resource(include-runtime=true)",
+            "/subsystem=messaging-activemq/server=default/jms-queue=*:read-resource(include-runtime=true)",
+            "/subsystem=messaging-activemq/server=default/jms-topic=*:read-resource(include-runtime=true)",
+            "/subsystem=messaging-activemq/server=default/address-setting=#:read-resource(include-runtime=true)",
         ],
     },
 ]
@@ -373,6 +454,67 @@ class ErrorStormDetector:
         return False
 
 
+# ─── jboss-cli.sh executor ────────────────────────────────────────────────────
+class JbossCliExecutor:
+    """Executes jboss-cli.sh commands against the local WildFly instance."""
+
+    def __init__(self, cfg: dict):
+        self.cli_path = cfg.get("path", "/opt/wildfly/bin/jboss-cli.sh")
+        self.host     = cfg.get("host", "localhost")
+        self.port     = int(cfg.get("port", 9990))
+        self.user     = cfg.get("user", "")
+        self.password = cfg.get("password", "")
+        self.timeout  = int(cfg.get("timeout", 60))
+        self.enabled  = cfg.get("enabled", True)
+
+    def available(self) -> bool:
+        return self.enabled and Path(self.cli_path).exists()
+
+    def run(self, commands: List[str]) -> Dict:
+        if not self.enabled:
+            return {"success": False, "output": "", "error": "jboss-cli 비활성화됨 (config: jboss_cli.enabled=false)"}
+        if not Path(self.cli_path).exists():
+            return {"success": False, "output": "", "error": f"jboss-cli.sh 미발견: {self.cli_path}"}
+        if not commands:
+            return {"success": False, "output": "", "error": "실행할 명령이 없습니다"}
+
+        tmp = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".cli", delete=False, dir="/tmp"
+            ) as f:
+                f.write("\n".join(commands))
+                tmp = f.name
+
+            args = [
+                self.cli_path,
+                "--connect",
+                f"--controller={self.host}:{self.port}",
+            ]
+            if self.user:
+                args += [f"--user={self.user}", f"--password={self.password}"]
+            args.append(f"--file={tmp}")
+
+            logger.info("jboss-cli: %s %d commands → %s:%d", self.cli_path, len(commands), self.host, self.port)
+            proc = subprocess.run(args, capture_output=True, text=True, timeout=self.timeout)
+            return {
+                "success": proc.returncode == 0,
+                "returncode": proc.returncode,
+                "output": proc.stdout[:8192],
+                "error": proc.stderr[:2048],
+            }
+        except subprocess.TimeoutExpired:
+            return {"success": False, "output": "", "error": f"CLI 실행 타임아웃 ({self.timeout}s)"}
+        except Exception as e:
+            return {"success": False, "output": "", "error": str(e)}
+        finally:
+            if tmp:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
+
+
 # ─── Log file parser ───────────────────────────────────────────────────────────
 class WildflyLogParser:
     """Tails WildFly 26 server.log and yields LogEntry objects."""
@@ -486,6 +628,11 @@ class AnomalyDetector:
                             "필요 시 WildFly를 재시작합니다: systemctl restart wildfly",
                             "재발 방지를 위해 heap dump 및 thread dump를 확보합니다",
                         ],
+                        cli_commands=[
+                            ":read-attribute(name=server-state)",
+                            "/core-service=platform-mbean/type=runtime:read-attribute(name=uptime)",
+                            "/core-service=platform-mbean/type=memory:read-attribute(name=heap-memory-usage)",
+                        ],
                     )
                 )
                 continue
@@ -498,6 +645,7 @@ class AnomalyDetector:
                             AnomalyEvent(
                                 rule["name"], rule["severity"], rule["description"], entry,
                                 remedy=rule.get("remedy", []),
+                                cli_commands=rule.get("cli_commands", []),
                             )
                         )
                         matched = True
@@ -510,6 +658,11 @@ class AnomalyDetector:
                                 "스택트레이스 전문을 확인해 발생 위치를 파악합니다",
                                 "동일 오류가 반복되는지 빈도를 확인합니다",
                                 "개발팀에 해당 로그를 공유하여 코드 수준 점검을 요청합니다",
+                            ],
+                            cli_commands=[
+                                ":read-attribute(name=server-state)",
+                                "/core-service=platform-mbean/type=threading:read-attribute(name=thread-count)",
+                                "/core-service=platform-mbean/type=memory:read-attribute(name=heap-memory-usage)",
                             ],
                         )
                     )
@@ -599,9 +752,19 @@ class WildflyAgent:
             self.parser = WildflyLogParser(self.cfg["wildfly"]["log_path"])
             self.simulator = None
 
+        # jboss-cli executor
+        cli_cfg = self.cfg.get("jboss_cli", {})
+        self.cli = JbossCliExecutor(cli_cfg)
+        if self.cli.available():
+            logger.info("jboss-cli enabled: %s → %s:%d", self.cli.cli_path, self.cli.host, self.cli.port)
+        else:
+            logger.info("jboss-cli disabled or not found — auto-remediation unavailable")
+
         self._pending: List[Dict] = []
         self._stats: Dict = defaultdict(int)
         self._last_report = datetime.now()
+        self._last_task_poll = datetime.min
+        self._task_poll_interval: int = self.cfg.get("monitoring", {}).get("task_poll_interval", 15)
         self._running = False
 
     @property
@@ -680,6 +843,58 @@ class WildflyAgent:
             return self.simulator.next_entries(random.randint(1, 6))
         return self.parser.read_new_entries()
 
+    # ── Task polling (controller → agent remediation) ──────────────────────────
+    def _poll_tasks(self):
+        """Poll controller for pending remediation tasks and execute them."""
+        try:
+            r = requests.get(
+                f"{self.controller_url}/api/agents/{self.server_id}/tasks",
+                headers=self._headers,
+                timeout=10,
+            )
+            r.raise_for_status()
+            tasks = r.json()
+            for task in tasks:
+                self._execute_task(task)
+        except requests.exceptions.ConnectionError:
+            logger.debug("Task poll skipped: controller unreachable")
+        except Exception as e:
+            logger.debug("Task poll failed: %s", e)
+
+    def _execute_task(self, task: Dict):
+        task_id = task.get("task_id", "?")
+        rule_name = task.get("rule_name", "unknown")
+        commands: List[str] = task.get("cli_commands", [])
+
+        logger.info("Executing remediation task %s [%s] — %d commands", task_id, rule_name, len(commands))
+
+        if self.cli and self.cli.available() and commands:
+            result = self.cli.run(commands)
+        elif not commands:
+            result = {"success": False, "output": "", "error": "실행할 CLI 명령이 없습니다"}
+        else:
+            result = {
+                "success": False,
+                "output": "",
+                "error": f"jboss-cli.sh를 찾을 수 없습니다: {self.cli.cli_path}" if self.cli
+                         else "jboss_cli 설정이 없습니다",
+            }
+
+        if result.get("success"):
+            logger.info("Task %s 완료 ✓", task_id)
+        else:
+            logger.warning("Task %s 실패: %s", task_id, result.get("error"))
+
+        self._post(
+            f"/api/tasks/{task_id}/result",
+            {
+                "task_id": task_id,
+                "server_id": self.server_id,
+                "result": result,
+                "executed_at": datetime.now().isoformat(),
+            },
+        )
+
     def run(self):
         logger.info(
             "=== WildFly Agent starting === id=%s  host=%s  controller=%s",
@@ -719,6 +934,12 @@ class WildflyAgent:
                         self._pending.clear()
                     self._last_report = datetime.now()
                     logger.info("Stats: %s", dict(self._stats))
+
+                # Task polling (controller → agent auto-remediation)
+                task_elapsed = (datetime.now() - self._last_task_poll).total_seconds()
+                if task_elapsed >= self._task_poll_interval:
+                    self._poll_tasks()
+                    self._last_task_poll = datetime.now()
 
             except KeyboardInterrupt:
                 logger.info("Shutdown requested")

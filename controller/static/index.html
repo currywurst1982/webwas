@@ -752,6 +752,50 @@
       overflow-y: auto;
     }
 
+    /* 적용 완료 뱃지 */
+    .was-applied-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--low);
+      background: rgba(63,185,80,.1);
+      border: 1px solid rgba(63,185,80,.25);
+      border-radius: 4px;
+      padding: 2px 8px;
+      margin-top: 6px;
+      font-weight: 600;
+    }
+
+    /* 현재 설정값 확인 박스 */
+    .was-verified-box {
+      margin-top: 8px;
+      background: rgba(63,185,80,.07);
+      border: 1px solid rgba(63,185,80,.25);
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+    .was-verified-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--low);
+      margin-bottom: 4px;
+      font-weight: 700;
+    }
+    .was-verified-val {
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 13px;
+      color: var(--bright);
+      font-weight: 600;
+      word-break: break-all;
+    }
+    .was-verified-time {
+      font-size: 11px;
+      color: var(--dim);
+      margin-top: 2px;
+    }
+
     /* ── Claude AI Analysis ─────────────────────────────────────────────────── */
     .claude-ask-btn {
       display: flex;
@@ -1546,123 +1590,147 @@ let _wasTaskId   = null;
 let _wasSelOp    = null;
 
 // 카테고리별 jboss-cli 설정 작업 정의
+// ── WAS Operations (verify 명령 포함) ─────────────────────────────────────────
 const WAS_OPS = [
   // ── 데이터소스 ──────────────────────────────────────────────────────────────
   { cat:'데이터소스', id:'ds_max_pool', name:'최대 커넥션 풀 크기 변경',
     desc:'데이터소스 최대 동시 커넥션 수를 설정합니다. 기본값 20, 권장 10~50.',
     params:[{id:'ds',  lbl:'데이터소스 이름', def:'ExampleDS'},
             {id:'val', lbl:'최대 커넥션 수',  def:'20', type:'number'}],
-    cmd: p => [`/subsystem=datasources/data-source=${p.ds}:write-attribute(name=max-pool-size,value=${p.val})`],
+    cmd:    p => [`/subsystem=datasources/data-source=${p.ds}:write-attribute(name=max-pool-size,value=${p.val})`],
+    verify: p => `/subsystem=datasources/data-source=${p.ds}:read-attribute(name=max-pool-size)`,
   },
   { cat:'데이터소스', id:'ds_min_pool', name:'최소 커넥션 풀 크기 변경',
     desc:'유휴 상태에서 유지할 최소 커넥션 수입니다.',
     params:[{id:'ds',  lbl:'데이터소스 이름', def:'ExampleDS'},
             {id:'val', lbl:'최소 커넥션 수',  def:'5', type:'number'}],
-    cmd: p => [`/subsystem=datasources/data-source=${p.ds}:write-attribute(name=min-pool-size,value=${p.val})`],
+    cmd:    p => [`/subsystem=datasources/data-source=${p.ds}:write-attribute(name=min-pool-size,value=${p.val})`],
+    verify: p => `/subsystem=datasources/data-source=${p.ds}:read-attribute(name=min-pool-size)`,
   },
   { cat:'데이터소스', id:'ds_timeout', name:'커넥션 획득 타임아웃 변경',
     desc:'커넥션 풀에서 커넥션을 얻기까지 최대 대기 시간(초)입니다.',
     params:[{id:'ds',  lbl:'데이터소스 이름', def:'ExampleDS'},
             {id:'val', lbl:'타임아웃(초)',     def:'30', type:'number'}],
-    cmd: p => [`/subsystem=datasources/data-source=${p.ds}:write-attribute(name=blocking-timeout-wait-millis,value=${p.val * 1000})`],
+    cmd:    p => [`/subsystem=datasources/data-source=${p.ds}:write-attribute(name=blocking-timeout-wait-millis,value=${p.val * 1000})`],
+    verify: p => `/subsystem=datasources/data-source=${p.ds}:read-attribute(name=blocking-timeout-wait-millis)`,
   },
   { cat:'데이터소스', id:'ds_validate', name:'커넥션 유효성 검사 활성화',
     desc:'커넥션을 빌릴 때마다 유효성을 검사합니다. 끊긴 커넥션 문제 해결에 유용합니다.',
     params:[{id:'ds',  lbl:'데이터소스 이름', def:'ExampleDS'},
             {id:'val', lbl:'활성화 여부', def:'true', type:'select', opts:['true','false']}],
-    cmd: p => [
+    cmd:    p => [
       `/subsystem=datasources/data-source=${p.ds}:write-attribute(name=validate-on-match,value=${p.val})`,
       `/subsystem=datasources/data-source=${p.ds}:write-attribute(name=background-validation,value=${p.val === 'true' ? 'false' : 'true'})`,
     ],
+    verify: p => `/subsystem=datasources/data-source=${p.ds}:read-attribute(name=validate-on-match)`,
   },
   { cat:'데이터소스', id:'ds_query', name:'커넥션 검증 쿼리 설정',
     desc:'커넥션 유효성 검사에 사용할 SQL 쿼리를 지정합니다.',
     params:[{id:'ds',  lbl:'데이터소스 이름', def:'ExampleDS'},
             {id:'val', lbl:'검증 쿼리', def:'SELECT 1'}],
-    cmd: p => [`/subsystem=datasources/data-source=${p.ds}:write-attribute(name=check-valid-connection-sql,value="${p.val}")`],
+    cmd:    p => [`/subsystem=datasources/data-source=${p.ds}:write-attribute(name=check-valid-connection-sql,value="${p.val}")`],
+    verify: p => `/subsystem=datasources/data-source=${p.ds}:read-attribute(name=check-valid-connection-sql)`,
   },
   // ── 스레드풀 ────────────────────────────────────────────────────────────────
   { cat:'스레드풀', id:'io_threads', name:'IO 워커 스레드 수 변경',
-    desc:'비동기 IO 처리에 사용되는 스레드 수입니다. 보통 CPU 코어 수 * 2.',
+    desc:'비동기 IO 처리에 사용되는 스레드 수입니다. 보통 CPU 코어 수 × 2.',
     params:[{id:'val', lbl:'IO 스레드 수', def:'4', type:'number'}],
-    cmd: p => [`/subsystem=io/worker=default:write-attribute(name=io-threads,value=${p.val})`],
+    cmd:    p => [`/subsystem=io/worker=default:write-attribute(name=io-threads,value=${p.val})`],
+    verify: _  => `/subsystem=io/worker=default:read-attribute(name=io-threads)`,
   },
   { cat:'스레드풀', id:'task_threads', name:'Task 최대 스레드 수 변경',
     desc:'블로킹 작업 처리를 위한 최대 스레드 수입니다.',
     params:[{id:'val', lbl:'최대 스레드 수', def:'64', type:'number'}],
-    cmd: p => [`/subsystem=io/worker=default:write-attribute(name=task-max-threads,value=${p.val})`],
+    cmd:    p => [`/subsystem=io/worker=default:write-attribute(name=task-max-threads,value=${p.val})`],
+    verify: _  => `/subsystem=io/worker=default:read-attribute(name=task-max-threads)`,
   },
   { cat:'스레드풀', id:'ejb_threads', name:'EJB 스레드풀 최대 크기 변경',
     desc:'EJB 요청 처리를 위한 최대 스레드 수입니다.',
     params:[{id:'val', lbl:'최대 스레드 수', def:'10', type:'number'}],
-    cmd: p => [`/subsystem=ejb3/thread-pool=default:write-attribute(name=max-threads,value=${p.val})`],
+    cmd:    p => [`/subsystem=ejb3/thread-pool=default:write-attribute(name=max-threads,value=${p.val})`],
+    verify: _  => `/subsystem=ejb3/thread-pool=default:read-attribute(name=max-threads)`,
   },
   // ── 로깅 ────────────────────────────────────────────────────────────────────
   { cat:'로깅', id:'log_root', name:'ROOT 로그 레벨 변경',
     desc:'전체 애플리케이션의 기본 로그 레벨을 변경합니다.',
     params:[{id:'val', lbl:'로그 레벨', def:'INFO', type:'select',
              opts:['TRACE','DEBUG','INFO','WARN','ERROR','FATAL']}],
-    cmd: p => [`/subsystem=logging/root-logger=ROOT:write-attribute(name=level,value=${p.val})`],
+    cmd:    p => [`/subsystem=logging/root-logger=ROOT:write-attribute(name=level,value=${p.val})`],
+    verify: _  => `/subsystem=logging/root-logger=ROOT:read-attribute(name=level)`,
   },
   { cat:'로깅', id:'log_category', name:'카테고리 로그 레벨 변경',
     desc:'특정 패키지/클래스의 로그 레벨을 개별 설정합니다.',
     params:[{id:'cat', lbl:'로거 카테고리', def:'org.jboss'},
             {id:'val', lbl:'로그 레벨', def:'WARN', type:'select',
              opts:['TRACE','DEBUG','INFO','WARN','ERROR','FATAL']}],
-    cmd: p => [
+    cmd:    p => [
       `/subsystem=logging/logger=${p.cat}:add(level=${p.val})`,
       `/subsystem=logging/logger=${p.cat}:write-attribute(name=level,value=${p.val})`,
     ],
+    verify: p => `/subsystem=logging/logger=${p.cat}:read-attribute(name=level)`,
   },
   // ── 트랜잭션 ────────────────────────────────────────────────────────────────
   { cat:'트랜잭션', id:'tx_timeout', name:'기본 트랜잭션 타임아웃 변경',
     desc:'트랜잭션이 완료되지 않을 때 롤백할 최대 시간(초)입니다. 기본값 300.',
     params:[{id:'val', lbl:'타임아웃(초)', def:'300', type:'number'}],
-    cmd: p => [`/subsystem=transactions:write-attribute(name=default-timeout,value=${p.val})`],
+    cmd:    p => [`/subsystem=transactions:write-attribute(name=default-timeout,value=${p.val})`],
+    verify: _  => `/subsystem=transactions:read-attribute(name=default-timeout)`,
   },
   // ── HTTP/웹 ─────────────────────────────────────────────────────────────────
   { cat:'HTTP/웹', id:'http_timeout', name:'HTTP Keep-Alive 타임아웃 설정',
-    desc:'HTTP 연결 유지 최대 시간(초)입니다.',
+    desc:'HTTP 연결 유지 최대 시간(밀리초)입니다.',
     params:[{id:'val', lbl:'타임아웃(초)', def:'15', type:'number'}],
-    cmd: p => [`/subsystem=undertow/server=default-server/http-listener=default:write-attribute(name=keep-alive-timeout,value=${p.val * 1000})`],
+    cmd:    p => [`/subsystem=undertow/server=default-server/http-listener=default:write-attribute(name=keep-alive-timeout,value=${p.val * 1000})`],
+    verify: _  => `/subsystem=undertow/server=default-server/http-listener=default:read-attribute(name=keep-alive-timeout)`,
   },
-  { cat:'HTTP/웹', id:'http_io_threads', name:'HTTP IO 스레드 수 변경',
-    desc:'HTTP 요청 수신에 사용하는 IO 스레드 수입니다.',
-    params:[{id:'val', lbl:'IO 스레드 수', def:'2', type:'number'}],
-    cmd: p => [`/subsystem=undertow/server=default-server/http-listener=default:write-attribute(name=tcp-backlog,value=${p.val * 100})`],
+  { cat:'HTTP/웹', id:'http_backlog', name:'TCP 백로그 크기 설정',
+    desc:'동시 연결 요청 대기열 크기입니다.',
+    params:[{id:'val', lbl:'백로그 크기', def:'200', type:'number'}],
+    cmd:    p => [`/subsystem=undertow/server=default-server/http-listener=default:write-attribute(name=tcp-backlog,value=${p.val})`],
+    verify: _  => `/subsystem=undertow/server=default-server/http-listener=default:read-attribute(name=tcp-backlog)`,
   },
   // ── 서버 제어 ────────────────────────────────────────────────────────────────
   { cat:'서버 제어', id:'srv_state', name:'서버 상태 조회',
     desc:'현재 WildFly 서버의 상태 정보를 조회합니다.',
     params:[],
-    cmd: () => [':read-attribute(name=server-state)', ':read-attribute(name=running-mode)'],
+    cmd:    () => [':read-attribute(name=server-state)', ':read-attribute(name=running-mode)'],
+    verify: null,
   },
   { cat:'서버 제어', id:'srv_reload', name:'서버 Reload (설정 반영)',
     desc:'설정 변경 후 서비스 중단 없이 재로드합니다. 권장 방식.',
     params:[],
-    cmd: () => [':reload'],
+    cmd:    () => [':reload'],
+    verify: _  => ':read-attribute(name=server-state)',
   },
   { cat:'서버 제어', id:'srv_suspend', name:'서버 일시 중단 (Graceful)',
     desc:'신규 요청을 거부하고 기존 요청을 완료 후 중단합니다.',
     params:[{id:'timeout', lbl:'대기 시간(초, -1=무제한)', def:'60', type:'number'}],
-    cmd: p => [`:suspend(timeout=${p.timeout})`],
+    cmd:    p => [`:suspend(timeout=${p.timeout})`],
+    verify: _  => ':read-attribute(name=suspend-state)',
   },
   { cat:'서버 제어', id:'srv_resume', name:'서버 재개',
     desc:'일시 중단된 서버를 다시 활성화합니다.',
     params:[],
-    cmd: () => [':resume'],
+    cmd:    () => [':resume'],
+    verify: _  => ':read-attribute(name=server-state)',
   },
   { cat:'서버 제어', id:'jvm_gc', name:'GC 강제 실행',
     desc:'JVM 가비지 컬렉션을 즉시 실행합니다. 메모리 부족 임시 대응에 사용합니다.',
     params:[],
-    cmd: () => ['/core-service=platform-mbean/type=memory:invoke-operation(name=gc)'],
+    cmd:    () => ['/core-service=platform-mbean/type=memory:invoke-operation(name=gc)'],
+    verify: _  => '/core-service=platform-mbean/type=memory:read-attribute(name=heap-memory-usage)',
   },
   { cat:'서버 제어', id:'jvm_heap', name:'JVM 힙 메모리 사용량 조회',
     desc:'현재 JVM 힙 메모리 사용 현황을 조회합니다.',
     params:[],
-    cmd: () => ['/core-service=platform-mbean/type=memory:read-attribute(name=heap-memory-usage)'],
+    cmd:    () => ['/core-service=platform-mbean/type=memory:read-attribute(name=heap-memory-usage)'],
+    verify: null,
   },
 ];
+
+// ── WAS 적용 상태 저장소 {serverId: {opId: {params, appliedAt, verifiedValue}}} ──
+const _wasApplied   = {};  // 정상 적용된 항목의 파라미터·결과 저장
+const _wasPending   = {};  // 실행 중인 opId (taskId → opId)
 
 function openWasPanel(serverId) {
   _wasServerId = serverId;
@@ -1681,56 +1749,114 @@ function closeWasPanel() {
   document.body.style.overflow = '';
 }
 
+// jboss-cli 출력에서 "result" 값 추출 (마지막 occurrence = verify 명령 결과)
+function _parseVerifyValue(output) {
+  if (!output) return null;
+  const matches = [...output.matchAll(/"result"\s*=>\s*([^\n},]+)/g)];
+  if (!matches.length) return null;
+  return matches[matches.length - 1][1].trim().replace(/^"|"$/g, '');
+}
+
+function _appliedState(serverId, opId) {
+  return (_wasApplied[serverId] || {})[opId] || null;
+}
+
 function _buildWasPanel() {
-  // Group ops by category
   const cats = {};
-  WAS_OPS.forEach(op => {
-    if (!cats[op.cat]) cats[op.cat] = [];
-    cats[op.cat].push(op);
-  });
+  WAS_OPS.forEach(op => { (cats[op.cat] = cats[op.cat] || []).push(op); });
 
   let html = '';
   for (const [cat, ops] of Object.entries(cats)) {
-    html += `<div class="was-category">
-      <div class="was-cat-title">${esc(cat)}</div>`;
+    html += `<div class="was-category"><div class="was-cat-title">${esc(cat)}</div>`;
     ops.forEach(op => {
+      const applied = _appliedState(_wasServerId, op.id);
+
+      // 파라미터 입력 행 (적용된 값이 있으면 해당 값으로 pre-fill)
       const paramRows = op.params.map(p => {
+        const storedVal = applied?.params?.[p.id] ?? p.def;
         const inputEl = p.type === 'select'
-          ? `<select class="was-input" id="wp-${op.id}-${p.id}" onchange="_updatePreview('${op.id}')">${p.opts.map(o=>`<option${o===p.def?' selected':''}>${o}</option>`).join('')}</select>`
-          : `<input class="was-input" id="wp-${op.id}-${p.id}" type="${p.type||'text'}" value="${esc(p.def)}" oninput="_updatePreview('${op.id}')">`;
+          ? `<select class="was-input" id="wp-${op.id}-${p.id}" onchange="_updatePreview('${op.id}')">
+               ${(p.opts || []).map(o => `<option${o === storedVal ? ' selected' : ''}>${o}</option>`).join('')}
+             </select>`
+          : `<input class="was-input" id="wp-${op.id}-${p.id}" type="${p.type || 'text'}"
+               value="${esc(storedVal)}" oninput="_updatePreview('${op.id}')">`;
         return `<div class="was-param-row"><label>${esc(p.lbl)}</label>${inputEl}</div>`;
       }).join('');
-      html += `<div class="was-op-card" id="wop-${op.id}" onclick="_selectWasOp('${op.id}')">
+
+      // 마지막 적용 뱃지
+      const badge = applied
+        ? `<div class="was-applied-badge">✅ 마지막 적용: ${esc(applied.verifiedValue ?? '완료')} &nbsp;·&nbsp; ${esc(applied.appliedAt)}</div>`
+        : '';
+
+      // 저장된 verify 결과
+      const storedVerify = applied?.verifiedValue
+        ? `<div class="was-verified-box">
+             <div class="was-verified-label">현재 설정값 (마지막 확인)</div>
+             <div class="was-verified-val">${esc(applied.verifiedValue)}</div>
+             <div class="was-verified-time">${esc(applied.appliedAt)} 확인됨</div>
+           </div>`
+        : '';
+
+      html += `<div class="was-op-card${applied ? ' selected' : ''}" id="wop-${op.id}" onclick="_selectWasOp('${op.id}')">
         <div class="was-op-name">${esc(op.name)}</div>
         <div class="was-op-desc">${esc(op.desc)}</div>
-        <div class="was-params">
+        ${badge}
+        <div class="was-params" ${applied ? 'style="display:flex"' : ''}>
           ${paramRows}
           <div class="was-preview" id="wprev-${op.id}"></div>
-          <button class="was-exec-btn" id="wexec-${op.id}" onclick="event.stopPropagation();executeWasOp('${op.id}')">▶ 실행</button>
-          <div class="was-result" id="wres-${op.id}">
-            <div class="was-result-head" id="wres-head-${op.id}"></div>
+          <button class="was-exec-btn" id="wexec-${op.id}"
+            onclick="event.stopPropagation();executeWasOp('${op.id}')">▶ 실행</button>
+          <div class="was-result${applied ? ' visible' : ''}" id="wres-${op.id}">
+            <div class="was-result-head${applied ? ' done' : ''}" id="wres-head-${op.id}">
+              ${applied ? '✅ 정상 적용됨' : ''}
+            </div>
             <div class="was-result-body" id="wres-body-${op.id}"></div>
           </div>
+          ${storedVerify ? `<div id="wverify-${op.id}">${storedVerify}</div>` : `<div id="wverify-${op.id}"></div>`}
         </div>
       </div>`;
     });
     html += '</div>';
   }
   document.getElementById('was-panel-body').innerHTML = html;
+
+  // 패널 빌드 후 열린 항목의 preview 갱신
+  WAS_OPS.forEach(op => {
+    if (document.getElementById('wop-' + op.id)?.classList.contains('selected')) {
+      _updatePreview(op.id);
+    }
+  });
 }
 
 function _selectWasOp(opId) {
-  if (_wasSelOp === opId) {
-    // 토글 닫기
-    document.getElementById('wop-' + opId)?.classList.remove('selected');
+  const card = document.getElementById('wop-' + opId);
+  const params = card?.querySelector('.was-params');
+  if (!card) return;
+
+  const isOpen = card.classList.contains('selected');
+  // 다른 항목 닫기
+  if (_wasSelOp && _wasSelOp !== opId) {
+    const prev = document.getElementById('wop-' + _wasSelOp);
+    if (prev) {
+      const prevApplied = _appliedState(_wasServerId, _wasSelOp);
+      if (!prevApplied) {
+        prev.classList.remove('selected');
+        const pp = prev.querySelector('.was-params');
+        if (pp) pp.style.display = '';
+      }
+    }
+  }
+
+  if (isOpen && !_appliedState(_wasServerId, opId)) {
+    card.classList.remove('selected');
+    if (params) params.style.display = '';
     _wasSelOp = null;
     return;
   }
-  if (_wasSelOp) {
-    document.getElementById('wop-' + _wasSelOp)?.classList.remove('selected');
-  }
+
+  card.classList.add('selected');
+  if (params) params.style.display = 'flex';
   _wasSelOp = opId;
-  document.getElementById('wop-' + opId)?.classList.add('selected');
   _updatePreview(opId);
 }
 
@@ -1746,7 +1872,11 @@ function _getWasOpParams(op) {
 function _updatePreview(opId) {
   const op = WAS_OPS.find(o => o.id === opId);
   if (!op) return;
-  const cmds = op.cmd(_getWasOpParams(op));
+  const params = _getWasOpParams(op);
+  const cmds = [
+    ...op.cmd(params),
+    ...(op.verify ? ['# ─ 반영 확인 ─', op.verify(params)] : []),
+  ];
   const prev = document.getElementById('wprev-' + opId);
   if (prev) prev.textContent = cmds.join('\n');
 }
@@ -1754,7 +1884,15 @@ function _updatePreview(opId) {
 async function executeWasOp(opId) {
   const op = WAS_OPS.find(o => o.id === opId);
   if (!op || !_wasServerId) return;
-  const cmds = op.cmd(_getWasOpParams(op));
+
+  const params  = _getWasOpParams(op);
+  const cmds    = [
+    ...op.cmd(params),
+    ...(op.verify ? [op.verify(params)] : []),
+  ];
+
+  // 파라미터 임시 저장 (결과 수신 시 적용 상태에 기록)
+  _wasPending[opId] = params;
 
   const btn  = document.getElementById('wexec-' + opId);
   const res  = document.getElementById('wres-' + opId);
@@ -1767,6 +1905,7 @@ async function executeWasOp(opId) {
   head.className = 'was-result-head running';
   head.textContent = '⏳ 에이전트에 전송 중…';
   body.textContent = '';
+  document.getElementById('wverify-' + opId).innerHTML = '';
 
   try {
     const r = await fetch(`/api/agents/${encodeURIComponent(_wasServerId)}/remediate`, {
@@ -1777,7 +1916,7 @@ async function executeWasOp(opId) {
     const json = await r.json();
     if (!r.ok) throw new Error(json.detail || `HTTP ${r.status}`);
     _wasTaskId = json.task_id;
-    btn.textContent = `⏳ 대기 중 (${json.task_id})`;
+    btn.textContent = `⏳ 대기 중…`;
     head.textContent = '⏳ 에이전트 실행 대기 중…';
   } catch(e) {
     head.className = 'was-result-head failed';
@@ -1785,30 +1924,77 @@ async function executeWasOp(opId) {
     body.textContent = e.message;
     btn.disabled = false;
     btn.textContent = '▶ 실행';
+    delete _wasPending[opId];
   }
 }
 
-// task_result 이벤트를 WAS 패널에도 반영
+// task_result 이벤트 → WAS 패널 업데이트 + 적용 상태 저장
 function _handleWasTaskResult(td) {
   if (td.task_id !== _wasTaskId) return;
   const opId = td.rule_name;
+  const op   = WAS_OPS.find(o => o.id === opId);
   const res  = document.getElementById('wres-' + opId);
   const head = document.getElementById('wres-head-' + opId);
   const body = document.getElementById('wres-body-' + opId);
   const btn  = document.getElementById('wexec-' + opId);
-  if (!res) return;
+  if (!res || !op) return;
 
   const ok = td.status === 'done';
   res.className  = 'was-result visible';
   head.className = 'was-result-head ' + td.status;
-  head.textContent = ok ? '✅ 완료' : '❌ 실패';
-  if (td.result) {
+
+  if (ok) {
+    const rawOutput = td.result?.output || '';
+    const verified  = op.verify ? _parseVerifyValue(rawOutput) : null;
+    const now       = new Date().toLocaleTimeString('ko-KR');
+
+    // 적용 상태 저장
+    const savedParams = _wasPending[opId] || {};
+    if (!_wasApplied[_wasServerId]) _wasApplied[_wasServerId] = {};
+    _wasApplied[_wasServerId][opId] = {
+      params:        savedParams,
+      appliedAt:     now,
+      verifiedValue: verified,
+    };
+    delete _wasPending[opId];
+
+    head.textContent = '✅ 정상 적용됨';
+    body.textContent = rawOutput || '(출력 없음)';
+
+    // 현재 설정값 표시
+    const verifyBox = document.getElementById('wverify-' + opId);
+    if (verifyBox) {
+      verifyBox.innerHTML = verified
+        ? `<div class="was-verified-box">
+             <div class="was-verified-label">현재 설정값 확인</div>
+             <div class="was-verified-val">${esc(verified)}</div>
+             <div class="was-verified-time">${esc(now)} 확인됨</div>
+           </div>`
+        : '';
+    }
+
+    // 카드 뱃지 갱신
+    const card = document.getElementById('wop-' + opId);
+    if (card) {
+      let badge = card.querySelector('.was-applied-badge');
+      if (!badge) {
+        badge = document.createElement('div');
+        badge.className = 'was-applied-badge';
+        card.querySelector('.was-op-desc')?.insertAdjacentElement('afterend', badge);
+      }
+      badge.textContent = `✅ 마지막 적용: ${verified ?? '완료'} · ${now}`;
+    }
+
+  } else {
+    head.textContent = '❌ 실패';
     body.textContent = [
-      td.result.output ? '[출력]\n' + td.result.output : '',
-      td.result.error  ? '[오류]\n' + td.result.error  : '',
+      td.result?.output ? '[출력]\n' + td.result.output : '',
+      td.result?.error  ? '[오류]\n' + td.result.error  : '',
     ].filter(Boolean).join('\n\n') || '(결과 없음)';
+    delete _wasPending[opId];
   }
-  if (btn) { btn.disabled = false; btn.textContent = '▶ 재실행'; }
+
+  if (btn) { btn.disabled = false; btn.textContent = ok ? '▶ 재실행' : '▶ 다시 시도'; }
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────

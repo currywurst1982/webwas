@@ -562,6 +562,60 @@
 
     .feed-row { cursor: pointer; }
 
+    /* ── Claude AI Analysis ─────────────────────────────────────────────────── */
+    .claude-ask-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      padding: 10px 16px;
+      background: rgba(139, 92, 246, 0.12);
+      border: 1px solid rgba(139, 92, 246, 0.4);
+      border-radius: 6px;
+      color: #c4b5fd;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+      justify-content: center;
+    }
+    .claude-ask-btn:hover:not(:disabled) { background: rgba(139, 92, 246, 0.22); border-color: rgba(139,92,246,.7); }
+    .claude-ask-btn:disabled { opacity:.4; cursor:not-allowed; }
+    .claude-ask-btn.loading  { color:var(--high); border-color:var(--high); background:rgba(210,153,34,.1); }
+
+    .claude-result { margin-top: 12px; display: none; }
+    .claude-result.visible { display:block; }
+
+    .claude-result-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 12px;
+      background: rgba(139, 92, 246, 0.12);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      border-radius: 6px 6px 0 0;
+      font-size: 12px;
+      font-weight: 600;
+      color: #c4b5fd;
+    }
+
+    .claude-result-body {
+      background: var(--surface2);
+      border: 1px solid rgba(139, 92, 246, 0.2);
+      border-top: none;
+      border-radius: 0 0 6px 6px;
+      padding: 14px 16px;
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.65;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 520px;
+      overflow-y: auto;
+    }
+    .claude-result-body::-webkit-scrollbar { width:4px; }
+    .claude-result-body::-webkit-scrollbar-thumb { background:rgba(139,92,246,.3); border-radius:2px; }
+
     @media (max-width: 800px) {
       .feed-row { grid-template-columns: 70px 1fr 1fr; }
       .feed-row .feed-time, .feed-row .feed-server { display:none; }
@@ -717,6 +771,18 @@
       <div class="log-block" id="pi-log"></div>
     </div>
 
+    <!-- Claude AI 분석 -->
+    <div class="panel-section" id="claude-section">
+      <div class="panel-section-title">✨ Claude AI 분석</div>
+      <button class="claude-ask-btn" id="claude-ask-btn" onclick="askClaude()">
+        ✨ Claude에 문의하기
+      </button>
+      <div class="claude-result" id="claude-result">
+        <div class="claude-result-head" id="claude-result-head">✨ Claude AI 분석 결과</div>
+        <div class="claude-result-body" id="claude-result-body"></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -838,6 +904,17 @@ function handle(msg) {
         `${isOk ? '✅' : '❌'} 조치 ${isOk ? '완료' : '실패'} [${td.server_id}]`,
         `${td.rule_name}: ${td.result?.output?.substring(0, 60) || td.result?.error || ''}`
       );
+      break;
+    }
+
+    case 'claude_analysis': {
+      const cd = msg.data;
+      // If the panel is open for the same anomaly, display the result
+      if (_panelAnomaly &&
+          _panelAnomaly.server_id === cd.server_id &&
+          _panelAnomaly.rule_name === cd.rule_name) {
+        _showClaudeResult('done', cd.analysis);
+      }
       break;
     }
 
@@ -1097,6 +1174,52 @@ function showTaskResult(status, result) {
   btn.textContent = ok ? '✅ 조치 완료' : '❌ 실패 — 다시 시도';
 }
 
+// ── Claude AI Analysis ────────────────────────────────────────────────────────
+async function askClaude() {
+  if (!_panelAnomaly) return;
+  const btn = document.getElementById('claude-ask-btn');
+  btn.disabled = true;
+  btn.className = 'claude-ask-btn loading';
+  btn.textContent = '⏳ Claude 분석 중…';
+  _showClaudeResult('loading', null);
+
+  try {
+    const res = await fetch('/api/anomalies/analyze', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({anomaly: _panelAnomaly}),
+    });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+    _showClaudeResult('done', json.analysis || '(분석 결과 없음)');
+    btn.textContent = '✨ 다시 문의하기';
+    btn.className = 'claude-ask-btn';
+    btn.disabled = false;
+  } catch (e) {
+    _showClaudeResult('error', e.message);
+    btn.textContent = '✨ Claude에 문의하기';
+    btn.className = 'claude-ask-btn';
+    btn.disabled = false;
+  }
+}
+
+function _showClaudeResult(state, text) {
+  const wrap = document.getElementById('claude-result');
+  const head = document.getElementById('claude-result-head');
+  const body = document.getElementById('claude-result-body');
+  wrap.className = 'claude-result visible';
+  if (state === 'loading') {
+    head.textContent = '⏳ Claude AI 분석 중…';
+    body.textContent = '';
+  } else if (state === 'done') {
+    head.textContent = '✨ Claude AI 분석 결과';
+    body.textContent = text || '';
+  } else {
+    head.innerHTML = '<span style="color:var(--critical)">❌ 분석 실패</span>';
+    body.textContent = text || '';
+  }
+}
+
 // ── Detail panel ─────────────────────────────────────────────────────────────
 function openPanel(idx) {
   const list = S.filter === 'ALL'
@@ -1158,6 +1281,12 @@ function openPanel(idx) {
 
   // 원본 로그
   document.getElementById('pi-log').textContent = a.log_entry?.message || '(로그 메시지 없음)';
+
+  // Claude 분석 영역 초기화
+  document.getElementById('claude-ask-btn').className = 'claude-ask-btn';
+  document.getElementById('claude-ask-btn').textContent = '✨ Claude에 문의하기';
+  document.getElementById('claude-ask-btn').disabled = false;
+  document.getElementById('claude-result').className = 'claude-result';
 
   // 패널 열기
   document.getElementById('panel-overlay').classList.add('open');

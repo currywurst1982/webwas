@@ -31,6 +31,13 @@ except ImportError:
     print("[ERROR] Missing dependencies. Run: pip install fastapi 'uvicorn[standard]' pyyaml")
     sys.exit(1)
 
+# Optional: Anthropic Claude AI
+try:
+    from anthropic import AsyncAnthropic
+    _anthropic_available = True
+except ImportError:
+    _anthropic_available = False
+
 # ─── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
     level=logging.INFO,
@@ -56,6 +63,25 @@ API_KEY = _ctrl.get("api_key", "")
 AGENT_TIMEOUT_SEC = int(_ctrl.get("agent_timeout", 90))
 MAX_PER_AGENT = int(_ctrl.get("max_anomalies_per_agent", 200))
 MAX_GLOBAL = int(_ctrl.get("max_global_anomalies", 1000))
+
+# ─── Claude AI config ─────────────────────────────────────────────────────────
+_claude_cfg = _cfg.get("claude", {})
+CLAUDE_ENABLED = _claude_cfg.get("enabled", False)
+CLAUDE_API_KEY = _claude_cfg.get("api_key", "") or os.environ.get("ANTHROPIC_API_KEY", "")
+CLAUDE_MODEL = _claude_cfg.get("model", "claude-opus-4-6")
+CLAUDE_AUTO_ANALYZE = _claude_cfg.get("auto_analyze", False)
+
+claude_client = None
+if CLAUDE_ENABLED:
+    if not _anthropic_available:
+        logger.warning("Claude AI enabled but 'anthropic' package not installed. Run: pip install anthropic")
+        CLAUDE_ENABLED = False
+    elif not CLAUDE_API_KEY:
+        logger.warning("Claude AI enabled but no API key set (claude.api_key or ANTHROPIC_API_KEY)")
+        CLAUDE_ENABLED = False
+    else:
+        claude_client = AsyncAnthropic(api_key=CLAUDE_API_KEY)
+        logger.info("Claude AI integration enabled (model: %s, auto_analyze: %s)", CLAUDE_MODEL, CLAUDE_AUTO_ANALYZE)
 
 # ─── Data models ──────────────────────────────────────────────────────────────
 class RemediationTask:
@@ -174,6 +200,75 @@ def _check_key(request: Request) -> bool:
     if not API_KEY:
         return True
     return request.headers.get("X-API-Key") == API_KEY
+
+
+# ─── Claude AI analysis ───────────────────────────────────────────────────────
+async def analyze_with_claude(anomaly: dict) -> str:
+    """Send anomaly details to Claude and return analysis text in Korean."""
+    if not claude_client:
+        return "Claude AI가 비활성화되어 있거나 API 키가 설정되지 않았습니다."
+
+    log_msg   = (anomaly.get("log_entry") or {}).get("message", "(로그 없음)")
+    rule_name = anomaly.get("rule_name", "알 수 없는 이상")
+    desc      = anomaly.get("description", "")
+    severity  = anomaly.get("severity", "")
+    server_id = anomaly.get("server_id", "")
+    remedy    = anomaly.get("remedy", [])
+    remedy_text = "\n".join(f"- {r}" for r in remedy) if remedy else "없음"
+
+    prompt = f"""당신은 WildFly 26 JBoss 애플리케이션 서버 전문가입니다.
+아래 서버 로그 이상 탐지 정보를 분석하고 **한국어**로 상세한 원인 분석과 조치 방안을 제공해 주세요.
+
+**서버:** {server_id}
+**이상 유형:** {rule_name}
+**심각도:** {severity}
+**감지된 문제 설명:** {desc}
+**기본 조치 방안 (참고):** {remedy_text}
+
+**원본 로그 메시지:**
+```
+{log_msg}
+```
+
+위 로그를 분석하여 다음 항목을 포함한 한국어 답변을 제공해 주세요:
+
+## 1. 원인 분석
+이 오류/경고가 발생한 근본 원인을 설명해 주세요.
+
+## 2. 즉각적인 조치 방법
+지금 당장 취해야 할 구체적인 조치를 단계별로 설명해 주세요.
+
+## 3. WildFly 26 설정 최적화
+이 문제를 예방하기 위한 WildFly 26 설정 변경 사항을 설명해 주세요.
+
+## 4. 추가 모니터링 포인트
+이후 어떤 지표나 로그를 추가로 모니터링해야 하는지 알려주세요."""
+
+    try:
+        response = await claude_client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=2048,
+            thinking={"type": "adaptive"},
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = "\n".join(
+            b.text for b in response.content if hasattr(b, "text")
+        ).strip()
+        return text or "응답을 받지 못했습니다."
+    except Exception as e:
+        logger.error("Claude analysis failed: %s", e)
+        return f"Claude 분석 중 오류가 발생했습니다: {e}"
+
+
+async def _auto_analyze(anomaly: dict):
+    """Background task: analyze anomaly and broadcast result."""
+    analysis = await analyze_with_claude(anomaly)
+    await broadcast("claude_analysis", {
+        "anomaly_id": anomaly.get("id", ""),
+        "server_id":  anomaly.get("server_id", ""),
+        "rule_name":  anomaly.get("rule_name", ""),
+        "analysis":   analysis,
+    })
 
 
 # ─── Background: offline checker ──────────────────────────────────────────────
@@ -307,6 +402,13 @@ async def receive_anomalies(request: Request):
             "agent_status": agent.status,
         },
     )
+
+    # Auto-analyze CRITICAL/HIGH anomalies with Claude if enabled
+    if CLAUDE_AUTO_ANALYZE and claude_client:
+        for anom in anomalies:
+            if anom.get("severity") in ("CRITICAL", "HIGH"):
+                asyncio.ensure_future(_auto_analyze(anom))
+
     return JSONResponse({"status": "ok", "count": len(anomalies)})
 
 
@@ -405,6 +507,31 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.debug("WebSocket closed: %s", e)
     finally:
         ws_clients.discard(websocket)
+
+
+# ─── Claude AI analysis endpoint ──────────────────────────────────────────────
+@app.post("/api/anomalies/analyze")
+async def analyze_anomaly_endpoint(request: Request):
+    """Dashboard → Controller: request Claude AI analysis for an anomaly log."""
+    if not CLAUDE_ENABLED or not claude_client:
+        return JSONResponse(
+            {"error": "Claude AI가 비활성화되어 있습니다. controller/config.yaml에서 claude.enabled와 api_key를 설정하세요."},
+            status_code=503,
+        )
+
+    data   = await request.json()
+    anomaly = data.get("anomaly", data)
+
+    analysis = await analyze_with_claude(anomaly)
+
+    await broadcast("claude_analysis", {
+        "anomaly_id": anomaly.get("id", ""),
+        "server_id":  anomaly.get("server_id", ""),
+        "rule_name":  anomaly.get("rule_name", ""),
+        "analysis":   analysis,
+    })
+
+    return JSONResponse({"analysis": analysis})
 
 
 # ─── Remediation task endpoints ───────────────────────────────────────────────

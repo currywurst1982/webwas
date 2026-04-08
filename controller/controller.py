@@ -145,7 +145,7 @@ def _check_key(request: Request) -> bool:
 # ─── Background: offline checker ──────────────────────────────────────────────
 @app.on_event("startup")
 async def _startup():
-    asyncio.create_task(_offline_checker())
+    asyncio.ensure_future(_offline_checker())
     logger.info("Controller listening on %s:%d", HOST, PORT)
 
 

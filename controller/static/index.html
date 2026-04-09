@@ -796,6 +796,137 @@
       margin-top: 2px;
     }
 
+    /* ── JVM Analysis Panel ─────────────────────────────────────────────────── */
+    .analysis-panel {
+      position: fixed;
+      top: 0; right: 0;
+      width: min(700px, 100vw);
+      height: 100vh;
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      z-index: 401;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform .25s ease;
+      overflow: hidden;
+    }
+    .analysis-panel.open { transform: translateX(0); }
+
+    .analysis-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.5);
+      z-index: 400;
+    }
+    .analysis-overlay.open { display:block; }
+
+    .analysis-head {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      background: var(--surface2);
+    }
+
+    .analysis-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface2);
+      flex-shrink: 0;
+    }
+    .analysis-tab-btn {
+      flex: 1;
+      padding: 11px 6px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--dim);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .analysis-tab-btn.active { color:var(--accent); border-bottom-color:var(--accent); background:rgba(31,111,235,.05); }
+    .analysis-tab-btn:hover:not(.active) { color:var(--text); }
+
+    .analysis-body { flex:1; overflow-y:auto; padding:18px 20px; }
+    .analysis-body::-webkit-scrollbar { width:4px; }
+    .analysis-body::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+    .analysis-tab-content { display:none; }
+    .analysis-tab-content.active { display:block; }
+
+    /* Run button */
+    .analysis-run-btn {
+      display: flex; align-items:center; justify-content:center; gap:8px;
+      width:100%; padding:10px 16px; margin-bottom:16px;
+      background:rgba(56,139,253,.12); border:1px solid rgba(56,139,253,.35);
+      border-radius:6px; color:var(--medium); font-size:13px; font-weight:600;
+      cursor:pointer; transition:all .15s;
+    }
+    .analysis-run-btn:hover:not(:disabled) { background:rgba(56,139,253,.22); }
+    .analysis-run-btn:disabled { opacity:.4; cursor:not-allowed; }
+    .analysis-run-btn.running { color:var(--high); border-color:var(--high); background:rgba(210,153,34,.1); }
+
+    /* Metric cards */
+    .analysis-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .analysis-card {
+      background:var(--surface2); border:1px solid var(--border);
+      border-radius:6px; padding:12px 14px;
+    }
+    .analysis-card-label { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.4px; margin-bottom:6px; }
+    .analysis-card-val   { font-size:15px; font-weight:700; color:var(--bright); margin-bottom:6px; }
+    .analysis-card-sub   { font-size:11px; color:var(--dim); }
+
+    .analysis-bar-wrap { height:6px; background:rgba(255,255,255,.08); border-radius:3px; overflow:hidden; margin:6px 0 4px; }
+    .analysis-bar-fill { height:100%; border-radius:3px; transition:width .4s ease; }
+    .analysis-bar-fill.ok   { background:var(--low); }
+    .analysis-bar-fill.warn { background:var(--high); }
+    .analysis-bar-fill.crit { background:var(--critical); }
+
+    /* Table */
+    .analysis-table { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:16px; }
+    .analysis-table th { text-align:left; padding:6px 10px; background:var(--surface2); color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.4px; border-bottom:1px solid var(--border); }
+    .analysis-table td { padding:8px 10px; border-bottom:1px solid rgba(48,54,61,.5); color:var(--text); }
+    .analysis-table tr:last-child td { border-bottom:none; }
+    .analysis-table tr:hover td { background:rgba(255,255,255,.03); }
+
+    /* Thread states */
+    .thread-state { display:inline-block; padding:1px 8px; border-radius:4px; font-size:10px; font-weight:700; }
+    .thread-state.RUNNABLE      { background:rgba(63,185,80,.15);  color:var(--low); }
+    .thread-state.BLOCKED       { background:rgba(248,81,73,.15);  color:var(--critical); }
+    .thread-state.WAITING       { background:rgba(210,153,34,.15); color:var(--high); }
+    .thread-state.TIMED_WAITING { background:rgba(56,139,253,.15); color:var(--medium); }
+    .thread-state.TERMINATED    { background:rgba(110,118,129,.15);color:var(--dim); }
+    .thread-state.NEW           { background:rgba(110,118,129,.15);color:var(--dim); }
+
+    /* Deadlock / status banners */
+    .analysis-banner { display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:6px; font-size:13px; font-weight:600; margin-bottom:14px; }
+    .analysis-banner.ok    { background:rgba(63,185,80,.1);  border:1px solid rgba(63,185,80,.3);  color:var(--low); }
+    .analysis-banner.warn  { background:rgba(248,81,73,.1);  border:1px solid rgba(248,81,73,.3);  color:var(--critical); }
+    .analysis-banner.idle  { background:var(--surface2); border:1px solid var(--border); color:var(--dim); }
+    .analysis-banner.loading { background:rgba(210,153,34,.08); border:1px solid var(--high); color:var(--high); }
+
+    /* Recommendations */
+    .analysis-recs { background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:12px 14px; margin-bottom:14px; }
+    .analysis-recs-title { font-size:11px; font-weight:700; color:var(--dim); text-transform:uppercase; letter-spacing:.4px; margin-bottom:8px; }
+    .analysis-rec-item { display:flex; gap:8px; font-size:12px; color:var(--text); line-height:1.5; margin-bottom:5px; }
+    .analysis-rec-item:last-child { margin-bottom:0; }
+
+    /* Raw output */
+    .analysis-raw { background:var(--bg); border:1px solid var(--border); border-radius:6px; overflow:hidden; margin-top:12px; }
+    .analysis-raw-head { display:flex; justify-content:space-between; align-items:center; padding:7px 12px; background:var(--surface2); border-bottom:1px solid var(--border); font-size:11px; color:var(--dim); }
+    .analysis-raw-body { font-family:'SFMono-Regular',Consolas,monospace; font-size:11px; color:var(--dim); padding:10px 12px; max-height:260px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; }
+
     /* ── Claude AI Analysis ─────────────────────────────────────────────────── */
     .claude-ask-btn {
       display: flex;
@@ -1020,6 +1151,58 @@
   </div>
 </div>
 
+<!-- JVM Analysis Panel -->
+<div class="analysis-overlay" id="analysis-overlay" onclick="closeAnalysisPanel()"></div>
+<div class="analysis-panel" id="analysis-panel">
+  <div class="analysis-head">
+    <div>
+      <div class="was-panel-title">🔍 JVM 분석</div>
+      <div class="was-panel-sub" id="analysis-panel-sub">서버 선택됨</div>
+    </div>
+    <button class="panel-close" onclick="closeAnalysisPanel()">✕</button>
+  </div>
+  <div class="analysis-tabs">
+    <button class="analysis-tab-btn active" data-tab="gc"      onclick="switchAnalysisTab('gc')">📊 GC 분석</button>
+    <button class="analysis-tab-btn"        data-tab="heap"    onclick="switchAnalysisTab('heap')">💾 힙 분석</button>
+    <button class="analysis-tab-btn"        data-tab="threads" onclick="switchAnalysisTab('threads')">🧵 스레드 덤프</button>
+  </div>
+  <div class="analysis-body">
+
+    <!-- GC 분석 탭 -->
+    <div class="analysis-tab-content active" id="analysis-tab-gc">
+      <button class="analysis-run-btn" id="run-gc-btn" onclick="runAnalysis('gc')">📊 GC 분석 실행</button>
+      <div id="analysis-gc-result">
+        <div class="analysis-banner idle">분석 실행 버튼을 눌러 JVM GC 상태를 수집합니다.</div>
+      </div>
+    </div>
+
+    <!-- 힙 분석 탭 -->
+    <div class="analysis-tab-content" id="analysis-tab-heap">
+      <div style="display:flex;gap:8px;margin-bottom:0">
+        <button class="analysis-run-btn" id="run-heap-btn" onclick="runAnalysis('heap')" style="margin-bottom:8px">
+          💾 힙 스냅샷 수집
+        </button>
+        <button class="analysis-run-btn" id="run-heapdump-btn" onclick="runAnalysis('heapdump')"
+          style="margin-bottom:8px;background:rgba(248,81,73,.08);border-color:rgba(248,81,73,.4);color:var(--critical);">
+          ⚠️ 힙 덤프 파일 생성
+        </button>
+      </div>
+      <div id="analysis-heap-result">
+        <div class="analysis-banner idle">힙 스냅샷 또는 힙 덤프 버튼을 눌러 메모리 현황을 수집합니다.</div>
+      </div>
+    </div>
+
+    <!-- 스레드 덤프 탭 -->
+    <div class="analysis-tab-content" id="analysis-tab-threads">
+      <button class="analysis-run-btn" id="run-threads-btn" onclick="runAnalysis('threads')">🧵 스레드 덤프 수집</button>
+      <div id="analysis-threads-result">
+        <div class="analysis-banner idle">분석 실행 버튼을 눌러 전체 스레드 상태를 수집합니다.</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
 <!-- WAS Config Panel -->
 <div class="panel-overlay" id="was-overlay" onclick="closeWasPanel()"></div>
 <div class="was-panel" id="was-panel">
@@ -1147,6 +1330,8 @@ function handle(msg) {
       }
       // WAS 설정 패널에도 결과 반영
       _handleWasTaskResult(td);
+      // 분석 패널 결과 반영
+      _handleAnalysisResult(td);
 
       notify(
         isOk ? 'LOW' : 'CRITICAL',
@@ -1270,6 +1455,10 @@ function fillCard(el, id, a) {
         <div class="srv-host">${esc(a.host || '')}</div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
+        <button onclick="event.stopPropagation();openAnalysisPanel('${esc(id)}')"
+          style="background:rgba(63,185,80,.12);border:1px solid rgba(63,185,80,.35);
+                 border-radius:5px;padding:3px 9px;font-size:11px;color:var(--medium);
+                 cursor:pointer;font-weight:600;">🔍 분석</button>
         <button onclick="event.stopPropagation();openWasPanel('${esc(id)}')"
           style="background:rgba(56,139,253,.12);border:1px solid rgba(56,139,253,.35);
                  border-radius:5px;padding:3px 9px;font-size:11px;color:var(--medium);
@@ -1582,7 +1771,7 @@ function closePanel() {
 }
 
 // ESC 키로 패널 닫기
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePanel(); closeWasPanel(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closePanel(); closeWasPanel(); closeAnalysisPanel(); } });
 
 // ── WAS Config Panel ──────────────────────────────────────────────────────────
 let _wasServerId = null;
@@ -1996,6 +2185,362 @@ function _handleWasTaskResult(td) {
 
   if (btn) { btn.disabled = false; btn.textContent = ok ? '▶ 재실행' : '▶ 다시 시도'; }
 }
+
+// ── JVM Analysis Panel ────────────────────────────────────────────────────────
+let _analysisServerId = null;
+let _analysisTab = 'gc';
+const _analysisTaskMap = {};
+
+const ANALYSIS_CMDS = {
+  gc: [
+    '/core-service=platform-mbean/type=runtime:read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=memory:read-attribute(name=heap-memory-usage)',
+    '/core-service=platform-mbean/type=memory:read-attribute(name=non-heap-memory-usage)',
+    '/core-service=platform-mbean/type=memory:read-attribute(name=object-pending-finalization-count)',
+    '/core-service=platform-mbean/type=class-loading:read-attribute(name=loaded-class-count)',
+    '/core-service=platform-mbean/type=class-loading:read-attribute(name=total-loaded-class-count)',
+    '/core-service=platform-mbean/type=class-loading:read-attribute(name=unloaded-class-count)',
+    '/core-service=platform-mbean/type=garbage-collector,name="G1 Young Generation":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=garbage-collector,name="G1 Old Generation":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=garbage-collector,name="PS Scavenge":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=garbage-collector,name="PS MarkSweep":read-resource(include-runtime=true)',
+  ],
+  heap: [
+    '/core-service=platform-mbean/type=memory:read-attribute(name=heap-memory-usage)',
+    '/core-service=platform-mbean/type=memory:read-attribute(name=non-heap-memory-usage)',
+    '/core-service=platform-mbean/type=memory-pool,name="G1 Eden Space":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=memory-pool,name="G1 Survivor Space":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=memory-pool,name="G1 Old Gen":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=memory-pool,name="Metaspace":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=memory-pool,name="Compressed Class Space":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=memory-pool,name="Code Cache":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=memory-pool,name="Eden Space":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=memory-pool,name="Old Gen":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=memory-pool,name="Survivor Space":read-resource(include-runtime=true)',
+  ],
+  heapdump: [
+    '/core-service=platform-mbean/type=memory:read-attribute(name=heap-memory-usage)',
+    '/core-service=platform-mbean/type=hotspot-diagnostic:invoke-operation(name=dumpHeap,parameters=["/tmp/wildfly_heap.hprof",true])',
+  ],
+  threads: [
+    '/core-service=platform-mbean/type=threading:read-attribute(name=thread-count)',
+    '/core-service=platform-mbean/type=threading:read-attribute(name=peak-thread-count)',
+    '/core-service=platform-mbean/type=threading:read-attribute(name=daemon-thread-count)',
+    '/core-service=platform-mbean/type=threading:read-attribute(name=total-started-thread-count)',
+    '/core-service=platform-mbean/type=threading:invoke-operation(name=findDeadlockedThreads)',
+    '/core-service=platform-mbean/type=threading:invoke-operation(name=findMonitorDeadlockedThreads)',
+    '/core-service=platform-mbean/type=threading:invoke-operation(name=dumpAllThreads,parameters=[true,true])',
+  ],
+};
+
+function openAnalysisPanel(serverId) {
+  _analysisServerId = serverId;
+  document.getElementById('analysis-panel-sub').textContent = '\uc11c\ubc84: ' + serverId;
+  switchAnalysisTab(_analysisTab);
+  document.getElementById('analysis-overlay').classList.add('open');
+  document.getElementById('analysis-panel').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeAnalysisPanel() {
+  document.getElementById('analysis-overlay').classList.remove('open');
+  document.getElementById('analysis-panel').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function switchAnalysisTab(tab) {
+  _analysisTab = tab;
+  document.querySelectorAll('.analysis-tab-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.analysis-tab-content').forEach(c =>
+    c.classList.toggle('active', c.id === 'analysis-tab-' + tab));
+}
+async function runAnalysis(type) {
+  if (!_analysisServerId) return;
+  const cmds = ANALYSIS_CMDS[type];
+  if (!cmds) return;
+  const btnId    = type === 'heapdump' ? 'run-heapdump-btn' : 'run-' + type + '-btn';
+  const resultId = (type === 'heapdump') ? 'analysis-heap-result' : 'analysis-' + type + '-result';
+  const btn      = document.getElementById(btnId);
+  const result   = document.getElementById(resultId);
+  const labels   = {gc:'\ud83d\udcca GC \ubd84\uc11d \uc2e4\ud589', heap:'\ud83d\udcbe \ud799 \uc2a4\ub0c5\uc0f7 \uc218\uc9d1',
+                    heapdump:'\u26a0\ufe0f \ud799 \ub364\ud504 \ud30c\uc77c \uc0dd\uc131', threads:'\ud83e\uddf5 \uc2a4\ub808\ub4dc \ub364\ud504 \uc218\uc9d1'};
+  if (btn) { btn.disabled = true; btn.className = 'analysis-run-btn running'; btn.textContent = '\u23f3 \uc218\uc9d1 \uc911\u2026'; }
+  if (result) result.innerHTML = '<div class="analysis-banner loading">\u23f3 \uc5d0\uc774\uc804\ud2b8\uc5d0\uc11c \ub370\uc774\ud130 \uc218\uc9d1 \uc911\u2026</div>';
+  try {
+    const r = await fetch('/api/agents/' + encodeURIComponent(_analysisServerId) + '/remediate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({rule_name: 'analysis_' + type, cli_commands: cmds, description: 'JVM \ubd84\uc11d: ' + type}),
+    });
+    const json = await r.json();
+    if (!r.ok) throw new Error(json.detail || 'HTTP ' + r.status);
+    _analysisTaskMap[json.task_id] = {type, btnId, resultId, label: labels[type]};
+  } catch(e) {
+    if (result) result.innerHTML = '<div class="analysis-banner warn">\u274c \uc694\uccad \uc2e4\ud328: ' + esc(e.message) + '</div>';
+    if (btn) { btn.disabled = false; btn.className = 'analysis-run-btn'; btn.textContent = labels[type] || '\u25b6 \uc7ac\uc2e4\ud589'; }
+  }
+}
+
+function _handleAnalysisResult(td) {
+  const info = _analysisTaskMap[td.task_id];
+  if (!info) return;
+  delete _analysisTaskMap[td.task_id];
+  const btn    = document.getElementById(info.btnId);
+  const result = document.getElementById(info.resultId);
+  if (btn) { btn.disabled = false; btn.className = 'analysis-run-btn'; btn.textContent = info.label || '\u25b6 \uc7ac\uc2e4\ud589'; }
+  if (!result) return;
+  const output = (td.result && td.result.output) || '';
+  const error  = (td.result && td.result.error)  || '';
+  if (!td.result || !td.result.success) {
+    result.innerHTML = '<div class="analysis-banner warn">\u274c \ubd84\uc11d \uc2e4\ud328: ' + esc(error || '\uc54c \uc218 \uc5c6\ub294 \uc624\ub958') + '</div>';
+    return;
+  }
+  if      (info.type === 'gc')       result.innerHTML = _renderGcAnalysis(output);
+  else if (info.type === 'heap')     result.innerHTML = _renderHeapAnalysis(output);
+  else if (info.type === 'heapdump') result.innerHTML = _renderHeapDump(output);
+  else if (info.type === 'threads')  result.innerHTML = _renderThreadDump(output);
+}
+// ── DMR Parsing Helpers ───────────────────────────────────────────────────────
+function _dmrPrim(s) {
+  if (!s) return null;
+  s = s.trim().replace(/,\s*$/, '');
+  if (s === 'undefined' || s === 'null') return null;
+  if (s === 'true')  return true;
+  if (s === 'false') return false;
+  var l = s.match(/^-?(\d+)L?$/); if (l) return parseInt(s);
+  var n = Number(s); if (!isNaN(n)) return n;
+  return s.replace(/^["']|["']$/g, '');
+}
+
+function _dmrBlock(text) {
+  if (!text) return null;
+  // Simple scalar result
+  var sim = text.match(/"result"\s*=>\s*([^{\[\n]+)/);
+  if (sim) return _dmrPrim(sim[1].trim());
+  // Object result
+  var obj = text.match(/"result"\s*=>\s*\{([\s\S]*?)\}(?:\s*\}|$)/);
+  if (obj) {
+    var res = {}, re = /"([\w-]+)"\s*=>\s*([^{,\n\]]+)/g, m;
+    while ((m = re.exec(obj[1])) !== null) res[m[1]] = _dmrPrim(m[2]);
+    return res;
+  }
+  return null;
+}
+
+function _splitBlocks(output) {
+  return output.split(/(?=\{[\s\S]{0,30}"outcome")/).filter(function(s){ return s.trim().length > 5; });
+}
+
+function _fmtBytes(n) {
+  if (n == null || isNaN(n) || n < 0) return 'N/A';
+  if (n < 1024) return n + ' B';
+  if (n < 1048576)  return (n/1024).toFixed(1) + ' KB';
+  if (n < 1073741824) return (n/1048576).toFixed(1) + ' MB';
+  return (n/1073741824).toFixed(2) + ' GB';
+}
+
+function _fmtMs(ms) {
+  if (ms == null) return '—';
+  if (ms < 1000) return ms + ' ms';
+  if (ms < 60000) return (ms/1000).toFixed(1) + '\ucd08';
+  return Math.floor(ms/60000) + '\ubd84 ' + Math.floor((ms%60000)/1000) + '\ucd08';
+}
+
+function _barCls(pct) { return pct >= 90 ? 'crit' : pct >= 75 ? 'warn' : 'ok'; }
+
+function _memCard(label, used, max) {
+  var pct = (max && max > 0) ? Math.round(used/max*100) : 0;
+  var cls = _barCls(pct);
+  return '<div class="analysis-card">' +
+    '<div class="analysis-card-label">' + label + '</div>' +
+    '<div class="analysis-card-val">' + _fmtBytes(used) + '</div>' +
+    '<div class="analysis-bar-wrap"><div class="analysis-bar-fill ' + cls + '" style="width:' + Math.min(pct,100) + '%"></div></div>' +
+    '<div class="analysis-card-sub">' + pct + '% / \ucd5c\ub300 ' + _fmtBytes(max) + '</div>' +
+    '</div>';
+}
+
+function _rawBlock(output, rawId) {
+  return '<div class="analysis-raw">' +
+    '<div class="analysis-raw-head"><span>\uc6d0\uc2dc \ucd9c\ub825 (jboss-cli)</span>' +
+    '<button class="cli-copy-btn" onclick="navigator.clipboard&&navigator.clipboard.writeText(document.getElementById(\'' + rawId + '\').textContent)">\ubcf5\uc0ac</button></div>' +
+    '<div class="analysis-raw-body" id="' + rawId + '">' + esc(output) + '</div></div>';
+}
+
+function _recsBlock(recs) {
+  if (!recs.length) return '';
+  return '<div class="analysis-recs"><div class="analysis-recs-title">\ubd84\uc11d \uacb0\uacfc \ubc0f \uad8c\uc7a5\uc0ac\ud56d</div>' +
+    recs.map(function(r){ return '<div class="analysis-rec-item"><span>' + r.icon + '</span><span>' + r.text + '</span></div>'; }).join('') +
+    '</div>';
+}
+// ── GC Analysis Render ────────────────────────────────────────────────────────
+function _renderGcAnalysis(output) {
+  var blocks = _splitBlocks(output), i = 0;
+  var runtime  = _dmrBlock(blocks[i++]) || {};
+  var heap     = _dmrBlock(blocks[i++]) || {};
+  var nonheap  = _dmrBlock(blocks[i++]) || {};
+  var pending  = _dmrBlock(blocks[i++]);
+  var loaded   = _dmrBlock(blocks[i++]);
+  var totLoad  = _dmrBlock(blocks[i++]);
+  var unloaded = _dmrBlock(blocks[i++]);
+  var gcInfos  = [];
+  while (i < blocks.length) {
+    var gc = _dmrBlock(blocks[i++]);
+    if (gc && typeof gc === 'object' && gc.name) gcInfos.push(gc);
+  }
+
+  var heapUsed = heap.used || 0, heapMax = heap.max || 0;
+  var nhUsed   = nonheap.used || 0, nhMax = nonheap.max > 0 ? nonheap.max : nhUsed * 2;
+  var upMs = (typeof runtime === 'object' && runtime.uptime) ? runtime.uptime : 0;
+  var totalGcTime  = gcInfos.reduce(function(s,g){ return s + (g['collection-time']  || 0); }, 0);
+  var totalGcCount = gcInfos.reduce(function(s,g){ return s + (g['collection-count'] || 0); }, 0);
+  var heapPct = heapMax > 0 ? Math.round(heapUsed/heapMax*100) : 0;
+
+  var recs = [];
+  if      (heapPct > 90) recs.push({icon:'\ud83d\udea8', text:'\ud799 \uc0ac\uc6a9\ub960\uc774 90% \uc774\uc0c1\uc785\ub2c8\ub2e4. \uc989\uc2dc GC \ub610\ub294 \ud799 \ud06c\uae30 \uc99d\ub300\uac00 \ud544\uc694\ud569\ub2c8\ub2e4.'});
+  else if (heapPct > 75) recs.push({icon:'\u26a0\ufe0f', text:'\ud799 \uc0ac\uc6a9\ub960\uc774 75%+\uc785\ub2c8\ub2e4. \uba54\ubaa8\ub9ac \ub204\uc218 \uc5ec\ubd80\ub97c \ud655\uc778\ud558\uc138\uc694.'});
+  else                   recs.push({icon:'\u2705', text:'\ud799 \uba54\ubaa8\ub9ac \uc0ac\uc6a9\ub7c9\uc774 \uc815\uc0c1 \ubc94\uc704\uc785\ub2c8\ub2e4.'});
+  if (totalGcTime > 30000) recs.push({icon:'\u26a0\ufe0f', text:'\ub204\uc801 GC \uc2dc\uac04\uc774 ' + _fmtMs(totalGcTime) + '\uc785\ub2c8\ub2e4. GC \uc124\uc815 \ucd5c\uc801\ud654\ub97c \uac80\ud1a0\ud558\uc138\uc694.'});
+  if (pending && pending > 100) recs.push({icon:'\u26a0\ufe0f', text:'\ud30c\uc774\ub110\ub77c\uc774\uc81c\uc774\uc158 \ub300\uae30 \uac1d\uccb4 ' + pending + '\uac1c. finalize() \uc0ac\uc6a9\uc744 \uc904\uc774\uc138\uc694.'});
+
+  var gcTable = gcInfos.length
+    ? '<table class="analysis-table"><thead><tr><th>GC \ucf58\ub809\ud130</th><th>\ud69f\uc218</th><th>\ub204\uc801 GC \uc2dc\uac04</th></tr></thead><tbody>' +
+      gcInfos.map(function(g){ return '<tr><td>' + esc(g.name||'—') + '</td><td>' + (g['collection-count']||0).toLocaleString() + ' \ud68c</td><td>' + _fmtMs(g['collection-time']||0) + '</td></tr>'; }).join('') +
+      '</tbody></table>'
+    : '<div style="color:var(--dim);font-size:12px;margin-bottom:12px;">GC \ucf58\ub809\ud130 \uc815\ubcf4\ub97c \uac00\uc838\uc624\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4 (G1/Parallel/CMS GC \uba85\uce6d\uc5d0 \ub530\ub77c \ub2e4\ub984).</div>';
+
+  return '<div class="analysis-cards">' +
+    _memCard('\ud799 \uba54\ubaa8\ub9ac', heapUsed, heapMax) +
+    _memCard('Non-\ud799', nhUsed, nhMax > 0 ? nhMax : null) +
+    '<div class="analysis-card"><div class="analysis-card-label">\uac00\ub3d9 \uc2dc\uac04</div>' +
+    '<div class="analysis-card-val" style="font-size:13px">' + (upMs ? _fmtMs(upMs) : '—') + '</div>' +
+    '<div class="analysis-card-sub">GC \ud69f\uc218: ' + totalGcCount.toLocaleString() + '</div></div>' +
+    '<div class="analysis-card"><div class="analysis-card-label">\ub85c\ub4dc \ud074\ub798\uc2a4</div>' +
+    '<div class="analysis-card-val">' + (loaded != null ? Number(loaded).toLocaleString() : '—') + '</div>' +
+    '<div class="analysis-card-sub">\uc5b8\ub85c\ub4dc: ' + (unloaded != null ? Number(unloaded).toLocaleString() : '—') + '</div></div>' +
+    '</div>' + gcTable + _recsBlock(recs) + _rawBlock(output, 'gc-raw');
+}
+
+// ── Heap Analysis Render ──────────────────────────────────────────────────────
+function _renderHeapAnalysis(output) {
+  var blocks = _splitBlocks(output), i = 0;
+  var heap    = _dmrBlock(blocks[i++]) || {};
+  var nonheap = _dmrBlock(blocks[i++]) || {};
+  var pools   = [];
+  while (i < blocks.length) {
+    var p = _dmrBlock(blocks[i++]);
+    if (p && typeof p === 'object' && (p.name || p['pool-name'])) pools.push(p);
+  }
+  var heapUsed = heap.used || 0, heapMax = heap.max || 0;
+  var heapPct  = heapMax > 0 ? Math.round(heapUsed/heapMax*100) : 0;
+
+  var poolRows = pools.map(function(p) {
+    var used = p['usage-used'] || (p.usage && p.usage.used) || 0;
+    var max  = p['usage-max']  || (p.usage && p.usage.max)  || 0;
+    var pct  = max > 0 ? Math.round(used/max*100) : 0;
+    var cls  = _barCls(pct);
+    return '<tr><td>' + esc(p.name || p['pool-name'] || '—') + '</td><td>' + _fmtBytes(used) +
+      '</td><td>' + _fmtBytes(max) + '</td><td>' +
+      '<div style="display:flex;align-items:center;gap:6px">' +
+      '<div style="flex:1;height:5px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden">' +
+      '<div class="analysis-bar-fill ' + cls + '" style="height:100%;width:' + Math.min(pct,100) + '%"></div></div>' +
+      '<span style="font-size:11px;color:var(--dim);min-width:28px">' + pct + '%</span></div></td></tr>';
+  }).join('');
+
+  var recs = [];
+  if (heapPct > 85) recs.push({icon:'\ud83d\udea8', text:'\ud799 \uc0ac\uc6a9\ub960 85%+ — \ud799 \ub364\ud504\ub97c \uc0dd\uc131\ud558\uc5ec \uba54\ubaa8\ub9ac \ub204\uc218\ub97c \ud655\uc778\ud558\uc138\uc694.'});
+
+  return '<div class="analysis-cards">' + _memCard('\uc804\uccb4 \ud799', heapUsed, heapMax) + _memCard('Non-\ud799', nonheap.used||0, nonheap.max > 0 ? nonheap.max : null) + '</div>' +
+    (pools.length ? '<table class="analysis-table"><thead><tr><th>\uba54\ubaa8\ub9ac \ud480</th><th>\uc0ac\uc6a9 \uc911</th><th>\ucd5c\ub300</th><th>\uc0ac\uc6a9\ub960</th></tr></thead><tbody>' + poolRows + '</tbody></table>' : '<div style="color:var(--dim);font-size:12px;margin-bottom:12px;">\uba54\ubaa8\ub9ac \ud480 \uc815\ubcf4\ub97c \uac00\uc838\uc624\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4.</div>') +
+    _recsBlock(recs) +
+    '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-size:12px;color:var(--dim);margin-bottom:12px">' +
+    '\ud83d\udca1 \ud799 \ub364\ud504 \ud30c\uc77c \uc0dd\uc131\uc740 <strong>\"\u26a0\ufe0f \ud799 \ub364\ud504 \ud30c\uc77c \uc0dd\uc131\"</strong> \ubc84\ud2bc\uc744 \uc0ac\uc6a9\ud558\uc138\uc694.<br>' +
+    '\uc0dd\uc131\ub41c \ud30c\uc77c\uc740 \uc5d0\uc774\uc804\ud2b8 \uc11c\ubc84\uc758 <code style="color:var(--medium)">/tmp/wildfly_heap.hprof</code>\uc5d0 \uc800\uc7a5\ub429\ub2c8\ub2e4.' +
+    '</div>' + _rawBlock(output, 'heap-raw');
+}
+
+function _renderHeapDump(output) {
+  var ok   = output.indexOf('"success"') >= 0 && output.indexOf('"failed"') < 0;
+  var heap = _dmrBlock(_splitBlocks(output)[0]) || {};
+  var used = heap.used || 0, max = heap.max || 0;
+  var pct  = max > 0 ? Math.round(used/max*100) : 0;
+  return '<div class="analysis-banner ' + (ok ? 'ok' : 'warn') + '">' +
+    (ok ? '\u2705 \ud799 \ub364\ud504 \ud30c\uc77c\uc774 \uc0dd\uc131\ub418\uc5c8\uc2b5\ub2c8\ub2e4' : '\u274c \ud799 \ub364\ud504 \uc0dd\uc131 \uc2e4\ud328 (\uc11c\ubc84\uc5d0\uc11c HotSpot Diagnostic MBean\uc774 \ube44\ud65c\uc131\ud654\ub418\uc5c8\uc744 \uc218 \uc788\uc2b5\ub2c8\ub2e4)') +
+    '</div>' +
+    (ok ? '<div class="analysis-recs"><div class="analysis-recs-title">\ud799 \ub364\ud504 \ud30c\uc77c \uc815\ubcf4</div>' +
+      '<div class="analysis-rec-item"><span>\ud83d\udcc1</span><span>\uacbd\ub85c: <code style="color:var(--medium)">/tmp/wildfly_heap.hprof</code></span></div>' +
+      '<div class="analysis-rec-item"><span>\ud83d\udcbe</span><span>\ud799 \uc0ac\uc6a9: ' + _fmtBytes(used) + ' (' + pct + '%)</span></div>' +
+      '<div class="analysis-rec-item"><span>\ud83d\udd2c</span><span>\ubd84\uc11d \ub3c4\uad6c: Eclipse MAT, VisualVM, jhat \ub4f1\uc744 \uc0ac\uc6a9\ud558\uc138\uc694</span></div>' +
+      '</div>' +
+      '<div style="background:rgba(248,81,73,.05);border:1px solid rgba(248,81,73,.2);border-radius:6px;padding:10px 14px;font-size:12px;color:var(--dim);margin-bottom:12px">' +
+      '\u26a0\ufe0f \ud799 \ub364\ud504\ub294 JVM \ud799 \uc0ac\uc6a9\ub7c9\ub9cc\ud07c\uc758 \ub514\uc2a4\ud06c\ub97c \uc0ac\uc6a9\ud569\ub2c8\ub2e4. \ubd84\uc11d \ud6c4 \uc0ad\uc81c\ud558\uc138\uc694:<br>' +
+      '<code style="color:var(--medium)">rm -f /tmp/wildfly_heap.hprof</code></div>' : '') +
+    _rawBlock(output, 'heapdump-raw');
+}
+// ── Thread Dump Render ────────────────────────────────────────────────────────
+function _renderThreadDump(output) {
+  var blocks = _splitBlocks(output), i = 0;
+  var threadCount  = _dmrBlock(blocks[i++]);
+  var peakCount    = _dmrBlock(blocks[i++]);
+  var daemonCount  = _dmrBlock(blocks[i++]);
+  var totalStarted = _dmrBlock(blocks[i++]);
+  var deadlocked   = _dmrBlock(blocks[i++]);
+  var monDeadlock  = _dmrBlock(blocks[i++]);
+  var dumpOutput   = blocks.slice(i).join('\n');
+
+  var hasDeadlock = (deadlocked && deadlocked !== null && String(deadlocked) !== 'null') ||
+                    (monDeadlock && monDeadlock !== null && String(monDeadlock) !== 'null');
+
+  var states = {RUNNABLE:0, BLOCKED:0, WAITING:0, TIMED_WAITING:0, TERMINATED:0, NEW:0};
+  var re = /"thread-state"\s*=>\s*"([^"]+)"/g, sm;
+  while ((sm = re.exec(output)) !== null) {
+    if (states[sm[1]] !== undefined) states[sm[1]]++;
+    else states.RUNNABLE++;
+  }
+  var stateTotal = Object.values(states).reduce(function(a,b){ return a+b; }, 0);
+
+  var stateClsMap = {RUNNABLE:'ok', BLOCKED:'crit', WAITING:'warn', TIMED_WAITING:'warn', TERMINATED:'ok', NEW:'ok'};
+  var stateChart = stateTotal > 0
+    ? '<div style="margin-bottom:14px"><div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">\uc2a4\ub808\ub4dc \uc0c1\ud0dc \ubd84\ud3ec</div>' +
+      Object.entries(states).filter(function(kv){ return kv[1] > 0; }).map(function(kv) {
+        var k = kv[0], v = kv[1];
+        var pct = Math.round(v/stateTotal*100);
+        var cls = stateClsMap[k] || 'ok';
+        return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">' +
+          '<span class="thread-state ' + k + '" style="min-width:100px;text-align:center">' + k + '</span>' +
+          '<div style="flex:1;height:7px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden">' +
+          '<div class="analysis-bar-fill ' + cls + '" style="height:100%;width:' + pct + '%"></div></div>' +
+          '<span style="font-size:12px;color:var(--text);min-width:38px">' + v + '\uac1c</span></div>';
+      }).join('') + '</div>'
+    : '';
+
+  // Extract thread entries (name + state + lock) from dump
+  var threadEntries = [], tr2 = /"thread-name"\s*=>\s*"([^"]+)"[\s\S]*?"thread-state"\s*=>\s*"([^"]+)"[\s\S]*?"lock-name"\s*=>\s*"?([^",\n}]+)"?/g, tm;
+  while ((tm = tr2.exec(dumpOutput)) !== null && threadEntries.length < 25) {
+    threadEntries.push({name: tm[1], state: tm[2], lock: tm[3] !== 'null' && tm[3] !== 'undefined' ? tm[3] : null});
+  }
+
+  var threadTable = threadEntries.length
+    ? '<div style="margin-bottom:14px"><div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">\uc8fc\uc694 \uc2a4\ub808\ub4dc \ubaa9\ub85d</div>' +
+      '<table class="analysis-table"><thead><tr><th>\uc2a4\ub808\ub4dc \uc774\ub984</th><th>\uc0c1\ud0dc</th><th>\ub300\uae30 \ub77d</th></tr></thead><tbody>' +
+      threadEntries.map(function(t) {
+        return '<tr><td style="font-family:monospace;font-size:11px">' + esc(t.name) +
+          '</td><td><span class="thread-state ' + t.state + '">' + t.state + '</span></td>' +
+          '<td style="font-size:11px;color:var(--dim)">' + (t.lock ? esc(t.lock) : '—') + '</td></tr>';
+      }).join('') + '</tbody></table></div>'
+    : '';
+
+  return '<div class="analysis-banner ' + (hasDeadlock ? 'warn' : 'ok') + '">' +
+    (hasDeadlock ? '\ud83d\udea8 \uad50\ucc29 \uc0c1\ud0dc(\ub370\ub4dc\ub77d) \uac10\uc9c0! \uc989\uc2dc \uc2a4\ub808\ub4dc \ub364\ud504\ub97c \ubd84\uc11d\ud558\uc138\uc694.' : '\u2705 \uad50\ucc29 \uc0c1\ud0dc \uc5c6\uc74c') +
+    '</div>' +
+    '<div class="analysis-cards">' +
+    '<div class="analysis-card"><div class="analysis-card-label">\ud604\uc7ac \uc2a4\ub808\ub4dc</div><div class="analysis-card-val">' + (threadCount != null ? threadCount : '—') + '</div><div class="analysis-card-sub">\ucd5c\uace0: ' + (peakCount != null ? peakCount : '—') + '</div></div>' +
+    '<div class="analysis-card"><div class="analysis-card-label">\ub370\ubab0 \uc2a4\ub808\ub4dc</div><div class="analysis-card-val">' + (daemonCount != null ? daemonCount : '—') + '</div><div class="analysis-card-sub">\uc99d \uc2dc\uc791: ' + (totalStarted != null ? Number(totalStarted).toLocaleString() : '—') + '</div></div>' +
+    '<div class="analysis-card"><div class="analysis-card-label">BLOCKED</div><div class="analysis-card-val" style="color:' + (states.BLOCKED > 0 ? 'var(--critical)' : 'var(--bright)') + '">' + states.BLOCKED + '</div><div class="analysis-card-sub">WAITING: ' + (states.WAITING + states.TIMED_WAITING) + '</div></div>' +
+    '<div class="analysis-card"><div class="analysis-card-label">RUNNABLE</div><div class="analysis-card-val" style="color:var(--low)">' + states.RUNNABLE + '</div><div class="analysis-card-sub">\uac10\uc9c0 \ud569\uacc4: ' + stateTotal + '</div></div>' +
+    '</div>' + stateChart + threadTable + _rawBlock(output, 'threads-raw');
+}
+
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 connect();

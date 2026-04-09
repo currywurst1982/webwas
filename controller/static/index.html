@@ -2419,7 +2419,6 @@ function _dmrBlock(text) {
   }
   return Object.keys(res).length ? res : null;
 }
-}
 
 function _splitBlocks(output) {
   return output.split(/(?=\{[\s\S]{0,30}"outcome")/).filter(function(s){ return s.trim().length > 5; });

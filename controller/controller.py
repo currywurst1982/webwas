@@ -86,11 +86,13 @@ if CLAUDE_ENABLED:
 # ─── Data models ──────────────────────────────────────────────────────────────
 class RemediationTask:
     def __init__(self, server_id: str, rule_name: str, cli_commands: List[str],
-                 anomaly_id: str = "", description: str = ""):
+                 anomaly_id: str = "", description: str = "",
+                 os_commands: List[str] = None):
         self.task_id: str = str(uuid.uuid4())[:12]
         self.server_id: str = server_id
         self.rule_name: str = rule_name
         self.cli_commands: List[str] = cli_commands
+        self.os_commands: List[str] = os_commands or []
         self.anomaly_id: str = anomaly_id
         self.description: str = description
         self.created_at: str = datetime.now().isoformat()
@@ -104,6 +106,7 @@ class RemediationTask:
             "server_id": self.server_id,
             "rule_name": self.rule_name,
             "cli_commands": self.cli_commands,
+            "os_commands": self.os_commands,
             "anomaly_id": self.anomaly_id,
             "description": self.description,
             "created_at": self.created_at,
@@ -545,25 +548,29 @@ async def request_remediation(server_id: str, request: Request):
     data = await request.json()
     rule_name    = data.get("rule_name", "unknown")
     cli_commands = data.get("cli_commands", [])
+    os_commands  = data.get("os_commands", [])
     anomaly_id   = data.get("anomaly_id", "")
     description  = data.get("description", "")
 
-    if not cli_commands:
-        raise HTTPException(400, "cli_commands 필드가 비어 있습니다")
+    if not cli_commands and not os_commands:
+        raise HTTPException(400, "cli_commands 또는 os_commands 필드가 필요합니다")
     if server_id not in agents:
         raise HTTPException(404, f"Agent '{server_id}'를 찾을 수 없습니다")
 
-    task = RemediationTask(server_id, rule_name, cli_commands, anomaly_id, description)
+    task = RemediationTask(server_id, rule_name, cli_commands, anomaly_id, description,
+                           os_commands=os_commands)
     agent_task_queues[server_id].append(task)
     all_tasks[task.task_id] = task
 
-    logger.info("Remediation task %s queued for %s [%s]", task.task_id, server_id, rule_name)
+    logger.info("Remediation task %s queued for %s [%s] cli:%d os:%d",
+                task.task_id, server_id, rule_name, len(cli_commands), len(os_commands))
 
     await broadcast("task_queued", {
         "task_id":     task.task_id,
         "server_id":   server_id,
         "rule_name":   rule_name,
         "cli_commands": cli_commands,
+        "os_commands":  os_commands,
         "created_at":  task.created_at,
     })
 

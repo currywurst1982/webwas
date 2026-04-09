@@ -2203,23 +2203,51 @@ const ANALYSIS_CMDS = {
     '/core-service=platform-mbean/type=class-loading:read-attribute(name=loaded-class-count)',
     '/core-service=platform-mbean/type=class-loading:read-attribute(name=total-loaded-class-count)',
     '/core-service=platform-mbean/type=class-loading:read-attribute(name=unloaded-class-count)',
+    // G1 GC (JDK 9+ 기본값, WildFly 26 기본)
     '/core-service=platform-mbean/type=garbage-collector,name="G1 Young Generation":read-resource(include-runtime=true)',
     '/core-service=platform-mbean/type=garbage-collector,name="G1 Old Generation":read-resource(include-runtime=true)',
+    // Parallel GC (JDK 8 기본값)
     '/core-service=platform-mbean/type=garbage-collector,name="PS Scavenge":read-resource(include-runtime=true)',
     '/core-service=platform-mbean/type=garbage-collector,name="PS MarkSweep":read-resource(include-runtime=true)',
+    // Serial GC
+    '/core-service=platform-mbean/type=garbage-collector,name="Copy":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=garbage-collector,name="MarkSweepCompact":read-resource(include-runtime=true)',
+    // CMS GC
+    '/core-service=platform-mbean/type=garbage-collector,name="ParNew":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=garbage-collector,name="ConcurrentMarkSweep":read-resource(include-runtime=true)',
+    // ZGC (JDK 15+)
+    '/core-service=platform-mbean/type=garbage-collector,name="ZGC":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=garbage-collector,name="ZGC Minor Cycles":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=garbage-collector,name="ZGC Major Cycles":read-resource(include-runtime=true)',
+    // Shenandoah GC
+    '/core-service=platform-mbean/type=garbage-collector,name="Shenandoah Cycles":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=garbage-collector,name="Shenandoah Pauses":read-resource(include-runtime=true)',
   ],
   heap: [
     '/core-service=platform-mbean/type=memory:read-attribute(name=heap-memory-usage)',
     '/core-service=platform-mbean/type=memory:read-attribute(name=non-heap-memory-usage)',
+    // G1 GC 메모리 풀
     '/core-service=platform-mbean/type=memory-pool,name="G1 Eden Space":read-resource(include-runtime=true)',
     '/core-service=platform-mbean/type=memory-pool,name="G1 Survivor Space":read-resource(include-runtime=true)',
     '/core-service=platform-mbean/type=memory-pool,name="G1 Old Gen":read-resource(include-runtime=true)',
+    // 공통 풀 (G1/Parallel/Serial/CMS 모두 사용)
     '/core-service=platform-mbean/type=memory-pool,name="Metaspace":read-resource(include-runtime=true)',
     '/core-service=platform-mbean/type=memory-pool,name="Compressed Class Space":read-resource(include-runtime=true)',
     '/core-service=platform-mbean/type=memory-pool,name="Code Cache":read-resource(include-runtime=true)',
+    // Parallel/Serial/CMS GC 메모리 풀
     '/core-service=platform-mbean/type=memory-pool,name="Eden Space":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=memory-pool,name="Old Gen":read-resource(include-runtime=true)',
     '/core-service=platform-mbean/type=memory-pool,name="Survivor Space":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=memory-pool,name="Old Gen":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=memory-pool,name="PS Eden Space":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=memory-pool,name="PS Survivor Space":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=memory-pool,name="PS Old Gen":read-resource(include-runtime=true)',
+    // CMS 전용 풀
+    '/core-service=platform-mbean/type=memory-pool,name="Par Eden Space":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=memory-pool,name="Par Survivor Space":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=memory-pool,name="CMS Old Gen":read-resource(include-runtime=true)',
+    '/core-service=platform-mbean/type=memory-pool,name="CMS Perm Gen":read-resource(include-runtime=true)',
+    // ZGC 풀
+    '/core-service=platform-mbean/type=memory-pool,name="ZHeap":read-resource(include-runtime=true)',
   ],
   heapdump: {
     // jcmd / jmap 을 통한 힙 덤프 생성 (유저 불일치 시 sudo + jmap -F 폴백)

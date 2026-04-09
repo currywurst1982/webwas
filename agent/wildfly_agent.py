@@ -508,11 +508,12 @@ class JbossCliExecutor:
             stdout = proc.stdout.decode("utf-8", errors="replace")
             stderr = proc.stderr.decode("utf-8", errors="replace")
             # jboss-cli exits non-zero even when read commands succeed.
-            # Treat as success if output contains "outcome" => "success"
-            # and no "outcome" => "failure" line is present.
+            # For analysis tasks with multiple GC/pool queries, some commands may return
+            # "outcome" => "failure" (e.g. wrong GC name) while others succeed.
+            # Treat as success if at least one "outcome" => "success" is present —
+            # partial failures (unknown GC collector names) are handled by the render layer.
             has_success = '"outcome" => "success"' in stdout
-            has_failure = '"outcome" => "failure"' in stdout
-            success = proc.returncode == 0 or (has_success and not has_failure)
+            success = proc.returncode == 0 or has_success
             return {
                 "success": success,
                 "returncode": proc.returncode,

@@ -507,8 +507,14 @@ class JbossCliExecutor:
             )
             stdout = proc.stdout.decode("utf-8", errors="replace")
             stderr = proc.stderr.decode("utf-8", errors="replace")
+            # jboss-cli exits non-zero even when read commands succeed.
+            # Treat as success if output contains "outcome" => "success"
+            # and no "outcome" => "failure" line is present.
+            has_success = '"outcome" => "success"' in stdout
+            has_failure = '"outcome" => "failure"' in stdout
+            success = proc.returncode == 0 or (has_success and not has_failure)
             return {
-                "success": proc.returncode == 0,
+                "success": success,
                 "returncode": proc.returncode,
                 "output": stdout[:8192],
                 "error": stderr[:2048],

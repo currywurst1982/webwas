@@ -1333,11 +1333,14 @@ function handle(msg) {
       // 분석 패널 결과 반영
       _handleAnalysisResult(td);
 
-      notify(
-        isOk ? 'LOW' : 'CRITICAL',
-        `${isOk ? '✅' : '❌'} 조치 ${isOk ? '완료' : '실패'} [${td.server_id}]`,
-        `${td.rule_name}: ${td.result?.output?.substring(0, 60) || td.result?.error || ''}`
-      );
+      // 분석 task는 별도 패널에서 결과를 표시하므로 전역 알림 생략
+      if (!td.rule_name?.startsWith('analysis_')) {
+        notify(
+          isOk ? 'LOW' : 'CRITICAL',
+          `${isOk ? '✅' : '❌'} 조치 ${isOk ? '완료' : '실패'} [${td.server_id}]`,
+          `${td.rule_name}: ${td.result?.output?.substring(0, 60) || td.result?.error || ''}`
+        );
+      }
       break;
     }
 
@@ -2292,7 +2295,10 @@ function _handleAnalysisResult(td) {
   if (!result) return;
   const output = (td.result && td.result.output) || '';
   const error  = (td.result && td.result.error)  || '';
-  if (!td.result || !td.result.success) {
+  // jboss-cli sometimes exits non-zero on read commands but returns valid DMR data.
+  // Treat as success if output contains "outcome" => "success" even when success=false.
+  const hasData = output.includes('"outcome" => "success"');
+  if (!td.result || (!td.result.success && !hasData)) {
     result.innerHTML = '<div class="analysis-banner warn">\u274c \ubd84\uc11d \uc2e4\ud328: ' + esc(error || '\uc54c \uc218 \uc5c6\ub294 \uc624\ub958') + '</div>';
     return;
   }

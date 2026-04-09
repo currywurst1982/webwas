@@ -2203,51 +2203,14 @@ const ANALYSIS_CMDS = {
     '/core-service=platform-mbean/type=class-loading:read-attribute(name=loaded-class-count)',
     '/core-service=platform-mbean/type=class-loading:read-attribute(name=total-loaded-class-count)',
     '/core-service=platform-mbean/type=class-loading:read-attribute(name=unloaded-class-count)',
-    // G1 GC (JDK 9+ 기본값, WildFly 26 기본)
-    '/core-service=platform-mbean/type=garbage-collector,name="G1 Young Generation":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=garbage-collector,name="G1 Old Generation":read-resource(include-runtime=true)',
-    // Parallel GC (JDK 8 기본값)
-    '/core-service=platform-mbean/type=garbage-collector,name="PS Scavenge":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=garbage-collector,name="PS MarkSweep":read-resource(include-runtime=true)',
-    // Serial GC
-    '/core-service=platform-mbean/type=garbage-collector,name="Copy":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=garbage-collector,name="MarkSweepCompact":read-resource(include-runtime=true)',
-    // CMS GC
-    '/core-service=platform-mbean/type=garbage-collector,name="ParNew":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=garbage-collector,name="ConcurrentMarkSweep":read-resource(include-runtime=true)',
-    // ZGC (JDK 15+)
-    '/core-service=platform-mbean/type=garbage-collector,name="ZGC":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=garbage-collector,name="ZGC Minor Cycles":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=garbage-collector,name="ZGC Major Cycles":read-resource(include-runtime=true)',
-    // Shenandoah GC
-    '/core-service=platform-mbean/type=garbage-collector,name="Shenandoah Cycles":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=garbage-collector,name="Shenandoah Pauses":read-resource(include-runtime=true)',
+    // GC 유형에 무관하게 전체 콜렉터를 한 번에 조회
+    '/core-service=platform-mbean/type=garbage-collector:read-children-resources(child-type=name,include-runtime=true)',
   ],
   heap: [
     '/core-service=platform-mbean/type=memory:read-attribute(name=heap-memory-usage)',
     '/core-service=platform-mbean/type=memory:read-attribute(name=non-heap-memory-usage)',
-    // G1 GC 메모리 풀
-    '/core-service=platform-mbean/type=memory-pool,name="G1 Eden Space":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=memory-pool,name="G1 Survivor Space":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=memory-pool,name="G1 Old Gen":read-resource(include-runtime=true)',
-    // 공통 풀 (G1/Parallel/Serial/CMS 모두 사용)
-    '/core-service=platform-mbean/type=memory-pool,name="Metaspace":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=memory-pool,name="Compressed Class Space":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=memory-pool,name="Code Cache":read-resource(include-runtime=true)',
-    // Parallel/Serial/CMS GC 메모리 풀
-    '/core-service=platform-mbean/type=memory-pool,name="Eden Space":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=memory-pool,name="Survivor Space":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=memory-pool,name="Old Gen":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=memory-pool,name="PS Eden Space":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=memory-pool,name="PS Survivor Space":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=memory-pool,name="PS Old Gen":read-resource(include-runtime=true)',
-    // CMS 전용 풀
-    '/core-service=platform-mbean/type=memory-pool,name="Par Eden Space":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=memory-pool,name="Par Survivor Space":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=memory-pool,name="CMS Old Gen":read-resource(include-runtime=true)',
-    '/core-service=platform-mbean/type=memory-pool,name="CMS Perm Gen":read-resource(include-runtime=true)',
-    // ZGC 풀
-    '/core-service=platform-mbean/type=memory-pool,name="ZHeap":read-resource(include-runtime=true)',
+    // GC 유형에 무관하게 전체 메모리 풀을 한 번에 조회
+    '/core-service=platform-mbean/type=memory-pool:read-children-resources(child-type=name,include-runtime=true)',
   ],
   heapdump: {
     // jcmd / jmap 을 통한 힙 덤프 생성 (유저 불일치 시 sudo + jmap -F 폴백)
@@ -2466,6 +2429,76 @@ function _recsBlock(recs) {
     '</div>';
 }
 // ── GC Analysis Render ────────────────────────────────────────────────────────
+// Parse a named sub-object from a DMR text, e.g. "usage" => { ... }
+function _extractSubObject(text, key) {
+  var m = text.match(new RegExp('"' + key + '"\\s*=>\\s*\\{'));
+  if (!m) return null;
+  var start = m.index + m[0].length - 1;
+  var val = text.slice(start);
+  var depth = 0, end = 0;
+  for (; end < val.length; end++) {
+    if (val[end] === '{') depth++;
+    else if (val[end] === '}') { depth--; if (depth === 0) break; }
+  }
+  var inner = val.slice(1, end);
+  var result = {}, re = /"([\w-]+)"\s*=>\s*("(?:[^"\\]|\\.)*"|[^,\n{}\[\]]+)/g, km;
+  while ((km = re.exec(inner)) !== null) {
+    var v = km[2].trim().replace(/,\s*$/, '');
+    if (v) result[km[1]] = _dmrPrim(v);
+  }
+  return Object.keys(result).length ? result : null;
+}
+
+// Parse read-children-resources DMR result into an array of objects.
+// Each child "name" => { ... } becomes an object with name + flat fields + usage sub-object.
+function _parseChildResources(text) {
+  if (!text) return null;
+  var m = text.match(/"result"\s*=>\s*\{/);
+  if (!m) return null;
+  // Brace-count to find the outer result { }
+  var start = m.index + m[0].length - 1;
+  var val = text.slice(start);
+  var depth = 0, end = 0;
+  for (; end < val.length; end++) {
+    if (val[end] === '{') depth++;
+    else if (val[end] === '}') { depth--; if (depth === 0) break; }
+  }
+  var inner = val.slice(1, end);
+  var results = [], pos = 0;
+  while (pos < inner.length) {
+    // Find next top-level "name" => { entry starting from pos
+    var childRe = /"([^"]+)"\s*=>\s*\{/g;
+    childRe.lastIndex = pos;
+    var nm = childRe.exec(inner);
+    if (!nm) break;
+    var childName = nm[1];
+    var subStart = nm.index + nm[0].length - 1; // index of { in inner
+    var subVal = inner.slice(subStart);
+    var d = 0, e = 0;
+    for (; e < subVal.length; e++) {
+      if (subVal[e] === '{') d++;
+      else if (subVal[e] === '}') { d--; if (d === 0) break; }
+    }
+    var subInner = subVal.slice(1, e);
+    pos = subStart + e + 1; // advance past closing }
+    // Extract usage sub-object before stripping
+    var usageObj = _extractSubObject(subInner, 'usage');
+    // Strip nested objects/arrays for flat key-value parsing
+    var flat = subInner, prev;
+    do { prev = flat; flat = flat.replace(/\{[^{}]*\}/g, ''); } while (flat !== prev);
+    do { prev = flat; flat = flat.replace(/\[[^\[\]]*\]/g, ''); } while (flat !== prev);
+    var re = /"([\w-]+)"\s*=>\s*("(?:[^"\\]|\\.)*"|[^,\n{}\[\]]+)/g, km;
+    var obj = {name: childName};
+    if (usageObj) obj.usage = usageObj;
+    while ((km = re.exec(flat)) !== null) {
+      var v = km[2].trim().replace(/,\s*$/, '');
+      if (v) obj[km[1]] = _dmrPrim(v);
+    }
+    results.push(obj);
+  }
+  return results.length ? results : null;
+}
+
 function _renderGcAnalysis(output) {
   var blocks = _splitBlocks(output), i = 0;
   var runtime  = _dmrBlock(blocks[i++]) || {};
@@ -2475,11 +2508,8 @@ function _renderGcAnalysis(output) {
   var loaded   = _dmrBlock(blocks[i++]);
   var totLoad  = _dmrBlock(blocks[i++]);
   var unloaded = _dmrBlock(blocks[i++]);
-  var gcInfos  = [];
-  while (i < blocks.length) {
-    var gc = _dmrBlock(blocks[i++]);
-    if (gc && typeof gc === 'object' && gc.name) gcInfos.push(gc);
-  }
+  // read-children-resources returns all GC collectors in one block
+  var gcInfos = _parseChildResources(blocks[i] || '') || [];
 
   var heapUsed = heap.used || 0, heapMax = heap.max || 0;
   var nhUsed   = nonheap.used || 0, nhMax = nonheap.max > 0 ? nonheap.max : nhUsed * 2;
@@ -2518,21 +2548,20 @@ function _renderHeapAnalysis(output) {
   var blocks = _splitBlocks(output), i = 0;
   var heap    = _dmrBlock(blocks[i++]) || {};
   var nonheap = _dmrBlock(blocks[i++]) || {};
-  var pools   = [];
-  while (i < blocks.length) {
-    var p = _dmrBlock(blocks[i++]);
-    if (p && typeof p === 'object' && (p.name || p['pool-name'])) pools.push(p);
-  }
+  // read-children-resources returns all memory pools in one block
+  var pools = _parseChildResources(blocks[i] || '') || [];
   var heapUsed = heap.used || 0, heapMax = heap.max || 0;
   var heapPct  = heapMax > 0 ? Math.round(heapUsed/heapMax*100) : 0;
 
   var poolRows = pools.map(function(p) {
-    var used = p['usage-used'] || (p.usage && p.usage.used) || 0;
-    var max  = p['usage-max']  || (p.usage && p.usage.max)  || 0;
-    var pct  = max > 0 ? Math.round(used/max*100) : 0;
+    var used = (p.usage && p.usage.used != null) ? p.usage.used : 0;
+    var max  = (p.usage && p.usage.max  != null && p.usage.max > 0) ? p.usage.max : 0;
+    var committed = (p.usage && p.usage.committed != null) ? p.usage.committed : 0;
+    var pct  = max > 0 ? Math.round(used/max*100) : (committed > 0 ? Math.round(used/committed*100) : 0);
     var cls  = _barCls(pct);
-    return '<tr><td>' + esc(p.name || p['pool-name'] || '—') + '</td><td>' + _fmtBytes(used) +
-      '</td><td>' + _fmtBytes(max) + '</td><td>' +
+    var displayMax = max > 0 ? _fmtBytes(max) : (committed > 0 ? _fmtBytes(committed) + '*' : 'N/A');
+    return '<tr><td>' + esc(p.name || '—') + '</td><td>' + _fmtBytes(used) +
+      '</td><td>' + displayMax + '</td><td>' +
       '<div style="display:flex;align-items:center;gap:6px">' +
       '<div style="flex:1;height:5px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden">' +
       '<div class="analysis-bar-fill ' + cls + '" style="height:100%;width:' + Math.min(pct,100) + '%"></div></div>' +

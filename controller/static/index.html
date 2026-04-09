@@ -2221,10 +2221,23 @@ const ANALYSIS_CMDS = {
     '/core-service=platform-mbean/type=memory-pool,name="Old Gen":read-resource(include-runtime=true)',
     '/core-service=platform-mbean/type=memory-pool,name="Survivor Space":read-resource(include-runtime=true)',
   ],
-  heapdump: [
-    '/core-service=platform-mbean/type=memory:read-attribute(name=heap-memory-usage)',
-    '/core-service=platform-mbean/type=hotspot-diagnostic:invoke-operation(name=dumpHeap,parameters=["/tmp/wildfly_heap.hprof",true])',
-  ],
+  heapdump: {
+    // jcmd / jmap 을 통한 힙 덤프 생성 (hotspot-diagnostic MBean 불필요)
+    os_commands: [
+      'DUMP=/tmp/wildfly_heap.hprof; ' +
+      'rm -f "$DUMP"; ' +
+      'JAVA_PID=$(pgrep -f "jboss-modules.jar" 2>/dev/null | head -1); ' +
+      'if [ -z "$JAVA_PID" ]; then JAVA_PID=$(pgrep -af "java" 2>/dev/null | grep -i "standalone\\|wildfly\\|jboss" | awk \'{print $1}\' | head -1); fi; ' +
+      'if [ -z "$JAVA_PID" ]; then echo "ERROR: WildFly JVM process not found"; exit 1; fi; ' +
+      'echo "WildFly PID: $JAVA_PID"; ' +
+      'if command -v jcmd >/dev/null 2>&1; then ' +
+      '  jcmd "$JAVA_PID" GC.heap_dump "$DUMP" 2>&1; ' +
+      'elif command -v jmap >/dev/null 2>&1; then ' +
+      '  jmap -dump:live,format=b,file="$DUMP" "$JAVA_PID" 2>&1; ' +
+      'else echo "ERROR: jcmd/jmap not found. JAVA_HOME may not be set."; exit 1; fi; ' +
+      'if [ -f "$DUMP" ]; then echo "HEAP_DUMP_OK"; ls -lh "$DUMP"; else echo "HEAP_DUMP_FAILED"; exit 1; fi',
+    ],
+  },
   threads: [
     '/core-service=platform-mbean/type=threading:read-attribute(name=thread-count)',
     '/core-service=platform-mbean/type=threading:read-attribute(name=peak-thread-count)',
@@ -2260,8 +2273,13 @@ function switchAnalysisTab(tab) {
 }
 async function runAnalysis(type) {
   if (!_analysisServerId) return;
-  const cmds = ANALYSIS_CMDS[type];
-  if (!cmds) return;
+  const cmdDef = ANALYSIS_CMDS[type];
+  if (!cmdDef) return;
+  // cmdDef can be an array (cli_commands) or {os_commands:[...]} object
+  const isOsCmd  = !Array.isArray(cmdDef) && cmdDef.os_commands;
+  const bodyExtra = isOsCmd
+    ? {os_commands: cmdDef.os_commands}
+    : {cli_commands: Array.isArray(cmdDef) ? cmdDef : cmdDef.cli_commands};
   const btnId    = type === 'heapdump' ? 'run-heapdump-btn' : 'run-' + type + '-btn';
   const resultId = (type === 'heapdump') ? 'analysis-heap-result' : 'analysis-' + type + '-result';
   const btn      = document.getElementById(btnId);
@@ -2274,7 +2292,7 @@ async function runAnalysis(type) {
     const r = await fetch('/api/agents/' + encodeURIComponent(_analysisServerId) + '/remediate', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({rule_name: 'analysis_' + type, cli_commands: cmds, description: 'JVM \ubd84\uc11d: ' + type}),
+      body: JSON.stringify(Object.assign({rule_name: 'analysis_' + type, description: 'JVM \ubd84\uc11d: ' + type}, bodyExtra)),
     });
     const json = await r.json();
     if (!r.ok) throw new Error(json.detail || 'HTTP ' + r.status);
@@ -2296,9 +2314,11 @@ function _handleAnalysisResult(td) {
   const output = (td.result && td.result.output) || '';
   const error  = (td.result && td.result.error)  || '';
   // jboss-cli sometimes exits non-zero on read commands but returns valid DMR data.
-  // Treat as success if output contains "outcome" => "success" even when success=false.
-  const hasData = output.includes('"outcome" => "success"');
-  if (!td.result || (!td.result.success && !hasData)) {
+  // For heapdump (os_commands), success is determined by the agent's returncode.
+  // Treat as renderable if: success=true, OR DMR has "outcome"=>"success", OR heapdump output present.
+  const hasDmr  = output.includes('"outcome" => "success"');
+  const hasData = td.result?.success || hasDmr || (info.type === 'heapdump' && output.length > 0);
+  if (!td.result || !hasData) {
     result.innerHTML = '<div class="analysis-banner warn">\u274c \ubd84\uc11d \uc2e4\ud328: ' + esc(error || '\uc54c \uc218 \uc5c6\ub294 \uc624\ub958') + '</div>';
     return;
   }
@@ -2466,20 +2486,30 @@ function _renderHeapAnalysis(output) {
 }
 
 function _renderHeapDump(output) {
-  var ok   = output.indexOf('"success"') >= 0 && output.indexOf('"failed"') < 0;
-  var heap = _dmrBlock(_splitBlocks(output)[0]) || {};
-  var used = heap.used || 0, max = heap.max || 0;
-  var pct  = max > 0 ? Math.round(used/max*100) : 0;
+  // Output comes from jcmd/jmap shell command, not DMR format.
+  var ok       = output.indexOf('HEAP_DUMP_OK') >= 0;
+  var failed   = output.indexOf('HEAP_DUMP_FAILED') >= 0 || output.indexOf('ERROR:') >= 0;
+  var pidLine  = (output.match(/WildFly PID:\s*(\d+)/) || [])[1] || null;
+  // parse file size from ls -lh output (e.g. "-rw-r--r-- 1 wildfly wildfly 256M /tmp/...")
+  var sizeMatch = output.match(/(\d+[\.,]?\d*[KMGTP]?)\s+\/tmp\/wildfly_heap\.hprof/);
+  var fileSize  = sizeMatch ? sizeMatch[1] : null;
+  var errMsg    = '';
+  if (!ok) {
+    var errLine = output.match(/ERROR:\s*(.+)/);
+    errMsg = errLine ? errLine[1].trim() : '힙 덤프 파일이 생성되지 않았습니다';
+  }
   return '<div class="analysis-banner ' + (ok ? 'ok' : 'warn') + '">' +
-    (ok ? '\u2705 \ud799 \ub364\ud504 \ud30c\uc77c\uc774 \uc0dd\uc131\ub418\uc5c8\uc2b5\ub2c8\ub2e4' : '\u274c \ud799 \ub364\ud504 \uc0dd\uc131 \uc2e4\ud328 (\uc11c\ubc84\uc5d0\uc11c HotSpot Diagnostic MBean\uc774 \ube44\ud65c\uc131\ud654\ub418\uc5c8\uc744 \uc218 \uc788\uc2b5\ub2c8\ub2e4)') +
+    (ok ? '✅ 힙 덤프 파일이 생성되었습니다' :
+          '❌ 힙 덤프 생성 실패: ' + esc(errMsg)) +
     '</div>' +
-    (ok ? '<div class="analysis-recs"><div class="analysis-recs-title">\ud799 \ub364\ud504 \ud30c\uc77c \uc815\ubcf4</div>' +
-      '<div class="analysis-rec-item"><span>\ud83d\udcc1</span><span>\uacbd\ub85c: <code style="color:var(--medium)">/tmp/wildfly_heap.hprof</code></span></div>' +
-      '<div class="analysis-rec-item"><span>\ud83d\udcbe</span><span>\ud799 \uc0ac\uc6a9: ' + _fmtBytes(used) + ' (' + pct + '%)</span></div>' +
-      '<div class="analysis-rec-item"><span>\ud83d\udd2c</span><span>\ubd84\uc11d \ub3c4\uad6c: Eclipse MAT, VisualVM, jhat \ub4f1\uc744 \uc0ac\uc6a9\ud558\uc138\uc694</span></div>' +
+    (ok ? '<div class="analysis-recs"><div class="analysis-recs-title">힙 덤프 파일 정보</div>' +
+      '<div class="analysis-rec-item"><span>📁</span><span>경로: <code style="color:var(--medium)">/tmp/wildfly_heap.hprof</code></span></div>' +
+      (fileSize ? '<div class="analysis-rec-item"><span>💾</span><span>파일 크기: <strong>' + esc(fileSize) + '</strong></span></div>' : '') +
+      (pidLine  ? '<div class="analysis-rec-item"><span>⚙️</span><span>WildFly PID: ' + esc(pidLine) + '</span></div>' : '') +
+      '<div class="analysis-rec-item"><span>🔬</span><span>분석 도구: Eclipse MAT, VisualVM, jhat 등을 사용하세요</span></div>' +
       '</div>' +
       '<div style="background:rgba(248,81,73,.05);border:1px solid rgba(248,81,73,.2);border-radius:6px;padding:10px 14px;font-size:12px;color:var(--dim);margin-bottom:12px">' +
-      '\u26a0\ufe0f \ud799 \ub364\ud504\ub294 JVM \ud799 \uc0ac\uc6a9\ub7c9\ub9cc\ud07c\uc758 \ub514\uc2a4\ud06c\ub97c \uc0ac\uc6a9\ud569\ub2c8\ub2e4. \ubd84\uc11d \ud6c4 \uc0ad\uc81c\ud558\uc138\uc694:<br>' +
+      '⚠️ 힙 덤프는 JVM 힙 사용량만큼의 디스크를 사용합니다. 분석 후 삭제하세요:<br>' +
       '<code style="color:var(--medium)">rm -f /tmp/wildfly_heap.hprof</code></div>' : '') +
     _rawBlock(output, 'heapdump-raw');
 }

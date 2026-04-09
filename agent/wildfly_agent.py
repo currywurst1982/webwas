@@ -977,13 +977,17 @@ class WildflyAgent:
         task_id = task.get("task_id", "?")
         rule_name = task.get("rule_name", "unknown")
         commands: List[str] = task.get("cli_commands", [])
+        os_commands: List[str] = task.get("os_commands", [])
 
-        logger.info("Executing remediation task %s [%s] — %d commands", task_id, rule_name, len(commands))
+        logger.info("Executing remediation task %s [%s] — cli:%d os:%d",
+                    task_id, rule_name, len(commands), len(os_commands))
 
-        if self.cli and self.cli.available() and commands:
+        if os_commands:
+            result = self._run_os_commands(os_commands)
+        elif self.cli and self.cli.available() and commands:
             result = self.cli.run(commands)
-        elif not commands:
-            result = {"success": False, "output": "", "error": "실행할 CLI 명령이 없습니다"}
+        elif not commands and not os_commands:
+            result = {"success": False, "output": "", "error": "실행할 명령이 없습니다"}
         else:
             result = {
                 "success": False,
@@ -1006,6 +1010,34 @@ class WildflyAgent:
                 "executed_at": datetime.now().isoformat(),
             },
         )
+
+    def _run_os_commands(self, commands: List[str]) -> Dict:
+        """Execute shell OS commands (used for heap dump via jcmd/jmap)."""
+        outputs = []
+        for cmd in commands:
+            logger.info("OS cmd: %s", cmd[:80])
+            try:
+                proc = subprocess.run(
+                    cmd,
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=120,
+                )
+                stdout = proc.stdout.decode("utf-8", errors="replace")
+                stderr = proc.stderr.decode("utf-8", errors="replace")
+                outputs.append(stdout)
+                if proc.returncode != 0:
+                    return {
+                        "success": False,
+                        "output": "\n".join(outputs),
+                        "error": stderr.strip() or ("종료코드 %d" % proc.returncode),
+                    }
+            except subprocess.TimeoutExpired:
+                return {"success": False, "output": "\n".join(outputs), "error": "타임아웃 (120s)"}
+            except Exception as e:
+                return {"success": False, "output": "\n".join(outputs), "error": str(e)}
+        return {"success": True, "output": "\n".join(outputs), "error": ""}
 
     def run(self):
         logger.info(

@@ -2222,7 +2222,7 @@ const ANALYSIS_CMDS = {
     '/core-service=platform-mbean/type=memory-pool,name="Survivor Space":read-resource(include-runtime=true)',
   ],
   heapdump: {
-    // jcmd / jmap 을 통한 힙 덤프 생성 (hotspot-diagnostic MBean 불필요)
+    // jcmd / jmap 을 통한 힙 덤프 생성 (유저 불일치 시 sudo + jmap -F 폴백)
     os_commands: [
       'DUMP=/tmp/wildfly_heap.hprof; ' +
       'rm -f "$DUMP"; ' +
@@ -2230,12 +2230,32 @@ const ANALYSIS_CMDS = {
       'if [ -z "$JAVA_PID" ]; then JAVA_PID=$(pgrep -af "java" 2>/dev/null | grep -i "standalone\\|wildfly\\|jboss" | awk \'{print $1}\' | head -1); fi; ' +
       'if [ -z "$JAVA_PID" ]; then echo "ERROR: WildFly JVM process not found"; exit 1; fi; ' +
       'echo "WildFly PID: $JAVA_PID"; ' +
-      'if command -v jcmd >/dev/null 2>&1; then ' +
-      '  jcmd "$JAVA_PID" GC.heap_dump "$DUMP" 2>&1; ' +
-      'elif command -v jmap >/dev/null 2>&1; then ' +
-      '  jmap -dump:live,format=b,file="$DUMP" "$JAVA_PID" 2>&1; ' +
-      'else echo "ERROR: jcmd/jmap not found. JAVA_HOME may not be set."; exit 1; fi; ' +
-      'if [ -f "$DUMP" ]; then echo "HEAP_DUMP_OK"; ls -lh "$DUMP"; else echo "HEAP_DUMP_FAILED"; exit 1; fi',
+      'JAVA_USER=$(stat -c "%U" /proc/"$JAVA_PID" 2>/dev/null); echo "WildFly User: $JAVA_USER"; ' +
+      'JCMD=$(command -v jcmd 2>/dev/null); JMAP=$(command -v jmap 2>/dev/null); ' +
+      // 1) sudo -u <wildfly유저> jcmd (유저 불일치 해결)
+      'if [ -n "$JCMD" ] && [ -n "$JAVA_USER" ]; then ' +
+      '  echo "Trying: sudo -u $JAVA_USER jcmd..."; ' +
+      '  sudo -n -u "$JAVA_USER" "$JCMD" "$JAVA_PID" GC.heap_dump "$DUMP" 2>&1; ' +
+      'fi; ' +
+      // 2) 같은 유저로 jcmd
+      'if [ ! -f "$DUMP" ] && [ -n "$JCMD" ]; then ' +
+      '  echo "Trying: jcmd (same user)..."; ' +
+      '  "$JCMD" "$JAVA_PID" GC.heap_dump "$DUMP" 2>&1; ' +
+      'fi; ' +
+      // 3) jmap -F (SA 기반 강제 읽기, attach 불필요)
+      'if [ ! -f "$DUMP" ] && [ -n "$JMAP" ]; then ' +
+      '  echo "Trying: jmap -F (force attach bypass)..."; ' +
+      '  "$JMAP" -F -dump:format=b,file="$DUMP" "$JAVA_PID" 2>&1; ' +
+      'fi; ' +
+      // 4) jmap (일반)
+      'if [ ! -f "$DUMP" ] && [ -n "$JMAP" ]; then ' +
+      '  echo "Trying: jmap (live dump)..."; ' +
+      '  "$JMAP" -dump:live,format=b,file="$DUMP" "$JAVA_PID" 2>&1; ' +
+      'fi; ' +
+      'if [ -f "$DUMP" ]; then echo "HEAP_DUMP_OK"; ls -lh "$DUMP"; ' +
+      'else echo "HEAP_DUMP_FAILED"; ' +
+      'echo "ERROR: 에이전트와 WildFly의 실행 유저가 다릅니다. /etc/sudoers에 다음을 추가하세요:"; ' +
+      'echo "ERROR: $(id -un) ALL=(${JAVA_USER:-wildfly}) NOPASSWD: $JCMD"; exit 1; fi',
     ],
   },
   threads: [

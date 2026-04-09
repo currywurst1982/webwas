@@ -517,7 +517,7 @@ class JbossCliExecutor:
             return {
                 "success": success,
                 "returncode": proc.returncode,
-                "output": stdout[:8192],
+                "output": stdout[:65536],
                 "error": stderr[:2048],
             }
         except subprocess.TimeoutExpired:

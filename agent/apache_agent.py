@@ -593,7 +593,7 @@ class ApacheAgent:
             result = self._run_os_commands(cmds)
         logger.info("Task %s [%s] → %s", task_id, rule_name,
                     "OK" if result["success"] else "FAIL")
-        self._post(f"/api/agents/{self.server_id}/tasks/{task_id}/result", {
+        self._post(f"/api/tasks/{task_id}/result", {
             "task_id":   task_id,
             "rule_name": rule_name,
             "success":   result["success"],

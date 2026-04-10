@@ -590,7 +590,10 @@ class ApacheAgent:
         if not cmds:
             result = {"success": False, "output": "", "error": "실행할 명령이 없습니다"}
         else:
-            result = self._run_os_commands(cmds)
+            # Analysis tasks: collect all output even if a command exits non-zero
+            # (e.g. permission denied on log file — still useful to show partial output)
+            is_analysis = rule_name.startswith("analysis_")
+            result = self._run_os_commands(cmds, ignore_errors=is_analysis)
         logger.info("Task %s [%s] → %s", task_id, rule_name,
                     "OK" if result["success"] else "FAIL")
         self._post(f"/api/tasks/{task_id}/result", {
@@ -601,8 +604,18 @@ class ApacheAgent:
             "error":     result["error"][:2048],
         })
 
-    def _run_os_commands(self, commands: List[str]) -> dict:
+    def _run_os_commands(self, commands: List[str], ignore_errors: bool = False) -> dict:
+        """Run shell commands sequentially.
+
+        Args:
+            commands: List of shell command strings.
+            ignore_errors: When True, continue running subsequent commands even if
+                one exits non-zero and accumulate all output (used for analysis tasks).
+                The final success flag will be False if any command failed.
+        """
         outputs = []
+        errors  = []
+        any_failed = False
         for cmd in commands:
             try:
                 proc = subprocess.run(
@@ -611,19 +624,37 @@ class ApacheAgent:
                 )
                 stdout = proc.stdout.decode("utf-8", errors="replace")
                 stderr = proc.stderr.decode("utf-8", errors="replace")
-                outputs.append(stdout)
+                if stdout:
+                    outputs.append(stdout)
                 if proc.returncode != 0:
-                    return {
-                        "success": False,
-                        "output":  "\n".join(outputs),
-                        "error":   stderr.strip() or f"종료코드 {proc.returncode}",
-                    }
+                    err_msg = stderr.strip() or f"종료코드 {proc.returncode}"
+                    errors.append(err_msg)
+                    # Append stderr to output so the dashboard can show it
+                    if stderr.strip():
+                        outputs.append(f"[stderr] {stderr.strip()}")
+                    any_failed = True
+                    if not ignore_errors:
+                        return {
+                            "success": False,
+                            "output":  "\n".join(outputs),
+                            "error":   err_msg,
+                        }
             except subprocess.TimeoutExpired:
-                return {"success": False, "output": "\n".join(outputs),
-                        "error": "명령 타임아웃 (120s)"}
+                errors.append("명령 타임아웃 (120s)")
+                any_failed = True
+                if not ignore_errors:
+                    return {"success": False, "output": "\n".join(outputs),
+                            "error": "명령 타임아웃 (120s)"}
             except Exception as e:
-                return {"success": False, "output": "\n".join(outputs), "error": str(e)}
-        return {"success": True, "output": "\n".join(outputs), "error": ""}
+                errors.append(str(e))
+                any_failed = True
+                if not ignore_errors:
+                    return {"success": False, "output": "\n".join(outputs), "error": str(e)}
+        return {
+            "success": not any_failed,
+            "output":  "\n".join(outputs),
+            "error":   "; ".join(errors),
+        }
 
     # ── Main loop ─────────────────────────────────────────────────────────────
 

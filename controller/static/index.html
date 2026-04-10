@@ -2844,12 +2844,16 @@ function _handleAnalysisResult(td) {
   const output = (td.result && td.result.output) || '';
   const error  = (td.result && td.result.error)  || '';
   // jboss-cli sometimes exits non-zero on read commands but returns valid DMR data.
-  // For heapdump (os_commands), success is determined by the agent's returncode.
-  // Treat as renderable if: success=true, OR DMR has "outcome"=>"success", OR heapdump output present.
-  const hasDmr  = output.includes('"outcome" => "success"');
-  const hasData = td.result?.success || hasDmr || (info.type === 'heapdump' && output.length > 0);
+  // Apache analysis commands: treat as renderable whenever there is any output (success may be
+  // false if a shell command exited non-zero, e.g. permission denied on log file — we still want
+  // to show whatever output was collected so the user can see the error message).
+  const hasDmr        = output.includes('"outcome" => "success"');
+  const isApacheType  = info.type.startsWith('apache_');
+  const hasData = td.result?.success || hasDmr ||
+                  (info.type === 'heapdump' && output.length > 0) ||
+                  (isApacheType && output.length > 0);
   if (!td.result || !hasData) {
-    result.innerHTML = '<div class="analysis-banner warn">\u274c \ubd84\uc11d \uc2e4\ud328: ' + esc(error || '\uc54c \uc218 \uc5c6\ub294 \uc624\ub958') + '</div>';
+    result.innerHTML = '<div class="analysis-banner warn">❌ 분석 실패: ' + esc(error || '알 수 없는 오류') + '</div>';
     return;
   }
   if      (info.type === 'gc')             result.innerHTML = _renderGcAnalysis(output);

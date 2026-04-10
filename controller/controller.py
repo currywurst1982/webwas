@@ -120,6 +120,7 @@ class AgentRecord:
     def __init__(self, data: dict):
         self.server_id: str = data["server_id"]
         self.host: str = data.get("host", "unknown")
+        self.server_type: str = data.get("server_type", "wildfly")   # wildfly | apache
         self.wildfly_version: str = data.get("wildfly_version", "26")
         self.log_path: str = data.get("log_path", "")
         self.simulate: bool = data.get("simulate", False)
@@ -146,6 +147,7 @@ class AgentRecord:
         return {
             "server_id": self.server_id,
             "host": self.host,
+            "server_type": self.server_type,
             "wildfly_version": self.wildfly_version,
             "log_path": self.log_path,
             "simulate": self.simulate,

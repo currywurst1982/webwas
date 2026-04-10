@@ -1287,47 +1287,84 @@
 <div class="analysis-panel" id="analysis-panel">
   <div class="analysis-head">
     <div>
-      <div class="was-panel-title">🔍 JVM 분석</div>
+      <div class="was-panel-title" id="analysis-panel-title">🔍 JVM 분석</div>
       <div class="was-panel-sub" id="analysis-panel-sub">서버 선택됨</div>
     </div>
     <button class="panel-close" onclick="closeAnalysisPanel()">✕</button>
   </div>
-  <div class="analysis-tabs">
+  <!-- WildFly tabs -->
+  <div class="analysis-tabs" id="analysis-tabs-wildfly">
     <button class="analysis-tab-btn active" data-tab="gc"      onclick="switchAnalysisTab('gc')">📊 GC 분석</button>
     <button class="analysis-tab-btn"        data-tab="heap"    onclick="switchAnalysisTab('heap')">💾 힙 분석</button>
     <button class="analysis-tab-btn"        data-tab="threads" onclick="switchAnalysisTab('threads')">🧵 스레드 덤프</button>
   </div>
+  <!-- Apache tabs -->
+  <div class="analysis-tabs" id="analysis-tabs-apache" style="display:none">
+    <button class="analysis-tab-btn active" data-tab="apache_status" onclick="switchAnalysisTab('apache_status')">📡 서버 상태</button>
+    <button class="analysis-tab-btn"        data-tab="apache_access" onclick="switchAnalysisTab('apache_access')">📋 접속 분석</button>
+    <button class="analysis-tab-btn"        data-tab="apache_errors" onclick="switchAnalysisTab('apache_errors')">⚠️ 에러 로그</button>
+  </div>
   <div class="analysis-body">
 
-    <!-- GC 분석 탭 -->
-    <div class="analysis-tab-content active" id="analysis-tab-gc">
-      <button class="analysis-run-btn" id="run-gc-btn" onclick="runAnalysis('gc')">📊 GC 분석 실행</button>
-      <div id="analysis-gc-result">
-        <div class="analysis-banner idle">분석 실행 버튼을 눌러 JVM GC 상태를 수집합니다.</div>
+    <!-- WildFly content -->
+    <div id="analysis-content-wildfly">
+      <!-- GC 분석 탭 -->
+      <div class="analysis-tab-content active" id="analysis-tab-gc">
+        <button class="analysis-run-btn" id="run-gc-btn" onclick="runAnalysis('gc')">📊 GC 분석 실행</button>
+        <div id="analysis-gc-result">
+          <div class="analysis-banner idle">분석 실행 버튼을 눌러 JVM GC 상태를 수집합니다.</div>
+        </div>
+      </div>
+
+      <!-- 힙 분석 탭 -->
+      <div class="analysis-tab-content" id="analysis-tab-heap">
+        <div style="display:flex;gap:8px;margin-bottom:0">
+          <button class="analysis-run-btn" id="run-heap-btn" onclick="runAnalysis('heap')" style="margin-bottom:8px">
+            💾 힙 스냅샷 수집
+          </button>
+          <button class="analysis-run-btn" id="run-heapdump-btn" onclick="runAnalysis('heapdump')"
+            style="margin-bottom:8px;background:rgba(248,81,73,.08);border-color:rgba(248,81,73,.4);color:var(--critical);">
+            ⚠️ 힙 덤프 파일 생성
+          </button>
+        </div>
+        <div id="analysis-heap-result">
+          <div class="analysis-banner idle">힙 스냅샷 또는 힙 덤프 버튼을 눌러 메모리 현황을 수집합니다.</div>
+        </div>
+      </div>
+
+      <!-- 스레드 덤프 탭 -->
+      <div class="analysis-tab-content" id="analysis-tab-threads">
+        <button class="analysis-run-btn" id="run-threads-btn" onclick="runAnalysis('threads')">🧵 스레드 덤프 수집</button>
+        <div id="analysis-threads-result">
+          <div class="analysis-banner idle">분석 실행 버튼을 눌러 전체 스레드 상태를 수집합니다.</div>
+        </div>
       </div>
     </div>
 
-    <!-- 힙 분석 탭 -->
-    <div class="analysis-tab-content" id="analysis-tab-heap">
-      <div style="display:flex;gap:8px;margin-bottom:0">
-        <button class="analysis-run-btn" id="run-heap-btn" onclick="runAnalysis('heap')" style="margin-bottom:8px">
-          💾 힙 스냅샷 수집
-        </button>
-        <button class="analysis-run-btn" id="run-heapdump-btn" onclick="runAnalysis('heapdump')"
-          style="margin-bottom:8px;background:rgba(248,81,73,.08);border-color:rgba(248,81,73,.4);color:var(--critical);">
-          ⚠️ 힙 덤프 파일 생성
-        </button>
+    <!-- Apache content -->
+    <div id="analysis-content-apache" style="display:none">
+      <!-- 서버 상태 탭 -->
+      <div class="analysis-tab-content active" id="analysis-tab-apache_status">
+        <button class="analysis-run-btn" id="run-apache_status-btn" onclick="runAnalysis('apache_status')">📡 서버 상태 수집</button>
+        <div id="analysis-apache_status-result">
+          <div class="analysis-banner idle">버튼을 눌러 Apache 서버 상태를 수집합니다.</div>
+        </div>
       </div>
-      <div id="analysis-heap-result">
-        <div class="analysis-banner idle">힙 스냅샷 또는 힙 덤프 버튼을 눌러 메모리 현황을 수집합니다.</div>
-      </div>
-    </div>
 
-    <!-- 스레드 덤프 탭 -->
-    <div class="analysis-tab-content" id="analysis-tab-threads">
-      <button class="analysis-run-btn" id="run-threads-btn" onclick="runAnalysis('threads')">🧵 스레드 덤프 수집</button>
-      <div id="analysis-threads-result">
-        <div class="analysis-banner idle">분석 실행 버튼을 눌러 전체 스레드 상태를 수집합니다.</div>
+      <!-- 접속 분석 탭 -->
+      <div class="analysis-tab-content" id="analysis-tab-apache_access">
+        <button class="analysis-run-btn" id="run-apache_access-btn" onclick="runAnalysis('apache_access')">📋 접속 로그 분석</button>
+        <div id="analysis-apache_access-result">
+          <div class="analysis-banner idle">버튼을 눌러 최근 접속 로그를 분석합니다.</div>
+        </div>
+      </div>
+
+      <!-- 에러 로그 탭 -->
+      <div class="analysis-tab-content" id="analysis-tab-apache_errors">
+        <button class="analysis-run-btn" id="run-apache_errors-btn" onclick="runAnalysis('apache_errors')">⚠️ 에러 로그 수집</button>
+        <div id="analysis-apache_errors-result">
+          <div class="analysis-banner idle">버튼을 눌러 최근 에러 로그를 수집합니다.</div>
+        </div>
       </div>
     </div>
 
@@ -1339,7 +1376,7 @@
 <div class="was-panel" id="was-panel">
   <div class="was-panel-head">
     <div>
-      <div class="was-panel-title">⚙️ WAS 인스턴스 설정</div>
+      <div class="was-panel-title" id="was-panel-title">⚙️ WAS 인스턴스 설정</div>
       <div class="was-panel-sub" id="was-panel-sub">서버 선택됨</div>
     </div>
     <button class="panel-close" onclick="closeWasPanel()">✕</button>
@@ -1669,7 +1706,7 @@ function _refreshWasStatus(sid) {
   section.style.display = 'block';
   if (countEl) countEl.textContent = entries.length;
   grid.innerHTML = entries.map(([opId, st]) => {
-    const op = (typeof WAS_OPS !== 'undefined' ? WAS_OPS : []).find(o => o.id === opId);
+    const op = [...WAS_OPS, ...APACHE_WAS_OPS].find(o => o.id === opId);
     return `<div class="was-status-item">
       <div class="was-status-item-name">✅ ${esc(op?.name || opId)}</div>
       <div class="was-status-item-val">${esc(st.verifiedValue || '적용됨')}</div>
@@ -1777,6 +1814,7 @@ function fillCard(el, id, a) {
                     ? `${stats.disk_used_gb}/${stats.disk_total_gb} GB`
                     : null;
   const diskBar = metricBar('디스크', stats.disk_percent, 'disk', diskSub);
+  const isApache = (a.server_type === 'apache') || (a.wildfly_version||'').toLowerCase().startsWith('apache');
 
   el.innerHTML = `
     <div class="srv-head">
@@ -1798,9 +1836,11 @@ function fillCard(el, id, a) {
     </div>
     <div class="srv-meta">
       <div class="meta-item"><label>마지막 Heartbeat</label><span>${hb}</span></div>
-      <div class="meta-item"><label>WildFly 버전</label><span>${esc(a.wildfly_version || '26')}</span></div>
+      <div class="meta-item"><label>${isApache ? 'Apache 버전' : 'WildFly 버전'}</label><span>${esc(a.wildfly_version || (isApache ? '2.4' : '26'))}</span></div>
       <div class="meta-item"><label>처리 로그 수</label><span>${stats.entries_processed ?? '—'}</span></div>
       <div class="meta-item"><label>감지 이상 수</label><span>${stats.anomalies_detected ?? '—'}</span></div>
+      ${isApache && stats.busy_workers != null ? `<div class="meta-item"><label>Busy Workers</label><span>${stats.busy_workers}</span></div>` : ''}
+      ${isApache && stats.requests_per_sec != null ? `<div class="meta-item"><label>요청/초</label><span>${Number(stats.requests_per_sec).toFixed(2)}</span></div>` : ''}
     </div>
     <div class="metrics-grid">${cpuBar}${memBar}${diskBar}</div>
     <div class="sev-badges">${badges}</div>
@@ -2108,6 +2148,84 @@ let _wasServerId = null;
 let _wasTaskId   = null;
 let _wasSelOp    = null;
 
+// ── Apache WAS Operations ─────────────────────────────────────────────────────
+const APACHE_WAS_OPS = [
+  { cat:'서비스 제어', id:'apache_status_check', name:'Apache 서비스 상태 확인',
+    desc:'systemctl을 통한 Apache 서비스 상태를 확인합니다.',
+    params:[],
+    cmd: () => [],
+    os_cmd: () => ['systemctl status apache2 2>/dev/null || systemctl status httpd 2>/dev/null || service apache2 status 2>/dev/null || echo "status unavailable"'],
+    verify: null,
+  },
+  { cat:'서비스 제어', id:'apache_reload', name:'Apache 설정 재로드 (Graceful)',
+    desc:'서비스 중단 없이 Apache 설정을 다시 로드합니다.',
+    params:[],
+    cmd: () => [],
+    os_cmd: () => ['apache2ctl graceful 2>/dev/null || apachectl graceful 2>/dev/null || systemctl reload apache2 2>/dev/null || systemctl reload httpd 2>/dev/null || echo "reload failed"'],
+    verify: null,
+  },
+  { cat:'서비스 제어', id:'apache_restart', name:'Apache 재시작',
+    desc:'Apache 서비스를 재시작합니다. 짧은 서비스 중단이 발생합니다.',
+    params:[],
+    cmd: () => [],
+    os_cmd: () => ['systemctl restart apache2 2>/dev/null || systemctl restart httpd 2>/dev/null || service apache2 restart 2>/dev/null || echo "restart failed"'],
+    verify: null,
+  },
+  { cat:'설정 확인', id:'apache_configtest', name:'설정 파일 검증',
+    desc:'Apache 설정 파일에 문법 오류가 있는지 검사합니다.',
+    params:[],
+    cmd: () => [],
+    os_cmd: () => ['apache2ctl configtest 2>&1 || apachectl configtest 2>&1 || httpd -t 2>&1'],
+    verify: null,
+  },
+  { cat:'설정 확인', id:'apache_modules', name:'활성 모듈 목록 조회',
+    desc:'현재 로드된 Apache 모듈 목록을 확인합니다.',
+    params:[],
+    cmd: () => [],
+    os_cmd: () => ['apache2ctl -M 2>/dev/null || apachectl -M 2>/dev/null || httpd -M 2>/dev/null'],
+    verify: null,
+  },
+  { cat:'설정 확인', id:'apache_version', name:'Apache 버전 정보 조회',
+    desc:'Apache 서버 버전 및 컴파일 옵션을 확인합니다.',
+    params:[],
+    cmd: () => [],
+    os_cmd: () => ['apache2ctl -V 2>/dev/null || apachectl -V 2>/dev/null || httpd -V 2>/dev/null'],
+    verify: null,
+  },
+  { cat:'로그', id:'apache_access_log', name:'최근 액세스 로그 조회',
+    desc:'Apache 액세스 로그 마지막 N줄을 확인합니다.',
+    params:[{id:'lines', lbl:'줄 수', def:'50', type:'number'}],
+    cmd: () => [],
+    os_cmd: p => [
+      `LOG=$(ls /var/log/apache2/access.log /etc/httpd/logs/access_log 2>/dev/null | head -1); ` +
+      `if [ -n "$LOG" ]; then tail -${p.lines||50} "$LOG"; else echo "access log not found"; fi`,
+    ],
+    verify: null,
+  },
+  { cat:'로그', id:'apache_error_log', name:'최근 에러 로그 조회',
+    desc:'Apache 에러 로그 마지막 N줄을 확인합니다.',
+    params:[{id:'lines', lbl:'줄 수', def:'50', type:'number'}],
+    cmd: () => [],
+    os_cmd: p => [
+      `LOG=$(ls /var/log/apache2/error.log /etc/httpd/logs/error_log 2>/dev/null | head -1); ` +
+      `if [ -n "$LOG" ]; then tail -${p.lines||50} "$LOG"; else echo "error log not found"; fi`,
+    ],
+    verify: null,
+  },
+  { cat:'성능', id:'apache_connections', name:'현재 연결 현황 조회',
+    desc:'현재 Apache로의 활성 연결 수 및 mod_status 정보를 확인합니다.',
+    params:[],
+    cmd: () => [],
+    os_cmd: () => [
+      'echo "=== Active TCP Connections ==="; ' +
+      '(ss -tnp 2>/dev/null | grep -E ":80\\b|:443\\b|:8080\\b" || netstat -tnp 2>/dev/null | grep -E ":80\\b|:443\\b|:8080\\b" || echo "ss/netstat not available"); ' +
+      'echo ""; echo "=== mod_status (auto) ==="; ' +
+      'curl -s --connect-timeout 3 "http://localhost/server-status?auto" 2>/dev/null || echo "mod_status unavailable (enable mod_status)"',
+    ],
+    verify: null,
+  },
+];
+
 // 카테고리별 jboss-cli 설정 작업 정의
 // ── WAS Operations (verify 명령 포함) ─────────────────────────────────────────
 const WAS_OPS = [
@@ -2251,10 +2369,16 @@ const WAS_OPS = [
 const _wasApplied   = {};  // 정상 적용된 항목의 파라미터·결과 저장
 const _wasPending   = {};  // 실행 중인 opId (taskId → opId)
 
+function _wasOps(serverId) {
+  return _isApacheAgent(serverId || _wasServerId) ? APACHE_WAS_OPS : WAS_OPS;
+}
+
 function openWasPanel(serverId) {
   _wasServerId = serverId;
   _wasTaskId   = null;
   _wasSelOp    = null;
+  const isApache = _isApacheAgent(serverId);
+  document.getElementById('was-panel-title').textContent = isApache ? '⚙️ Apache 설정 / 제어' : '⚙️ WAS 인스턴스 설정';
   document.getElementById('was-panel-sub').textContent = '서버: ' + serverId;
   _buildWasPanel();
   document.getElementById('was-overlay').classList.add('open');
@@ -2281,8 +2405,9 @@ function _appliedState(serverId, opId) {
 }
 
 function _buildWasPanel() {
+  const activeOps = _wasOps(_wasServerId);
   const cats = {};
-  WAS_OPS.forEach(op => { (cats[op.cat] = cats[op.cat] || []).push(op); });
+  activeOps.forEach(op => { (cats[op.cat] = cats[op.cat] || []).push(op); });
 
   let html = '';
   for (const [cat, ops] of Object.entries(cats)) {
@@ -2340,7 +2465,7 @@ function _buildWasPanel() {
   document.getElementById('was-panel-body').innerHTML = html;
 
   // 패널 빌드 후 열린 항목의 preview 갱신
-  WAS_OPS.forEach(op => {
+  _wasOps(_wasServerId).forEach(op => {
     if (document.getElementById('wop-' + op.id)?.classList.contains('selected')) {
       _updatePreview(op.id);
     }
@@ -2389,26 +2514,36 @@ function _getWasOpParams(op) {
 }
 
 function _updatePreview(opId) {
-  const op = WAS_OPS.find(o => o.id === opId);
+  const op = _wasOps(_wasServerId).find(o => o.id === opId);
   if (!op) return;
   const params = _getWasOpParams(op);
-  const cmds = [
-    ...op.cmd(params),
-    ...(op.verify ? ['# ─ 반영 확인 ─', op.verify(params)] : []),
-  ];
+  let cmds;
+  if (op.os_cmd) {
+    cmds = op.os_cmd(params);
+  } else {
+    cmds = [
+      ...op.cmd(params),
+      ...(op.verify ? ['# ─ 반영 확인 ─', op.verify(params)] : []),
+    ];
+  }
   const prev = document.getElementById('wprev-' + opId);
   if (prev) prev.textContent = cmds.join('\n');
 }
 
 async function executeWasOp(opId) {
-  const op = WAS_OPS.find(o => o.id === opId);
+  const op = _wasOps(_wasServerId).find(o => o.id === opId);
   if (!op || !_wasServerId) return;
 
-  const params  = _getWasOpParams(op);
-  const cmds    = [
-    ...op.cmd(params),
-    ...(op.verify ? [op.verify(params)] : []),
-  ];
+  const params = _getWasOpParams(op);
+
+  // Build payload: Apache uses os_commands, WildFly uses cli_commands
+  let bodyPayload;
+  if (op.os_cmd) {
+    bodyPayload = {rule_name: op.id, os_commands: op.os_cmd(params), description: op.name};
+  } else {
+    const cmds = [...op.cmd(params), ...(op.verify ? [op.verify(params)] : [])];
+    bodyPayload = {rule_name: op.id, cli_commands: cmds, description: op.name};
+  }
 
   // 파라미터 임시 저장 (결과 수신 시 적용 상태에 기록)
   _wasPending[opId] = params;
@@ -2430,7 +2565,7 @@ async function executeWasOp(opId) {
     const r = await fetch(`/api/agents/${encodeURIComponent(_wasServerId)}/remediate`, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({rule_name: op.id, cli_commands: cmds, description: op.name}),
+      body: JSON.stringify(bodyPayload),
     });
     const json = await r.json();
     if (!r.ok) throw new Error(json.detail || `HTTP ${r.status}`);
@@ -2451,7 +2586,7 @@ async function executeWasOp(opId) {
 function _handleWasTaskResult(td) {
   if (td.task_id !== _wasTaskId) return;
   const opId = td.rule_name;
-  const op   = WAS_OPS.find(o => o.id === opId);
+  const op   = [...WAS_OPS, ...APACHE_WAS_OPS].find(o => o.id === opId);
   const res  = document.getElementById('wres-' + opId);
   const head = document.getElementById('wres-head-' + opId);
   const body = document.getElementById('wres-body-' + opId);
@@ -2518,10 +2653,38 @@ function _handleWasTaskResult(td) {
   if (btn) { btn.disabled = false; btn.textContent = ok ? '▶ 재실행' : '▶ 다시 시도'; }
 }
 
-// ── JVM Analysis Panel ────────────────────────────────────────────────────────
+// ── JVM / Apache Analysis Panel ───────────────────────────────────────────────
 let _analysisServerId = null;
 let _analysisTab = 'gc';
+let _analysisIsApache = false;
 const _analysisTaskMap = {};
+
+const APACHE_ANALYSIS_CMDS = {
+  apache_status: {
+    os_commands: [
+      'echo "=== Service Status ==="; ' +
+      '(systemctl status apache2 2>/dev/null || systemctl status httpd 2>/dev/null || service apache2 status 2>/dev/null || echo "systemctl unavailable"); ' +
+      'echo ""; echo "=== Version ==="; ' +
+      '(apache2ctl -V 2>/dev/null || apachectl -V 2>/dev/null || httpd -V 2>/dev/null || echo "version unavailable"); ' +
+      'echo ""; echo "=== Modules ==="; ' +
+      '(apache2ctl -M 2>/dev/null || apachectl -M 2>/dev/null || httpd -M 2>/dev/null | head -40 || echo "modules unavailable"); ' +
+      'echo ""; echo "=== mod_status ==="; ' +
+      'curl -s --connect-timeout 3 "http://localhost/server-status?auto" 2>/dev/null || echo "mod_status unavailable"',
+    ],
+  },
+  apache_access: {
+    os_commands: [
+      'LOG=$(ls /var/log/apache2/access.log /etc/httpd/logs/access_log 2>/dev/null | head -1); ' +
+      'if [ -n "$LOG" ]; then echo "LOG_FILE:$LOG"; tail -200 "$LOG"; else echo "access log not found"; fi',
+    ],
+  },
+  apache_errors: {
+    os_commands: [
+      'LOG=$(ls /var/log/apache2/error.log /etc/httpd/logs/error_log 2>/dev/null | head -1); ' +
+      'if [ -n "$LOG" ]; then echo "LOG_FILE:$LOG"; tail -100 "$LOG"; else echo "error log not found"; fi',
+    ],
+  },
+};
 
 const ANALYSIS_CMDS = {
   gc: [
@@ -2589,10 +2752,27 @@ const ANALYSIS_CMDS = {
   ],
 };
 
+function _isApacheAgent(serverId) {
+  const ag = S.agents[serverId];
+  return ag && ((ag.server_type === 'apache') || (ag.wildfly_version||'').toLowerCase().startsWith('apache'));
+}
+
 function openAnalysisPanel(serverId) {
   _analysisServerId = serverId;
-  document.getElementById('analysis-panel-sub').textContent = '\uc11c\ubc84: ' + serverId;
-  switchAnalysisTab(_analysisTab);
+  _analysisIsApache = _isApacheAgent(serverId);
+  document.getElementById('analysis-panel-sub').textContent = '서버: ' + serverId;
+  document.getElementById('analysis-panel-title').textContent = _analysisIsApache ? '🔍 Apache 분석' : '🔍 JVM 분석';
+
+  // Show/hide the correct tab group and content
+  document.getElementById('analysis-tabs-wildfly').style.display   = _analysisIsApache ? 'none' : 'flex';
+  document.getElementById('analysis-tabs-apache').style.display    = _analysisIsApache ? 'flex' : 'none';
+  document.getElementById('analysis-content-wildfly').style.display = _analysisIsApache ? 'none' : 'block';
+  document.getElementById('analysis-content-apache').style.display  = _analysisIsApache ? 'block' : 'none';
+
+  // Switch to the appropriate default tab
+  const defaultTab = _analysisIsApache ? 'apache_status' : 'gc';
+  switchAnalysisTab(defaultTab);
+
   document.getElementById('analysis-overlay').classList.add('open');
   document.getElementById('analysis-panel').classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -2606,16 +2786,23 @@ function closeAnalysisPanel() {
 
 function switchAnalysisTab(tab) {
   _analysisTab = tab;
-  document.querySelectorAll('.analysis-tab-btn').forEach(b =>
+  const isApache = tab.startsWith('apache_');
+  // Activate the correct tab button
+  const tabsId = isApache ? 'analysis-tabs-apache' : 'analysis-tabs-wildfly';
+  document.querySelectorAll('#' + tabsId + ' .analysis-tab-btn').forEach(b =>
     b.classList.toggle('active', b.dataset.tab === tab));
-  document.querySelectorAll('.analysis-tab-content').forEach(c =>
+  // Show the correct content pane
+  const contentId = isApache ? 'analysis-content-apache' : 'analysis-content-wildfly';
+  document.querySelectorAll('#' + contentId + ' .analysis-tab-content').forEach(c =>
     c.classList.toggle('active', c.id === 'analysis-tab-' + tab));
 }
 async function runAnalysis(type) {
   if (!_analysisServerId) return;
-  const cmdDef = ANALYSIS_CMDS[type];
+  // Select command set: Apache or WildFly
+  const cmdSet = _analysisIsApache ? APACHE_ANALYSIS_CMDS : ANALYSIS_CMDS;
+  const cmdDef = cmdSet[type];
   if (!cmdDef) return;
-  // cmdDef can be an array (cli_commands) or {os_commands:[...]} object
+  // cmdDef can be an array (cli_commands) or {os_commands:[...]} / {cli_commands:[...]} object
   const isOsCmd  = !Array.isArray(cmdDef) && cmdDef.os_commands;
   const bodyExtra = isOsCmd
     ? {os_commands: cmdDef.os_commands}
@@ -2624,22 +2811,25 @@ async function runAnalysis(type) {
   const resultId = (type === 'heapdump') ? 'analysis-heap-result' : 'analysis-' + type + '-result';
   const btn      = document.getElementById(btnId);
   const result   = document.getElementById(resultId);
-  const labels   = {gc:'\ud83d\udcca GC \ubd84\uc11d \uc2e4\ud589', heap:'\ud83d\udcbe \ud799 \uc2a4\ub0c5\uc0f7 \uc218\uc9d1',
-                    heapdump:'\u26a0\ufe0f \ud799 \ub364\ud504 \ud30c\uc77c \uc0dd\uc131', threads:'\ud83e\uddf5 \uc2a4\ub808\ub4dc \ub364\ud504 \uc218\uc9d1'};
-  if (btn) { btn.disabled = true; btn.className = 'analysis-run-btn running'; btn.textContent = '\u23f3 \uc218\uc9d1 \uc911\u2026'; }
-  if (result) result.innerHTML = '<div class="analysis-banner loading">\u23f3 \uc5d0\uc774\uc804\ud2b8\uc5d0\uc11c \ub370\uc774\ud130 \uc218\uc9d1 \uc911\u2026</div>';
+  const labels = {
+    gc:'📊 GC 분석 실행', heap:'💾 힙 스냅샷 수집', heapdump:'⚠️ 힙 덤프 파일 생성', threads:'🧵 스레드 덤프 수집',
+    apache_status:'📡 서버 상태 수집', apache_access:'📋 접속 로그 분석', apache_errors:'⚠️ 에러 로그 수집',
+  };
+  if (btn) { btn.disabled = true; btn.className = 'analysis-run-btn running'; btn.textContent = '⏳ 수집 중…'; }
+  if (result) result.innerHTML = '<div class="analysis-banner loading">⏳ 에이전트에서 데이터 수집 중…</div>';
   try {
+    const desc = _analysisIsApache ? 'Apache 분석: ' + type : 'JVM 분석: ' + type;
     const r = await fetch('/api/agents/' + encodeURIComponent(_analysisServerId) + '/remediate', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(Object.assign({rule_name: 'analysis_' + type, description: 'JVM \ubd84\uc11d: ' + type}, bodyExtra)),
+      body: JSON.stringify(Object.assign({rule_name: 'analysis_' + type, description: desc}, bodyExtra)),
     });
     const json = await r.json();
     if (!r.ok) throw new Error(json.detail || 'HTTP ' + r.status);
-    _analysisTaskMap[json.task_id] = {type, btnId, resultId, label: labels[type]};
+    _analysisTaskMap[json.task_id] = {type, btnId, resultId, label: labels[type] || '▶ 재실행'};
   } catch(e) {
-    if (result) result.innerHTML = '<div class="analysis-banner warn">\u274c \uc694\uccad \uc2e4\ud328: ' + esc(e.message) + '</div>';
-    if (btn) { btn.disabled = false; btn.className = 'analysis-run-btn'; btn.textContent = labels[type] || '\u25b6 \uc7ac\uc2e4\ud589'; }
+    if (result) result.innerHTML = '<div class="analysis-banner warn">❌ 요청 실패: ' + esc(e.message) + '</div>';
+    if (btn) { btn.disabled = false; btn.className = 'analysis-run-btn'; btn.textContent = labels[type] || '▶ 재실행'; }
   }
 }
 
@@ -2662,10 +2852,13 @@ function _handleAnalysisResult(td) {
     result.innerHTML = '<div class="analysis-banner warn">\u274c \ubd84\uc11d \uc2e4\ud328: ' + esc(error || '\uc54c \uc218 \uc5c6\ub294 \uc624\ub958') + '</div>';
     return;
   }
-  if      (info.type === 'gc')       result.innerHTML = _renderGcAnalysis(output);
-  else if (info.type === 'heap')     result.innerHTML = _renderHeapAnalysis(output);
-  else if (info.type === 'heapdump') result.innerHTML = _renderHeapDump(output);
-  else if (info.type === 'threads')  result.innerHTML = _renderThreadDump(output);
+  if      (info.type === 'gc')             result.innerHTML = _renderGcAnalysis(output);
+  else if (info.type === 'heap')           result.innerHTML = _renderHeapAnalysis(output);
+  else if (info.type === 'heapdump')       result.innerHTML = _renderHeapDump(output);
+  else if (info.type === 'threads')        result.innerHTML = _renderThreadDump(output);
+  else if (info.type === 'apache_status')  result.innerHTML = _renderApacheStatus(output);
+  else if (info.type === 'apache_access')  result.innerHTML = _renderApacheAccess(output);
+  else if (info.type === 'apache_errors')  result.innerHTML = _renderApacheErrors(output);
 }
 // ── DMR Parsing Helpers ───────────────────────────────────────────────────────
 function _dmrPrim(s) {
@@ -3001,6 +3194,241 @@ function _renderThreadDump(output) {
     '</div>' + stateChart + threadTable + _rawBlock(output, 'threads-raw');
 }
 
+
+// ── Apache Analysis Render Functions ─────────────────────────────────────────
+
+function _renderApacheStatus(output) {
+  // Parse mod_status auto-format metrics
+  var busyWorkers   = (output.match(/BusyWorkers:\s*(\d+)/)         || [])[1];
+  var idleWorkers   = (output.match(/IdleWorkers:\s*(\d+)/)         || [])[1];
+  var reqPerSec     = (output.match(/ReqPerSec:\s*([0-9.]+)/)       || [])[1];
+  var bytesPerSec   = (output.match(/BytesPerSec:\s*([0-9.]+)/)     || [])[1];
+  var totalAccesses = (output.match(/Total Accesses:\s*(\d+)/)      || [])[1];
+  var uptime        = (output.match(/ServerUptimeSeconds:\s*(\d+)/) || [])[1];
+
+  // Service state
+  var isActive = output.indexOf('active (running)') >= 0 || output.indexOf('Active: active') >= 0;
+  var isInactive = output.indexOf('inactive') >= 0 || output.indexOf('failed') >= 0;
+  var serviceState = isActive ? '정상 (running)' : (isInactive ? '중지됨' : '확인 중');
+  var stateColor = isActive ? 'var(--online)' : (isInactive ? 'var(--critical)' : 'var(--dim)');
+
+  // Apache version
+  var versionMatch = output.match(/Server version:\s*([^\n\r]+)/);
+  var version = versionMatch ? versionMatch[1].trim() : '—';
+
+  // MPM
+  var mpmMatch = output.match(/Server MPM:\s*([^\n\r]+)/);
+  var mpm = mpmMatch ? mpmMatch[1].trim() : '—';
+
+  // Uptime format
+  function fmtUptime(secs) {
+    if (!secs) return '—';
+    var s = parseInt(secs);
+    var d = Math.floor(s/86400), h = Math.floor((s%86400)/3600), m = Math.floor((s%3600)/60);
+    return (d > 0 ? d+'일 ' : '') + (h > 0 ? h+'시간 ' : '') + m+'분';
+  }
+
+  // Enabled modules (count from module list)
+  var modLines = (output.match(/\s+\w+_module\s*\(shared\)|\s+\w+_module\s*\(static\)/g) || []);
+  var modCount = modLines.length;
+
+  // Scorecard
+  var hasModStatus = busyWorkers != null;
+  var cards = '<div class="analysis-cards">' +
+    '<div class="analysis-card"><div class="analysis-card-label">서비스 상태</div>' +
+    '<div class="analysis-card-val" style="font-size:14px;color:' + stateColor + '">' + esc(serviceState) + '</div>' +
+    '<div class="analysis-card-sub">' + esc(version) + '</div></div>';
+
+  if (hasModStatus) {
+    var busy = parseInt(busyWorkers) || 0, idle = parseInt(idleWorkers) || 0;
+    var total = busy + idle || 1;
+    var busyPct = Math.round(busy / total * 100);
+    var busCls = busyPct >= 90 ? 'crit' : busyPct >= 70 ? 'warn' : 'ok';
+    cards += '<div class="analysis-card"><div class="analysis-card-label">Busy Workers</div>' +
+      '<div class="analysis-card-val">' + busy + '</div>' +
+      '<div class="analysis-bar-wrap"><div class="analysis-bar-fill ' + busCls + '" style="width:' + busyPct + '%"></div></div>' +
+      '<div class="analysis-card-sub">Idle: ' + idle + ' / 총 ' + total + '</div></div>';
+    cards += '<div class="analysis-card"><div class="analysis-card-label">요청/초</div>' +
+      '<div class="analysis-card-val" style="font-size:18px">' + (reqPerSec ? parseFloat(reqPerSec).toFixed(2) : '—') + '</div>' +
+      '<div class="analysis-card-sub">누적: ' + (totalAccesses ? parseInt(totalAccesses).toLocaleString() : '—') + '건</div></div>';
+    cards += '<div class="analysis-card"><div class="analysis-card-label">가동 시간</div>' +
+      '<div class="analysis-card-val" style="font-size:14px">' + fmtUptime(uptime) + '</div>' +
+      '<div class="analysis-card-sub">MPM: ' + esc(mpm) + '</div></div>';
+  } else {
+    cards += '<div class="analysis-card"><div class="analysis-card-label">MPM</div>' +
+      '<div class="analysis-card-val" style="font-size:14px">' + esc(mpm) + '</div>' +
+      '<div class="analysis-card-sub">—</div></div>';
+    cards += '<div class="analysis-card"><div class="analysis-card-label">활성 모듈</div>' +
+      '<div class="analysis-card-val">' + (modCount || '—') + '</div>' +
+      '<div class="analysis-card-sub">로드된 모듈 수</div></div>';
+  }
+  cards += '</div>';
+
+  // Recommendations
+  var recs = [];
+  if (!isActive) recs.push({icon:'🚨', text:'Apache 서비스가 실행 중이지 않습니다. systemctl start apache2 명령으로 시작하세요.'});
+  if (!hasModStatus) recs.push({icon:'💡', text:'mod_status가 비활성화되어 있습니다. /etc/apache2/mods-enabled/status.conf를 활성화하면 더 자세한 정보를 수집할 수 있습니다.'});
+  if (busyWorkers && idleWorkers) {
+    var busyN = parseInt(busyWorkers), idleN = parseInt(idleWorkers);
+    if (idleN === 0) recs.push({icon:'🚨', text:'Idle Worker가 0입니다. 모든 워커가 사용 중이므로 요청이 큐에 쌓이고 있을 수 있습니다.'});
+    else if (busyN / (busyN + idleN) > 0.85) recs.push({icon:'⚠️', text:'Worker 사용률이 85%를 초과합니다. MaxRequestWorkers 증가를 검토하세요.'});
+    else recs.push({icon:'✅', text:'Worker 사용률이 정상 범위입니다.'});
+  }
+
+  return cards + _recsBlock(recs) + _rawBlock(output, 'apache-status-raw');
+}
+
+function _renderApacheAccess(output) {
+  if (output.indexOf('not found') >= 0 && output.length < 200) {
+    return '<div class="analysis-banner warn">❌ 액세스 로그 파일을 찾을 수 없습니다.</div>' + _rawBlock(output, 'apache-access-raw');
+  }
+
+  // Combined Log Format: IP - - [date] "METHOD URL HTTP/x.x" status bytes "ref" "ua"
+  var logRe = /^(\S+)\s+\S+\s+\S+\s+\[([^\]]+)\]\s+"([A-Z]+)\s+([^\s"]+)[^"]*"\s+(\d+)\s+(\S+)/gm;
+  var entries = [], m;
+  while ((m = logRe.exec(output)) !== null) {
+    entries.push({ip: m[1], time: m[2], method: m[3], path: m[4], status: parseInt(m[5]), bytes: m[6] !== '-' ? parseInt(m[6]) || 0 : 0});
+  }
+
+  if (!entries.length) {
+    return '<div class="analysis-banner idle">액세스 로그 항목을 파싱하지 못했습니다. 로그 형식을 확인하세요.</div>' + _rawBlock(output, 'apache-access-raw');
+  }
+
+  var total    = entries.length;
+  var s5xx     = entries.filter(function(e){ return e.status >= 500; }).length;
+  var s4xx     = entries.filter(function(e){ return e.status >= 400 && e.status < 500; }).length;
+  var s3xx     = entries.filter(function(e){ return e.status >= 300 && e.status < 400; }).length;
+  var s2xx     = entries.filter(function(e){ return e.status >= 200 && e.status < 300; }).length;
+  var totalBytes = entries.reduce(function(s,e){ return s + e.bytes; }, 0);
+
+  // Top IPs
+  var ipMap = {};
+  entries.forEach(function(e){ ipMap[e.ip] = (ipMap[e.ip] || 0) + 1; });
+  var topIPs = Object.entries(ipMap).sort(function(a,b){ return b[1]-a[1]; }).slice(0, 8);
+
+  // Top paths
+  var pathMap = {};
+  entries.forEach(function(e){
+    var p = e.path.split('?')[0].substring(0, 60);
+    pathMap[p] = (pathMap[p] || 0) + 1;
+  });
+  var topPaths = Object.entries(pathMap).sort(function(a,b){ return b[1]-a[1]; }).slice(0, 8);
+
+  // Status code counts
+  var statusMap = {};
+  entries.forEach(function(e){ statusMap[e.status] = (statusMap[e.status] || 0) + 1; });
+  var topStatuses = Object.entries(statusMap).sort(function(a,b){ return b[1]-a[1]; }).slice(0, 8);
+
+  var errRate = total > 0 ? Math.round((s4xx + s5xx) / total * 100) : 0;
+  var errCls  = errRate >= 10 ? 'crit' : errRate >= 3 ? 'warn' : 'ok';
+
+  var cards = '<div class="analysis-cards">' +
+    '<div class="analysis-card"><div class="analysis-card-label">분석 요청 수</div><div class="analysis-card-val">' + total.toLocaleString() + '</div><div class="analysis-card-sub">최근 로그 기준</div></div>' +
+    '<div class="analysis-card"><div class="analysis-card-label">2xx 성공</div><div class="analysis-card-val" style="color:var(--low)">' + s2xx.toLocaleString() + '</div><div class="analysis-card-sub">' + (total > 0 ? Math.round(s2xx/total*100) : 0) + '%</div></div>' +
+    '<div class="analysis-card"><div class="analysis-card-label">4xx 오류</div><div class="analysis-card-val" style="color:' + (s4xx > 0 ? 'var(--high)' : 'var(--bright)') + '">' + s4xx.toLocaleString() + '</div><div class="analysis-card-sub">' + (total > 0 ? Math.round(s4xx/total*100) : 0) + '%</div></div>' +
+    '<div class="analysis-card"><div class="analysis-card-label">5xx 오류</div><div class="analysis-card-val" style="color:' + (s5xx > 0 ? 'var(--critical)' : 'var(--bright)') + '">' + s5xx.toLocaleString() + '</div><div class="analysis-card-sub">오류율 ' + errRate + '%</div></div>' +
+    '</div>';
+
+  // Status table
+  var statusTable = '<table class="analysis-table" style="margin-bottom:14px"><thead><tr><th>상태 코드</th><th>요청 수</th><th>비율</th></tr></thead><tbody>' +
+    topStatuses.map(function(kv) {
+      var sc = parseInt(kv[0]);
+      var color = sc >= 500 ? 'var(--critical)' : sc >= 400 ? 'var(--high)' : sc >= 300 ? 'var(--medium)' : 'var(--low)';
+      var pct = total > 0 ? Math.round(kv[1]/total*100) : 0;
+      return '<tr><td style="color:' + color + ';font-weight:700">' + kv[0] + '</td><td>' + kv[1].toLocaleString() + '</td><td>' +
+        '<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:5px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden">' +
+        '<div style="width:' + pct + '%;height:100%;background:' + color + ';border-radius:2px"></div></div>' +
+        '<span style="font-size:11px;color:var(--dim);min-width:30px">' + pct + '%</span></div></td></tr>';
+    }).join('') + '</tbody></table>';
+
+  // Top IPs table
+  var ipTable = '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">상위 요청 IP</div>' +
+    '<table class="analysis-table" style="margin-bottom:14px"><thead><tr><th>IP 주소</th><th>요청 수</th></tr></thead><tbody>' +
+    topIPs.map(function(kv) {
+      return '<tr><td style="font-family:monospace">' + esc(kv[0]) + '</td><td>' + kv[1].toLocaleString() + '</td></tr>';
+    }).join('') + '</tbody></table>';
+
+  // Top paths table
+  var pathTable = '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">상위 요청 URL</div>' +
+    '<table class="analysis-table" style="margin-bottom:14px"><thead><tr><th>경로</th><th>요청 수</th></tr></thead><tbody>' +
+    topPaths.map(function(kv) {
+      return '<tr><td style="font-family:monospace;font-size:11px">' + esc(kv[0]) + '</td><td>' + kv[1].toLocaleString() + '</td></tr>';
+    }).join('') + '</tbody></table>';
+
+  var recs = [];
+  if (s5xx > 5) recs.push({icon:'🚨', text:'5xx 오류가 ' + s5xx + '건 감지되었습니다. 서버 에러 로그를 확인하세요.'});
+  if (s4xx / (total||1) > 0.1) recs.push({icon:'⚠️', text:'4xx 오류율이 ' + Math.round(s4xx/total*100) + '%로 높습니다. 잘못된 URL 요청이나 인증 문제를 확인하세요.'});
+  if (topIPs.length && topIPs[0][1] > total * 0.5) recs.push({icon:'⚠️', text:'단일 IP(' + topIPs[0][0] + ')에서 전체 요청의 50%+ 발생. 봇/크롤러 여부를 확인하세요.'});
+  if (!recs.length) recs.push({icon:'✅', text:'요청 패턴이 정상 범위입니다.'});
+
+  return cards + statusTable + ipTable + pathTable + _recsBlock(recs) + _rawBlock(output, 'apache-access-raw');
+}
+
+function _renderApacheErrors(output) {
+  if (output.indexOf('not found') >= 0 && output.length < 200) {
+    return '<div class="analysis-banner warn">❌ 에러 로그 파일을 찾을 수 없습니다.</div>' + _rawBlock(output, 'apache-err-raw');
+  }
+
+  // Apache error log: [Day Mon DD HH:MM:SS.usec YYYY] [module:level] [pid N] msg
+  // Also handle older format: [Day Mon DD HH:MM:SS YYYY] [level] msg
+  var errRe = /^\[([^\]]{10,40})\]\s+\[([^\]]+)\](?:\s+\[pid\s+\d+\])?\s+(.+)/gm;
+  var entries = [], m;
+  while ((m = errRe.exec(output)) !== null && entries.length < 100) {
+    var levelRaw = m[2].trim();
+    var colonIdx = levelRaw.lastIndexOf(':');
+    var level = colonIdx >= 0 ? levelRaw.slice(colonIdx + 1).trim().toUpperCase() : levelRaw.toUpperCase();
+    entries.push({time: m[1].trim(), level: level, msg: m[3].trim()});
+  }
+
+  if (!entries.length) {
+    return '<div class="analysis-banner idle">에러 로그 항목이 없거나 파싱하지 못했습니다.</div>' + _rawBlock(output, 'apache-err-raw');
+  }
+
+  // Count by level
+  var levelMap = {};
+  entries.forEach(function(e){ levelMap[e.level] = (levelMap[e.level] || 0) + 1; });
+
+  var levelColor = {ERROR:'var(--critical)', CRIT:'var(--critical)', ALERT:'var(--critical)',
+                    WARN:'var(--high)', WARNING:'var(--high)',
+                    NOTICE:'var(--medium)', INFO:'var(--medium)', DEBUG:'var(--dim)'};
+
+  var cards = '<div class="analysis-cards">' +
+    '<div class="analysis-card"><div class="analysis-card-label">총 에러 항목</div><div class="analysis-card-val">' + entries.length.toLocaleString() + '</div><div class="analysis-card-sub">최근 로그 기준</div></div>';
+
+  var critCount = (levelMap['ERROR'] || 0) + (levelMap['CRIT'] || 0) + (levelMap['ALERT'] || 0);
+  var warnCount = (levelMap['WARN'] || 0) + (levelMap['WARNING'] || 0);
+  cards += '<div class="analysis-card"><div class="analysis-card-label">ERROR/CRIT</div>' +
+    '<div class="analysis-card-val" style="color:' + (critCount > 0 ? 'var(--critical)' : 'var(--bright)') + '">' + critCount + '</div><div class="analysis-card-sub">심각 오류</div></div>';
+  cards += '<div class="analysis-card"><div class="analysis-card-label">WARN</div>' +
+    '<div class="analysis-card-val" style="color:' + (warnCount > 0 ? 'var(--high)' : 'var(--bright)') + '">' + warnCount + '</div><div class="analysis-card-sub">경고</div></div>';
+  cards += '</div>';
+
+  // Level distribution
+  var levelTable = '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">레벨별 분포</div>' +
+    '<table class="analysis-table" style="margin-bottom:14px"><thead><tr><th>레벨</th><th>건수</th></tr></thead><tbody>' +
+    Object.entries(levelMap).sort(function(a,b){ return b[1]-a[1]; }).map(function(kv) {
+      var color = levelColor[kv[0]] || 'var(--text)';
+      return '<tr><td><span style="color:' + color + ';font-weight:700">' + esc(kv[0]) + '</span></td><td>' + kv[1].toLocaleString() + '</td></tr>';
+    }).join('') + '</tbody></table>';
+
+  // Recent error rows
+  var recentRows = entries.slice(0, 20).map(function(e) {
+    var color = levelColor[e.level] || 'var(--text)';
+    return '<tr><td style="font-size:10px;color:var(--dim);white-space:nowrap">' + esc(e.time.substring(0, 20)) + '</td>' +
+      '<td><span style="color:' + color + ';font-weight:700;font-size:11px">' + esc(e.level) + '</span></td>' +
+      '<td style="font-size:11px;font-family:monospace;color:var(--dim)">' + esc(e.msg.substring(0, 100)) + '</td></tr>';
+  }).join('');
+  var recentTable = '<div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">최근 에러 로그</div>' +
+    '<table class="analysis-table" style="margin-bottom:14px"><thead><tr><th>시각</th><th>레벨</th><th>메시지</th></tr></thead><tbody>' +
+    recentRows + '</tbody></table>';
+
+  var recs = [];
+  if (critCount > 0) recs.push({icon:'🚨', text:'ERROR/CRIT 레벨 오류가 ' + critCount + '건 있습니다. 즉시 확인이 필요합니다.'});
+  if (warnCount > 10) recs.push({icon:'⚠️', text:'WARN 경고가 ' + warnCount + '건 누적되어 있습니다. 원인을 파악하세요.'});
+  if (!critCount && warnCount === 0) recs.push({icon:'✅', text:'심각한 에러 로그가 없습니다.'});
+
+  return cards + levelTable + recentTable + _recsBlock(recs) + _rawBlock(output, 'apache-err-raw');
+}
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 connect();

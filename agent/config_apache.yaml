@@ -1,0 +1,28 @@
+server:
+  id: "apache-server-01"
+  host: "web-server-01"           # 표시할 호스트명 (기본값: 시스템 hostname)
+
+controller:
+  url: "http://localhost:8380"    # 컨트롤러 주소
+  api_key: ""                     # controller config.yaml의 api_key와 일치시킬 것
+
+apache:
+  access_log: "/var/log/apache2/access.log"    # Ubuntu/Debian
+  # access_log: "/etc/httpd/logs/access_log"  # CentOS/RHEL
+  error_log:  "/var/log/apache2/error.log"
+  # error_log:  "/etc/httpd/logs/error_log"   # CentOS/RHEL
+  mod_status_url: "http://localhost/server-status?auto"  # mod_status가 활성화된 경우
+  version: "2.4"
+
+monitoring:
+  poll_interval: 5         # 로그 폴링 주기 (초)
+  report_interval: 30      # 이상 이벤트 일괄 보고 주기 (초)
+
+anomaly:
+  err5xx_threshold: 5      # 이 횟수 이상 5xx 발생 시 CRITICAL
+  err5xx_window: 60        # 5xx 감지 윈도우 (초)
+  err4xx_threshold: 30     # 이 횟수 이상 4xx 발생 시 MEDIUM
+  err4xx_window: 60        # 4xx 감지 윈도우 (초)
+  ip_threshold: 100        # 단일 IP 과도 요청 임계값 (초당)
+  ip_window: 60            # IP 감지 윈도우 (초)
+  simulation_anomaly_rate: 0.05   # 시뮬레이션 모드 이상 발생 확률

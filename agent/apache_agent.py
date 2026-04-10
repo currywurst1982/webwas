@@ -597,11 +597,14 @@ class ApacheAgent:
         logger.info("Task %s [%s] → %s", task_id, rule_name,
                     "OK" if result["success"] else "FAIL")
         self._post(f"/api/tasks/{task_id}/result", {
-            "task_id":   task_id,
-            "rule_name": rule_name,
-            "success":   result["success"],
-            "output":    result["output"][:65536],
-            "error":     result["error"][:2048],
+            "task_id":    task_id,
+            "server_id":  self.server_id,
+            "result": {
+                "success": result["success"],
+                "output":  result["output"][:65536],
+                "error":   result["error"][:2048],
+            },
+            "executed_at": datetime.now().isoformat(),
         })
 
     def _run_os_commands(self, commands: List[str], ignore_errors: bool = False) -> dict:

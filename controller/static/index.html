@@ -1019,7 +1019,7 @@
       <div class="stat-val" id="s-crit">0</div>
     </div>
     <div class="stat-card s-warn">
-      <div class="stat-label">Warning</div>
+      <div class="stat-label">HIGH 이상</div>
       <div class="stat-val" id="s-warn">0</div>
     </div>
     <div class="stat-card">
@@ -1374,7 +1374,8 @@ function renderStats() {
   cnt('s-total',      all.length);
   cnt('s-online',     all.filter(a => a.status === 'online').length);
   cnt('s-crit',       all.filter(a => a.status === 'critical').length);
-  cnt('s-warn',       all.filter(a => a.status === 'warning').length);
+  const highCount = all.reduce((s, a) => s + ((a.anomaly_counts || {})['HIGH'] || 0), 0);
+  cnt('s-warn',       highCount);
   cnt('s-offline',    all.filter(a => a.status === 'offline').length);
   const totalAnom = all.reduce((s, a) => {
     return s + Object.values(a.anomaly_counts || {}).reduce((t, c) => t + c, 0);

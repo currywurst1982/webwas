@@ -1015,7 +1015,7 @@
       <div class="stat-val" id="s-online">0</div>
     </div>
     <div class="stat-card s-crit">
-      <div class="stat-label">Critical</div>
+      <div class="stat-label">CRITICAL 이상</div>
       <div class="stat-val" id="s-crit">0</div>
     </div>
     <div class="stat-card s-warn">
@@ -1373,7 +1373,8 @@ function renderStats() {
   const all = Object.values(S.agents);
   cnt('s-total',      all.length);
   cnt('s-online',     all.filter(a => a.status === 'online').length);
-  cnt('s-crit',       all.filter(a => a.status === 'critical').length);
+  const critCount = all.reduce((s, a) => s + ((a.anomaly_counts || {})['CRITICAL'] || 0), 0);
+  cnt('s-crit',       critCount);
   const highCount = all.reduce((s, a) => s + ((a.anomaly_counts || {})['HIGH'] || 0), 0);
   cnt('s-warn',       highCount);
   cnt('s-offline',    all.filter(a => a.status === 'offline').length);

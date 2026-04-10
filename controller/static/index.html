@@ -115,6 +115,97 @@
     .stat-card.s-crit    .stat-val { color: var(--critical); }
     .stat-card.s-warn    .stat-val { color: var(--high); }
 
+    /* ── Resource monitoring charts ─────────────────────────────────────────── */
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 1000px) { .chart-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 560px)  { .chart-grid { grid-template-columns: 1fr; } }
+
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px 10px;
+    }
+    .chart-card-label {
+      font-size: 10px;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      margin-bottom: 4px;
+    }
+    .chart-card-val {
+      font-size: 26px;
+      font-weight: 700;
+      line-height: 1.1;
+      color: var(--bright);
+    }
+    .chart-card-sub {
+      font-size: 11px;
+      color: var(--dim);
+      margin-top: 2px;
+      margin-bottom: 8px;
+      min-height: 14px;
+    }
+    .chart-sparkline {
+      display: block;
+      width: 100%;
+      height: 52px;
+    }
+    .chart-srv-tabs {
+      display: inline-flex;
+      gap: 6px;
+      margin-left: 10px;
+      flex-wrap: wrap;
+    }
+    .chart-srv-tab {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--dim);
+      font-size: 11px;
+      padding: 3px 10px;
+      cursor: pointer;
+    }
+    .chart-srv-tab.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .was-status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 10px;
+      margin-bottom: 28px;
+    }
+    .was-status-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .was-status-item-name {
+      font-size: 12px;
+      color: var(--bright);
+      font-weight: 600;
+    }
+    .was-status-item-val {
+      font-size: 13px;
+      color: var(--online);
+      font-weight: 700;
+    }
+    .was-status-item-time {
+      font-size: 10px;
+      color: var(--dim);
+    }
+
     /* ── Section titles ─────────────────────────────────────────────────────── */
     .sec-title {
       font-size: 15px;
@@ -1032,6 +1123,46 @@
     </div>
   </div>
 
+  <!-- Resource monitoring charts -->
+  <div class="sec-title">
+    📊 리소스 모니터링
+    <div class="chart-srv-tabs" id="chart-tabs"></div>
+  </div>
+  <div class="chart-grid" id="chart-grid">
+    <div class="chart-card">
+      <div class="chart-card-label">CPU 사용률</div>
+      <div class="chart-card-val" id="cv-cpu">—</div>
+      <div class="chart-card-sub" id="cs-cpu">호스트 CPU</div>
+      <canvas class="chart-sparkline" id="sp-cpu"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-card-label">메모리 사용률</div>
+      <div class="chart-card-val" id="cv-mem">—</div>
+      <div class="chart-card-sub" id="cs-mem">사용 / 전체</div>
+      <canvas class="chart-sparkline" id="sp-mem"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-card-label">디스크 사용률</div>
+      <div class="chart-card-val" id="cv-disk">—</div>
+      <div class="chart-card-sub" id="cs-disk">사용 / 전체</div>
+      <canvas class="chart-sparkline" id="sp-disk"></canvas>
+    </div>
+    <div class="chart-card">
+      <div class="chart-card-label">감지 이상 (누적)</div>
+      <div class="chart-card-val" id="cv-anom">—</div>
+      <div class="chart-card-sub" id="cs-anom">이상 이벤트</div>
+      <canvas class="chart-sparkline" id="sp-anom"></canvas>
+    </div>
+  </div>
+
+  <!-- WAS 설정 현황 -->
+  <div id="was-status-section" style="display:none;margin-bottom:28px;">
+    <div class="sec-title" style="margin-bottom:12px;">⚙️ WAS 설정 현황
+      <span class="sec-count" id="was-status-count">0</span>
+    </div>
+    <div class="was-status-grid" id="was-status-grid"></div>
+  </div>
+
   <!-- Server grid -->
   <div class="sec-title">
     서버 현황
@@ -1258,13 +1389,22 @@ function handle(msg) {
           S.totalAnom++;
         }
       });
+      // seed initial chart data from state snapshot
+      Object.entries(S.agents).forEach(([sid, ag]) => {
+        if (ag.stats) {
+          const aTotal = Object.values(ag.anomaly_counts || {}).reduce((s, c) => s + c, 0);
+          _chartPush(sid, ag.stats, aTotal);
+        }
+      });
       renderAll();
+      _refreshCharts();
       break;
 
     case 'agent_registered':
       S.agents[msg.data.server_id] = msg.data.agent;
       renderServers();
       renderStats();
+      _refreshCharts();
       notify('info', `Agent 등록: ${msg.data.server_id}`, msg.data.agent.host);
       break;
 
@@ -1274,8 +1414,11 @@ function handle(msg) {
         ag.last_heartbeat = msg.data.timestamp;
         ag.stats  = msg.data.stats;
         ag.status = msg.data.status;
+        const aTotal = Object.values(ag.anomaly_counts || {}).reduce((s, c) => s + c, 0);
+        _chartPush(msg.data.server_id, msg.data.stats || {}, aTotal);
         refreshCard(msg.data.server_id);
         renderStats();
+        if (!_chartSid || _chartSid === msg.data.server_id) _refreshCharts();
       }
       break;
     }
@@ -1300,6 +1443,7 @@ function handle(msg) {
           ag.anomaly_counts[sev] = (ag.anomaly_counts[sev] || 0) + 1;
         });
         refreshCard(msg.data.server_id);
+        if (!_chartSid || _chartSid === msg.data.server_id) _refreshCharts();
       }
 
       renderFeed();
@@ -1364,6 +1508,179 @@ function handle(msg) {
       ws && ws.readyState === 1 && ws.send('ping');
       break;
   }
+}
+
+// ── Resource chart engine ─────────────────────────────────────────────────────
+const _chartData = {};   // sid → { cpu:[], mem:[], disk:[], anom:[] }
+const CHART_MAX  = 60;
+let   _chartSid  = null;
+
+function _chartPush(sid, stats, anomTotal) {
+  if (!_chartData[sid]) _chartData[sid] = { cpu:[], mem:[], disk:[], anom:[] };
+  const d = _chartData[sid];
+  const push = (arr, v) => { arr.push(v != null ? +v : null); if (arr.length > CHART_MAX) arr.shift(); };
+  push(d.cpu,  stats.cpu_percent);
+  push(d.mem,  stats.mem_percent);
+  push(d.disk, stats.disk_percent);
+  push(d.anom, anomTotal);
+}
+
+function _drawSparkline(canvasId, data, hexColor, maxVal) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const dpr  = window.devicePixelRatio || 1;
+  const W    = canvas.offsetWidth || 200;
+  const H    = 52;
+  canvas.width  = W * dpr;
+  canvas.height = H * dpr;
+  const ctx  = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, W, H);
+
+  const pts = data.map((v, i) => v != null ? { x: (i / (CHART_MAX - 1)) * W, y: v } : null);
+  const vals = data.filter(v => v != null);
+  if (!vals.length) return;
+
+  const lo = 0;
+  const hi = maxVal != null ? maxVal : Math.max(...vals, 1);
+  const fy = v => H - 4 - ((v - lo) / (hi - lo || 1)) * (H - 8);
+
+  // subtle grid
+  ctx.strokeStyle = 'rgba(255,255,255,.04)';
+  ctx.lineWidth = 1;
+  [0.25, 0.5, 0.75].forEach(f => {
+    ctx.beginPath(); ctx.moveTo(0, fy(hi * f)); ctx.lineTo(W, fy(hi * f)); ctx.stroke();
+  });
+
+  // area fill
+  const validPts = pts.filter(Boolean);
+  if (validPts.length < 2) return;
+  ctx.beginPath();
+  validPts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, fy(p.y)) : ctx.lineTo(p.x, fy(p.y)));
+  ctx.lineTo(validPts[validPts.length - 1].x, H);
+  ctx.lineTo(validPts[0].x, H);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, hexColor + '55');
+  grad.addColorStop(1, hexColor + '08');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // line
+  ctx.beginPath();
+  let first = true;
+  pts.forEach(p => {
+    if (!p) { first = true; return; }
+    first ? ctx.moveTo(p.x, fy(p.y)) : ctx.lineTo(p.x, fy(p.y));
+    first = false;
+  });
+  ctx.strokeStyle = hexColor;
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // terminal dot
+  const last = validPts[validPts.length - 1];
+  ctx.beginPath();
+  ctx.arc(last.x, fy(last.y), 3, 0, Math.PI * 2);
+  ctx.fillStyle = hexColor;
+  ctx.fill();
+}
+
+function _chartColor(pct, low, mid) {
+  // pct-based thresholds; low/mid optional overrides
+  const l = low ?? 70, m = mid ?? 85;
+  return pct >= 90 ? '#f85149' : pct >= m ? '#d29922' : pct >= l ? '#e3b341' : '#3fb950';
+}
+
+function _refreshCharts() {
+  // pick default server if not set
+  const ids = Object.keys(S.agents);
+  if (!ids.length) return;
+  if (!_chartSid || !S.agents[_chartSid]) _chartSid = ids[0];
+
+  // tabs
+  const tabEl = document.getElementById('chart-tabs');
+  tabEl.innerHTML = ids.length > 1
+    ? ids.map(id =>
+        `<button class="chart-srv-tab${id === _chartSid ? ' active' : ''}"
+           onclick="switchChartServer('${esc(id)}')">${esc(id)}</button>`).join('')
+    : '';
+
+  const ag    = S.agents[_chartSid];
+  const stats = ag.stats || {};
+  const d     = _chartData[_chartSid] || { cpu:[], mem:[], disk:[], anom:[] };
+  const counts = ag.anomaly_counts || {};
+  const anomTotal = Object.values(counts).reduce((s, c) => s + c, 0);
+
+  // CPU
+  const cpu = stats.cpu_percent;
+  const cpuC = _chartColor(cpu ?? 0);
+  document.getElementById('cv-cpu').textContent = cpu != null ? cpu.toFixed(1) + '%' : '—';
+  document.getElementById('cv-cpu').style.color = cpuC;
+  document.getElementById('cs-cpu').textContent = 'CPU ' + (cpu != null ? _barLabel(cpu) : '데이터 없음');
+  _drawSparkline('sp-cpu', d.cpu, cpuC, 100);
+
+  // Memory
+  const mem  = stats.mem_percent;
+  const memC = _chartColor(mem ?? 0, 75, 85);
+  document.getElementById('cv-mem').textContent = mem != null ? mem.toFixed(1) + '%' : '—';
+  document.getElementById('cv-mem').style.color = memC;
+  const memSub = (stats.mem_used_mb && stats.mem_total_mb)
+    ? `${stats.mem_used_mb.toLocaleString()} / ${stats.mem_total_mb.toLocaleString()} MB`
+    : '데이터 없음';
+  document.getElementById('cs-mem').textContent = memSub;
+  _drawSparkline('sp-mem', d.mem, memC, 100);
+
+  // Disk
+  const disk  = stats.disk_percent;
+  const diskC = _chartColor(disk ?? 0, 75, 85);
+  document.getElementById('cv-disk').textContent = disk != null ? disk.toFixed(1) + '%' : '—';
+  document.getElementById('cv-disk').style.color = diskC;
+  const diskSub = (stats.disk_used_gb && stats.disk_total_gb)
+    ? `${stats.disk_used_gb} / ${stats.disk_total_gb} GB`
+    : '데이터 없음';
+  document.getElementById('cs-disk').textContent = diskSub;
+  _drawSparkline('sp-disk', d.disk, diskC, 100);
+
+  // Anomalies
+  const anomC = anomTotal > 0 ? '#d29922' : '#3fb950';
+  document.getElementById('cv-anom').textContent = anomTotal.toLocaleString();
+  document.getElementById('cv-anom').style.color = anomC;
+  const crit = counts['CRITICAL'] || 0, high = counts['HIGH'] || 0;
+  document.getElementById('cs-anom').textContent = `CRITICAL ${crit}  HIGH ${high}  MEDIUM ${counts['MEDIUM']||0}`;
+  _drawSparkline('sp-anom', d.anom, anomC);
+
+  // WAS 설정 현황
+  _refreshWasStatus(_chartSid);
+}
+
+function _barLabel(pct) {
+  return pct >= 90 ? '⚠️ 위험' : pct >= 75 ? '⚠️ 주의' : '정상';
+}
+
+function _refreshWasStatus(sid) {
+  const applied = _wasApplied[sid] || {};
+  const entries = Object.entries(applied);
+  const section = document.getElementById('was-status-section');
+  const grid    = document.getElementById('was-status-grid');
+  const countEl = document.getElementById('was-status-count');
+  if (!entries.length) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  if (countEl) countEl.textContent = entries.length;
+  grid.innerHTML = entries.map(([opId, st]) => {
+    const op = (typeof WAS_OPS !== 'undefined' ? WAS_OPS : []).find(o => o.id === opId);
+    return `<div class="was-status-item">
+      <div class="was-status-item-name">✅ ${esc(op?.name || opId)}</div>
+      <div class="was-status-item-val">${esc(st.verifiedValue || '적용됨')}</div>
+      <div class="was-status-item-time">${esc(st.appliedAt || '')}</div>
+    </div>`;
+  }).join('');
+}
+
+function switchChartServer(sid) {
+  _chartSid = sid;
+  _refreshCharts();
 }
 
 // ── Render ────────────────────────────────────────────────────────────────────
@@ -2159,6 +2476,8 @@ function _handleWasTaskResult(td) {
       verifiedValue: verified,
     };
     delete _wasPending[opId];
+    // WAS 설정 현황 대시보드 갱신
+    if (_chartSid === _wasServerId) _refreshWasStatus(_chartSid);
 
     head.textContent = '✅ 정상 적용됨';
     body.textContent = rawOutput || '(출력 없음)';

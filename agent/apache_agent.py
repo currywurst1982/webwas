@@ -462,10 +462,12 @@ class ApacheAgent:
         self.simulate       = simulate
 
         ap = self.cfg.get("apache", {})
-        self.apache_version = ap.get("version", "2.4")
-        self.mod_status     = ApacheModStatus(
-            url=ap.get("mod_status_url", "http://localhost/server-status?auto")
-        )
+        self.apache_version  = ap.get("version", "2.4")
+        self.apache_root     = ap.get("apache_root", "")          # e.g. /opt/apache-2.4.63
+        self.access_log_path = ap.get("access_log", "")
+        self.error_log_path  = ap.get("error_log", "")
+        self.mod_status_url  = ap.get("mod_status_url", "http://localhost/server-status?auto")
+        self.mod_status      = ApacheModStatus(url=self.mod_status_url)
 
         acfg = self.cfg.get("anomaly", {})
         self.detector = ApacheAnomalyDetector(
@@ -545,6 +547,12 @@ class ApacheAgent:
     def _heartbeat(self):
         stats = dict(self._stats)
         stats.update(_collect_system_metrics())
+
+        # Always include installation paths so the dashboard can build correct commands
+        stats["apache_root"]      = self.apache_root
+        stats["access_log_path"]  = self.access_log_path
+        stats["error_log_path"]   = self.error_log_path
+        stats["mod_status_url"]   = self.mod_status_url
 
         ms = self.mod_status.fetch()
         if ms:

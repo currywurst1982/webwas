@@ -13,6 +13,7 @@ apache:
   # error_log:  "/etc/httpd/logs/error_log"   # CentOS/RHEL
   mod_status_url: "http://localhost/server-status?auto"  # mod_status가 활성화된 경우
   version: "2.4"
+  # apache_root: "/opt/apache-2.4.63"  # 커스텀 설치 경로 (비어있으면 시스템 기본 명령 사용)
 
 monitoring:
   poll_interval: 5         # 로그 폴링 주기 (초)

@@ -1294,6 +1294,11 @@ function handle(msg) {
       if (ag) {
         ag.status = msg.data.agent_status;
         ag.recent_anomalies = items.slice(0, 5);
+        if (!ag.anomaly_counts) ag.anomaly_counts = {};
+        items.forEach(a => {
+          const sev = a.severity || 'UNKNOWN';
+          ag.anomaly_counts[sev] = (ag.anomaly_counts[sev] || 0) + 1;
+        });
         refreshCard(msg.data.server_id);
       }
 
@@ -1371,7 +1376,10 @@ function renderStats() {
   cnt('s-crit',       all.filter(a => a.status === 'critical').length);
   cnt('s-warn',       all.filter(a => a.status === 'warning').length);
   cnt('s-offline',    all.filter(a => a.status === 'offline').length);
-  cnt('s-total-anom', S.totalAnom);
+  const totalAnom = all.reduce((s, a) => {
+    return s + Object.values(a.anomaly_counts || {}).reduce((t, c) => t + c, 0);
+  }, 0);
+  cnt('s-total-anom', totalAnom);
 }
 
 function renderServers() {
@@ -1489,7 +1497,7 @@ function renderFeed() {
     ? S.anomalies
     : S.anomalies.filter(a => a.severity === S.filter);
 
-  cnt('feed-count', S.totalAnom);
+  cnt('feed-count', S.anomalies.length);
 
   if (!list.length) {
     body.innerHTML = `<div class="feed-empty">

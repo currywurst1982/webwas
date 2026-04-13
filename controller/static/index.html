@@ -3306,11 +3306,27 @@ function _renderApacheStatus(output) {
   var totalAccesses = (output.match(/Total Accesses:\s*(\d+)/)      || [])[1];
   var uptime        = (output.match(/ServerUptimeSeconds:\s*(\d+)/) || [])[1];
 
-  // Service state
-  var isActive = output.indexOf('active (running)') >= 0 || output.indexOf('Active: active') >= 0;
+  // Detect custom Apache root (present when apache_root is set in config)
+  var customRootMatch = output.match(/=== Apache Root:\s*([^\n\r]+)/);
+  var customRoot = customRootMatch ? customRootMatch[1].trim() : '';
+
+  // Service state — systemctl format
+  var isActive   = output.indexOf('active (running)') >= 0 || output.indexOf('Active: active') >= 0;
   var isInactive = output.indexOf('inactive') >= 0 || output.indexOf('failed') >= 0;
+
+  // Custom-root format: detect via PID file check + running processes section
+  if (customRoot && !isActive && !isInactive) {
+    var pidLineFound  = /^PID:\s+\d+/m.test(output);
+    var procNotRunning = output.indexOf('Process not running') >= 0;
+    var pidFileMissing = output.indexOf('PID file not found') >= 0;
+    var procSection   = output.split('=== Running Processes ===')[1] || '';
+    var hasProcs      = procSection.trim().length > 0 && procSection.trim().indexOf('(none)') < 0;
+    isActive   = (pidLineFound && !procNotRunning) || hasProcs;
+    isInactive = (!isActive) && (procNotRunning || (pidFileMissing && !hasProcs));
+  }
+
   var serviceState = isActive ? '정상 (running)' : (isInactive ? '중지됨' : '확인 중');
-  var stateColor = isActive ? 'var(--online)' : (isInactive ? 'var(--critical)' : 'var(--dim)');
+  var stateColor   = isActive ? 'var(--online)' : (isInactive ? 'var(--critical)' : 'var(--dim)');
 
   // Apache version
   var versionMatch = output.match(/Server version:\s*([^\n\r]+)/);
@@ -3366,8 +3382,16 @@ function _renderApacheStatus(output) {
 
   // Recommendations
   var recs = [];
-  if (!isActive) recs.push({icon:'🚨', text:'Apache 서비스가 실행 중이지 않습니다. systemctl start apache2 명령으로 시작하세요.'});
-  if (!hasModStatus) recs.push({icon:'💡', text:'mod_status가 비활성화되어 있습니다. /etc/apache2/mods-enabled/status.conf를 활성화하면 더 자세한 정보를 수집할 수 있습니다.'});
+  if (!isActive) {
+    var startCmd = customRoot ? customRoot + '/bin/apachectl start' : 'systemctl start apache2';
+    recs.push({icon:'🚨', text:'Apache 서비스가 실행 중이지 않습니다. ' + startCmd + ' 명령으로 시작하세요.'});
+  }
+  if (!hasModStatus) {
+    var modHint = customRoot
+      ? 'mod_status가 비활성화되어 있습니다. ' + customRoot + '/conf/extra/ 에서 mod_status를 활성화하면 더 자세한 정보를 수집할 수 있습니다.'
+      : 'mod_status가 비활성화되어 있습니다. /etc/apache2/mods-enabled/status.conf를 활성화하면 더 자세한 정보를 수집할 수 있습니다.';
+    recs.push({icon:'💡', text: modHint});
+  }
   if (busyWorkers && idleWorkers) {
     var busyN = parseInt(busyWorkers), idleN = parseInt(idleWorkers);
     if (idleN === 0) recs.push({icon:'🚨', text:'Idle Worker가 0입니다. 모든 워커가 사용 중이므로 요청이 큐에 쌓이고 있을 수 있습니다.'});

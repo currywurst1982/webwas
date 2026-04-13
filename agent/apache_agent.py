@@ -469,12 +469,12 @@ class ApacheAgent:
         self.mod_status_url  = ap.get("mod_status_url", "http://localhost/server-status?auto")
         self.mod_status      = ApacheModStatus(url=self.mod_status_url)
 
-        # 포트 정보 — 설정 우선, 없으면 Apache 설정 파일에서 자동 감지
+        # 포트 및 도메인 — 설정 우선, 없으면 Apache 설정 파일에서 자동 감지
         self.listen_ports = ap.get("listen_ports", "") or self._detect_listen_ports()
-        self.ajp_port     = ap.get("ajp_port", "")     or self._detect_ajp_port()
-        if self.listen_ports or self.ajp_port:
-            logger.info("Ports detected — listen: %s  ajp: %s",
-                        self.listen_ports or "—", self.ajp_port or "—")
+        self.domain       = ap.get("domain", "")       or self._detect_domain()
+        if self.listen_ports or self.domain:
+            logger.info("WEB info — listen: %s  domain: %s",
+                        self.listen_ports or "—", self.domain or "—")
 
         # WEB-WAS 연동 체크 설정
         wc = self.cfg.get("was", {})
@@ -592,37 +592,38 @@ class ApacheAgent:
                 logger.debug("listen port detection error (%s): %s", cp, e)
         return ",".join(ports)
 
-    def _detect_ajp_port(self) -> str:
-        """Apache ProxyPass / mod_jk 설정에서 AJP 포트를 감지합니다.
-        설정된 ajp_port가 없을 때만 호출됩니다.
+    def _detect_domain(self) -> str:
+        """Apache 설정 파일에서 ServerName(서비스 도메인)을 감지합니다.
+        설정된 domain이 없을 때만 호출됩니다.
         """
         conf_dirs = []
         if self.apache_root:
-            conf_dirs.append(f"{self.apache_root}/conf")
-        conf_dirs += ["/etc/apache2", "/etc/httpd/conf", "/etc/httpd"]
+            conf_dirs += [
+                f"{self.apache_root}/conf",
+                f"{self.apache_root}/conf/extra",
+            ]
+        conf_dirs += [
+            "/etc/apache2/sites-enabled",
+            "/etc/apache2",
+            "/etc/httpd/conf.d",
+            "/etc/httpd/conf",
+        ]
         for d in conf_dirs:
             if not os.path.exists(d):
                 continue
             try:
                 result = subprocess.run(
-                    f"grep -rh 'ajp://' \"{d}/\" 2>/dev/null",
+                    f"grep -rhi 'ServerName' \"{d}/\" 2>/dev/null",
                     shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
                 )
-                text = result.stdout.decode("utf-8", errors="replace")
-                m = re.search(r'ajp://[^:]+:(\d+)', text)
-                if m:
-                    return m.group(1)
-                # mod_jk workers.properties style: worker.xxx.port=NNNN
-                result2 = subprocess.run(
-                    f"grep -rh 'worker\\..*\\.port' \"{d}/\" 2>/dev/null",
-                    shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
-                )
-                text2 = result2.stdout.decode("utf-8", errors="replace")
-                m2 = re.search(r'worker\.\w+\.port\s*=\s*(\d+)', text2)
-                if m2:
-                    return m2.group(1)
+                for line in result.stdout.decode("utf-8", errors="replace").splitlines():
+                    line = line.strip()
+                    if line.lower().startswith("servername") and not line.startswith("#"):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            return parts[1]
             except Exception as e:
-                logger.debug("ajp port detection error (%s): %s", d, e)
+                logger.debug("domain detection error (%s): %s", d, e)
         return ""
 
     # ── WAS connectivity check ────────────────────────────────────────────────
@@ -665,7 +666,7 @@ class ApacheAgent:
         stats["error_log_path"]   = self.error_log_path
         stats["mod_status_url"]   = self.mod_status_url
         stats["listen_ports"]     = self.listen_ports
-        stats["ajp_port"]         = self.ajp_port
+        stats["domain"]           = self.domain
 
         # WEB-WAS 연동 상태
         if self.was_server_id:

@@ -11,6 +11,8 @@ server:
 wildfly:
   # Absolute path to WildFly 26 server log
   log_path: "/opt/wildfly-26.1.3.Final/standalone/log/server.log"
+  instance_name: ""   # WAS 인스턴스명 (비어있으면 standalone.xml에서 감지, 없으면 server.id 사용)
+  ajp_port: ""        # AJP 리스너 포트 (비어있으면 standalone.xml에서 자동 감지)
 
 controller:
   url: "http://localhost:8080"      # Controller URL

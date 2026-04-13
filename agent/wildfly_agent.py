@@ -871,6 +871,15 @@ class WildflyAgent:
         else:
             logger.info("jboss-cli disabled or not found — auto-remediation unavailable")
 
+        # WAS 인스턴스명 / AJP 포트 — 설정 우선, 없으면 standalone.xml에서 자동 감지
+        wf_cfg = self.cfg.get("wildfly", {})
+        self.instance_name = wf_cfg.get("instance_name", "") or self._detect_instance_name()
+        self.ajp_port      = wf_cfg.get("ajp_port", "")      or self._detect_ajp_port()
+        if not self.instance_name:
+            self.instance_name = self.server_id   # 최종 fallback
+        logger.info("WAS info — instance: %s  ajp: %s",
+                    self.instance_name, self.ajp_port or "—")
+
         self._pending: List[Dict] = []
         self._stats: Dict = defaultdict(int)
         self._last_report = datetime.now()
@@ -922,9 +931,79 @@ class WildflyAgent:
         else:
             logger.warning("Registration failed — will retry on next heartbeat")
 
+    # ── WAS info detection ────────────────────────────────────────────────────
+
+    def _standalone_xml_path(self) -> str:
+        """jboss_cli.path에서 WildFly 홈 디렉토리를 유추하여 standalone.xml 경로 반환."""
+        cli_path = self.cfg.get("jboss_cli", {}).get("path", "")
+        if cli_path and "/bin/" in cli_path:
+            wf_home = cli_path.split("/bin/")[0]
+            return f"{wf_home}/standalone/configuration/standalone.xml"
+        # 공통 경로 후보
+        for p in [
+            "/opt/wildfly/standalone/configuration/standalone.xml",
+            "/opt/jboss/standalone/configuration/standalone.xml",
+        ]:
+            if os.path.exists(p):
+                return p
+        return ""
+
+    def _detect_ajp_port(self) -> str:
+        """standalone.xml의 AJP 소켓 바인딩에서 포트를 감지합니다."""
+        xml = self._standalone_xml_path()
+        if not xml or not os.path.exists(xml):
+            return ""
+        try:
+            with open(xml, errors="replace") as f:
+                content = f.read()
+            # <socket-binding name="ajp" port="${jboss.ajp.port:8009}"/>
+            m = re.search(
+                r'<socket-binding\b[^>]*\bname=["\']ajp["\'][^>]*\bport=["\']([^"\']+)["\']',
+                content,
+            )
+            if not m:
+                # attribute order may differ
+                m = re.search(
+                    r'<socket-binding\b[^>]*\bport=["\']([^"\']+)["\'][^>]*\bname=["\']ajp["\']',
+                    content,
+                )
+            if m:
+                val = m.group(1)
+                # resolve expression ${prop:default}
+                expr = re.search(r'\$\{[^:}]+:(\d+)\}', val)
+                return expr.group(1) if expr else (val if val.isdigit() else "")
+        except Exception as e:
+            logger.debug("AJP port detection error: %s", e)
+        return ""
+
+    def _detect_instance_name(self) -> str:
+        """standalone.xml의 jboss.node.name 또는 server name을 감지합니다."""
+        xml = self._standalone_xml_path()
+        if not xml or not os.path.exists(xml):
+            return ""
+        try:
+            with open(xml, errors="replace") as f:
+                content = f.read()
+            # <property name="jboss.node.name" value="..."/>
+            m = re.search(
+                r'<property\b[^>]*\bname=["\']jboss\.node\.name["\'][^>]*\bvalue=["\']([^"\']+)["\']',
+                content,
+            )
+            if m:
+                return m.group(1)
+            # <server name="..." xmlns=...>  — root element
+            m2 = re.search(r'<server\b[^>]*\bname=["\']([^"\']+)["\']', content)
+            if m2:
+                return m2.group(1)
+        except Exception as e:
+            logger.debug("Instance name detection error: %s", e)
+        return ""
+
     def _heartbeat(self):
         stats = dict(self._stats)
         stats.update(_collect_system_metrics())
+        stats["instance_name"] = self.instance_name
+        stats["ajp_port"]      = self.ajp_port
         self._post(
             "/api/agents/heartbeat",
             {

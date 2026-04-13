@@ -2657,8 +2657,16 @@ const WAS_OPS = [
   },
 ];
 
-// ── WAS 적용 상태 저장소 {serverId: {opId: {params, appliedAt, verifiedValue}}} ──
-const _wasApplied   = {};  // 정상 적용된 항목의 파라미터·결과 저장
+/// ── WAS 적용 상태 저장소 {serverId: {opId: {params, appliedAt, verifiedValue}}} ──
+// localStorage에 영구 저장하여 새로고침(F5) 후에도 마지막 적용값이 유지됩니다.
+const _WAS_APPLIED_KEY = 'wasApplied_v1';
+const _wasApplied = (() => {
+  try { return JSON.parse(localStorage.getItem(_WAS_APPLIED_KEY) || '{}'); }
+  catch(e) { return {}; }
+})();
+function _saveWasApplied() {
+  try { localStorage.setItem(_WAS_APPLIED_KEY, JSON.stringify(_wasApplied)); } catch(e) {}
+}
 const _wasPending   = {};  // 실행 중인 opId (taskId → opId)
 
 function _wasOps(serverId) {
@@ -2899,7 +2907,7 @@ function _handleWasTaskResult(td) {
     const verified  = op.verify ? _parseVerifyValue(rawOutput) : null;
     const now       = new Date().toLocaleTimeString('ko-KR');
 
-    // 적용 상태 저장
+    // 적용 상태 저장 (localStorage에 영구 보존)
     const savedParams = _wasPending[opId] || {};
     if (!_wasApplied[_wasServerId]) _wasApplied[_wasServerId] = {};
     _wasApplied[_wasServerId][opId] = {
@@ -2907,6 +2915,7 @@ function _handleWasTaskResult(td) {
       appliedAt:     now,
       verifiedValue: verified,
     };
+    _saveWasApplied();
     delete _wasPending[opId];
     // WAS 설정 현황 대시보드 갱신
     if (_chartSid === _wasServerId) _refreshWasStatus(_chartSid);

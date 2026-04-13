@@ -312,6 +312,14 @@
       flex-shrink: 0;
       margin: 4px 0;
     }
+    .pair-conn-status {
+      font-size: 9px;
+      text-align: center;
+      white-space: nowrap;
+      margin-top: 2px;
+      letter-spacing: -.2px;
+      color: var(--dim);
+    }
     .pair-partner-badge {
       display: inline-flex;
       align-items: center;
@@ -1813,23 +1821,29 @@ function renderStats() {
   cnt('s-total-anom', totalAnom);
 }
 
-// Returns [[host, {web, was}], ...] for hosts that have both a WEB and WAS agent
+// Returns [{webId, wasId, host}, ...] pairs where the Apache agent declares
+// was.server_id in config and that WAS agent is registered in S.agents.
 function _computePairs() {
-  const byHost = {};
+  const pairs = [];
+  const used  = new Set();
   for (const [id, ag] of Object.entries(S.agents)) {
-    const host = ag.host || id;
-    if (!byHost[host]) byHost[host] = { web: null, was: null };
     const isAp = ag.server_type === 'apache' || (ag.wildfly_version||'').toLowerCase().startsWith('apache');
-    if (isAp) byHost[host].web = id; else byHost[host].was = id;
+    if (!isAp) continue;
+    const wasId = ag.stats?.was_server_id;
+    if (!wasId || !S.agents[wasId]) continue;
+    if (used.has(id) || used.has(wasId)) continue;
+    pairs.push({ webId: id, wasId, host: ag.host || id });
+    used.add(id);
+    used.add(wasId);
   }
-  return Object.entries(byHost).filter(([, p]) => p.web && p.was);
+  return pairs;
 }
 
 // Returns partner info if this id is part of a WEB-WAS pair
 function _pairPartner(id) {
-  for (const [, p] of _computePairs()) {
-    if (p.web === id) return { myRole: 'web', partnerId: p.was };
-    if (p.was === id) return { myRole: 'was', partnerId: p.web };
+  for (const p of _computePairs()) {
+    if (p.webId === id) return { myRole: 'web', partnerId: p.wasId };
+    if (p.wasId === id) return { myRole: 'was', partnerId: p.webId };
   }
   return null;
 }
@@ -1845,11 +1859,11 @@ function renderServers() {
   }
 
   const fullPairs = _computePairs();
-  const pairedIds = new Set(fullPairs.flatMap(([, p]) => [p.web, p.was]));
+  const pairedIds = new Set(fullPairs.flatMap(p => [p.webId, p.wasId]));
 
   // Render WEB-WAS pair groups first
-  fullPairs.forEach(([host, pair]) => {
-    const gid = 'pair-group-' + host.replace(/[^\w-]/g, '-');
+  fullPairs.forEach(pair => {
+    const gid = 'pg-' + pair.webId.replace(/[^\w-]/g, '-');
     let group = document.getElementById(gid);
     if (!group) {
       group = document.createElement('div');
@@ -1857,30 +1871,59 @@ function renderServers() {
       group.className = 'pair-group';
       grid.insertBefore(group, grid.firstChild);
     }
-    // Build inner structure if not yet created or cards moved out
-    const webCard = document.getElementById('card-' + pair.web);
-    const wasCard = document.getElementById('card-' + pair.was);
+    // Build static structure if cards are missing or moved out
+    const webCard = document.getElementById('card-' + pair.webId);
+    const wasCard = document.getElementById('card-' + pair.wasId);
     if (!webCard || !group.contains(webCard) || !wasCard || !group.contains(wasCard)) {
       group.innerHTML = `
         <div class="pair-group-header">
           <span class="pair-tag web">WEB</span>
           <div class="pair-divider-line"></div>
-          <span class="pair-host-txt">연동 그룹 &middot; ${esc(host)}</span>
+          <span class="pair-host-txt">연동 그룹 &middot; ${esc(pair.host)}</span>
           <div class="pair-divider-line"></div>
           <span class="pair-tag was">WAS</span>
         </div>
         <div class="pair-cards">
-          <div id="card-${pair.web}" class="srv-card pair-card-web"></div>
+          <div id="card-${pair.webId}" class="srv-card pair-card-web"></div>
           <div class="pair-connector">
             <div class="pair-conn-line"></div>
-            <div class="pair-conn-icon">⇄</div>
+            <div class="pair-conn-icon" id="pci-${gid}">⇄</div>
+            <div class="pair-conn-status" id="pcs-${gid}">확인 중…</div>
             <div class="pair-conn-line"></div>
           </div>
-          <div id="card-${pair.was}" class="srv-card pair-card-was"></div>
+          <div id="card-${pair.wasId}" class="srv-card pair-card-was"></div>
         </div>`;
     }
-    fillCard(document.getElementById('card-' + pair.web), pair.web, S.agents[pair.web]);
-    fillCard(document.getElementById('card-' + pair.was), pair.was, S.agents[pair.was]);
+    // Always refresh connection status indicator
+    const webStats  = S.agents[pair.webId]?.stats || {};
+    const connected = webStats.was_connected;          // true / false / null
+    const checkUrl  = webStats.was_check_url  || '';
+    const lastCheck = webStats.was_last_check
+      ? new Date(webStats.was_last_check).toLocaleTimeString('ko-KR') : '';
+    const iconEl   = document.getElementById('pci-' + gid);
+    const statusEl = document.getElementById('pcs-' + gid);
+    if (iconEl) {
+      if (connected === true) {
+        iconEl.textContent = '✓';
+        iconEl.style.cssText = 'color:var(--online);border-color:rgba(63,185,80,.5);background:rgba(63,185,80,.12)';
+      } else if (connected === false) {
+        iconEl.textContent = '✕';
+        iconEl.style.cssText = 'color:var(--critical);border-color:rgba(248,81,73,.4);background:rgba(248,81,73,.1)';
+      } else {
+        iconEl.textContent = '⇄';
+        iconEl.style.cssText = '';
+      }
+      iconEl.title = checkUrl
+        ? `체크 URL: ${checkUrl}${lastCheck ? '\n마지막 확인: ' + lastCheck : ''}` : '';
+    }
+    if (statusEl) {
+      statusEl.textContent = connected === true ? '연동됨'
+                           : connected === false ? '연동 끊김' : '확인 중…';
+      statusEl.style.color = connected === true ? 'var(--online)'
+                           : connected === false ? 'var(--critical)' : 'var(--dim)';
+    }
+    fillCard(document.getElementById('card-' + pair.webId), pair.webId, S.agents[pair.webId]);
+    fillCard(document.getElementById('card-' + pair.wasId), pair.wasId, S.agents[pair.wasId]);
   });
 
   // Render unpaired agents
@@ -1959,11 +2002,21 @@ function fillCard(el, id, a) {
   const _partner = _pairPartner(id);
   const partnerBadge = (() => {
     if (!_partner) return '';
-    const pAg  = S.agents[_partner.partnerId];
-    const pSt  = pAg?.status || 'offline';
+    const pAg      = S.agents[_partner.partnerId];
+    const pSt      = pAg?.status || 'offline';
     const dotColor = pSt === 'online' ? 'var(--online)' : pSt === 'critical' ? 'var(--critical)' : pSt === 'warning' ? 'var(--high)' : 'var(--dim)';
-    const label = _partner.myRole === 'web' ? 'WAS' : 'WEB';
-    return `<span class="pair-partner-badge">↔ ${label}: <strong style="color:var(--text)">${esc(_partner.partnerId)}</strong> <span class="pair-partner-dot" style="color:${dotColor}">●</span></span>`;
+    const label    = _partner.myRole === 'web' ? 'WAS' : 'WEB';
+    // For WEB agents, append HTTP check result (e.g. "HTTP 200")
+    let connExtra = '';
+    if (_partner.myRole === 'web') {
+      const connected = a.stats?.was_connected;
+      const httpCode  = a.stats?.was_check_status;
+      if (connected === true)
+        connExtra = ` <span style="color:var(--online);font-size:9px">HTTP ${httpCode||200}</span>`;
+      else if (connected === false)
+        connExtra = ` <span style="color:var(--critical);font-size:9px">${httpCode ? 'HTTP '+httpCode : '연결 실패'}</span>`;
+    }
+    return `<span class="pair-partner-badge">↔ ${label}: <strong style="color:var(--text)">${esc(_partner.partnerId)}</strong> <span class="pair-partner-dot" style="color:${dotColor}">●</span>${connExtra}</span>`;
   })();
 
   el.innerHTML = `

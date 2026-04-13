@@ -469,6 +469,16 @@ class ApacheAgent:
         self.mod_status_url  = ap.get("mod_status_url", "http://localhost/server-status?auto")
         self.mod_status      = ApacheModStatus(url=self.mod_status_url)
 
+        # WEB-WAS 연동 체크 설정
+        wc = self.cfg.get("was", {})
+        self.was_server_id      = wc.get("server_id", "")
+        self.was_check_url      = wc.get("check_url", "")
+        self.was_check_interval = int(wc.get("check_interval", 30))
+        self.was_check_timeout  = int(wc.get("check_timeout", 5))
+        self._was_connected: Optional[bool] = None  # None=미확인, True=연동, False=단절
+        self._was_check_status  = 0
+        self._was_last_check    = 0.0
+
         acfg = self.cfg.get("anomaly", {})
         self.detector = ApacheAnomalyDetector(
             err5xx_threshold = acfg.get("err5xx_threshold", 5),
@@ -542,6 +552,34 @@ class ApacheAgent:
         })
         logger.info("Registration %s", "OK" if ok else "FAILED — will retry")
 
+    # ── WAS connectivity check ────────────────────────────────────────────────
+
+    def _check_was_connection(self):
+        """check_url에 HTTP GET을 수행하여 WEB-WAS 연동 상태를 확인합니다.
+        HTTP 200 응답이면 connected=True, 그 외 또는 오류면 False.
+        was.check_interval 주기마다 실행됩니다.
+        """
+        if not self.was_check_url:
+            return
+        now = time.time()
+        if now - self._was_last_check < self.was_check_interval:
+            return
+        self._was_last_check = now
+        try:
+            r = requests.get(
+                self.was_check_url,
+                timeout=self.was_check_timeout,
+                allow_redirects=True,
+            )
+            self._was_check_status = r.status_code
+            self._was_connected    = (r.status_code == 200)
+            logger.info("WAS check [%s] → HTTP %d  connected=%s",
+                        self.was_check_url, r.status_code, self._was_connected)
+        except Exception as e:
+            self._was_check_status = 0
+            self._was_connected    = False
+            logger.debug("WAS check failed (%s): %s", self.was_check_url, e)
+
     # ── Heartbeat ─────────────────────────────────────────────────────────────
 
     def _heartbeat(self):
@@ -553,6 +591,16 @@ class ApacheAgent:
         stats["access_log_path"]  = self.access_log_path
         stats["error_log_path"]   = self.error_log_path
         stats["mod_status_url"]   = self.mod_status_url
+
+        # WEB-WAS 연동 상태
+        if self.was_server_id:
+            stats["was_server_id"]    = self.was_server_id
+            stats["was_check_url"]    = self.was_check_url
+            stats["was_connected"]    = self._was_connected
+            stats["was_check_status"] = self._was_check_status
+            if self._was_last_check:
+                stats["was_last_check"] = datetime.fromtimestamp(
+                    self._was_last_check).isoformat()
 
         ms = self.mod_status.fetch()
         if ms:
@@ -709,6 +757,7 @@ class ApacheAgent:
                         self._pending = [p for p in self._pending if p["id"] not in sent_ids]
 
                 now = time.time()
+                self._check_was_connection()
                 if now - last_hb >= 10:
                     self._heartbeat()
                     last_hb = now

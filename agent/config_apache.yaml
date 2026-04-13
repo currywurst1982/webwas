@@ -17,6 +17,12 @@ apache:
   version: "2.4"
   apache_root: "/opt/apache-2.4.63"  # 커스텀 설치 경로 (비어있으면 시스템 기본 명령 사용)
 
+was:
+  server_id: "wildfly-server-01"           # 연동된 WAS 에이전트 server_id
+  check_url: "http://localhost/test.jsp"   # HTTP 200 응답이면 WEB-WAS 연동 확인
+  check_interval: 30                       # 연동 확인 주기 (초)
+  check_timeout: 5                         # 응답 타임아웃 (초)
+
 monitoring:
   poll_interval: 5         # 로그 폴링 주기 (초)
   report_interval: 30      # 이상 이벤트 일괄 보고 주기 (초)

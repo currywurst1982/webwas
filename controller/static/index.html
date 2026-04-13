@@ -247,6 +247,81 @@
     .srv-card.st-warning  { border-color: var(--high); }
     .srv-card.st-offline  { opacity: .55; }
 
+    /* ── WEB-WAS 연동 그룹 ─────────────────────────────────────────── */
+    .pair-group {
+      grid-column: 1 / -1;
+      background: rgba(56,139,253,.035);
+      border: 1px solid rgba(56,139,253,.3);
+      border-radius: 10px;
+      padding: 12px 14px 14px;
+    }
+    .pair-group-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .pair-tag {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .5px;
+      white-space: nowrap;
+    }
+    .pair-tag.web { background: rgba(63,185,80,.15); color: #3fb950; border: 1px solid rgba(63,185,80,.35); }
+    .pair-tag.was { background: rgba(56,139,253,.15); color: #58a6ff; border: 1px solid rgba(56,139,253,.35); }
+    .pair-divider-line {
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(to right, rgba(63,185,80,.2), rgba(56,139,253,.2));
+    }
+    .pair-host-txt { font-size: 11px; color: var(--dim); white-space: nowrap; }
+    .pair-cards {
+      display: flex;
+      align-items: stretch;
+    }
+    .pair-cards .srv-card { flex: 1; min-width: 0; }
+    .pair-card-web { border-color: rgba(63,185,80,.4) !important; }
+    .pair-card-was { border-color: rgba(56,139,253,.4) !important; }
+    .pair-connector {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 42px;
+      flex-shrink: 0;
+      padding: 12px 0;
+    }
+    .pair-conn-line {
+      flex: 1;
+      width: 2px;
+      background: linear-gradient(to bottom, transparent, rgba(88,166,255,.45), transparent);
+    }
+    .pair-conn-icon {
+      font-size: 14px;
+      color: #58a6ff;
+      background: var(--surface2);
+      border: 1px solid rgba(56,139,253,.4);
+      border-radius: 50%;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin: 4px 0;
+    }
+    .pair-partner-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      color: var(--dim);
+      margin-top: 3px;
+    }
+    .pair-partner-dot { font-size: 10px; }
+
     .srv-head {
       display: flex;
       justify-content: space-between;
@@ -1738,6 +1813,27 @@ function renderStats() {
   cnt('s-total-anom', totalAnom);
 }
 
+// Returns [[host, {web, was}], ...] for hosts that have both a WEB and WAS agent
+function _computePairs() {
+  const byHost = {};
+  for (const [id, ag] of Object.entries(S.agents)) {
+    const host = ag.host || id;
+    if (!byHost[host]) byHost[host] = { web: null, was: null };
+    const isAp = ag.server_type === 'apache' || (ag.wildfly_version||'').toLowerCase().startsWith('apache');
+    if (isAp) byHost[host].web = id; else byHost[host].was = id;
+  }
+  return Object.entries(byHost).filter(([, p]) => p.web && p.was);
+}
+
+// Returns partner info if this id is part of a WEB-WAS pair
+function _pairPartner(id) {
+  for (const [, p] of _computePairs()) {
+    if (p.web === id) return { myRole: 'web', partnerId: p.was };
+    if (p.was === id) return { myRole: 'was', partnerId: p.web };
+  }
+  return null;
+}
+
 function renderServers() {
   const grid = document.getElementById('server-grid');
   const ids  = Object.keys(S.agents);
@@ -1748,7 +1844,47 @@ function renderServers() {
     return;
   }
 
-  ids.forEach(id => {
+  const fullPairs = _computePairs();
+  const pairedIds = new Set(fullPairs.flatMap(([, p]) => [p.web, p.was]));
+
+  // Render WEB-WAS pair groups first
+  fullPairs.forEach(([host, pair]) => {
+    const gid = 'pair-group-' + host.replace(/[^\w-]/g, '-');
+    let group = document.getElementById(gid);
+    if (!group) {
+      group = document.createElement('div');
+      group.id = gid;
+      group.className = 'pair-group';
+      grid.insertBefore(group, grid.firstChild);
+    }
+    // Build inner structure if not yet created or cards moved out
+    const webCard = document.getElementById('card-' + pair.web);
+    const wasCard = document.getElementById('card-' + pair.was);
+    if (!webCard || !group.contains(webCard) || !wasCard || !group.contains(wasCard)) {
+      group.innerHTML = `
+        <div class="pair-group-header">
+          <span class="pair-tag web">WEB</span>
+          <div class="pair-divider-line"></div>
+          <span class="pair-host-txt">연동 그룹 &middot; ${esc(host)}</span>
+          <div class="pair-divider-line"></div>
+          <span class="pair-tag was">WAS</span>
+        </div>
+        <div class="pair-cards">
+          <div id="card-${pair.web}" class="srv-card pair-card-web"></div>
+          <div class="pair-connector">
+            <div class="pair-conn-line"></div>
+            <div class="pair-conn-icon">⇄</div>
+            <div class="pair-conn-line"></div>
+          </div>
+          <div id="card-${pair.was}" class="srv-card pair-card-was"></div>
+        </div>`;
+    }
+    fillCard(document.getElementById('card-' + pair.web), pair.web, S.agents[pair.web]);
+    fillCard(document.getElementById('card-' + pair.was), pair.was, S.agents[pair.was]);
+  });
+
+  // Render unpaired agents
+  ids.filter(id => !pairedIds.has(id)).forEach(id => {
     let card = document.getElementById('card-' + id);
     if (!card) {
       card = document.createElement('div');
@@ -1766,7 +1902,10 @@ function refreshCard(id) {
 
 function fillCard(el, id, a) {
   const st = a.status || 'unknown';
-  el.className = `srv-card st-${st}`;
+  // Preserve pair-card-web / pair-card-was class when inside a pair group
+  const pairCls = el.classList.contains('pair-card-web') ? ' pair-card-web'
+                : el.classList.contains('pair-card-was') ? ' pair-card-was' : '';
+  el.className = `srv-card st-${st}${pairCls}`;
 
   const counts  = a.anomaly_counts || {};
   const badges  = ['CRITICAL','HIGH','MEDIUM','LOW']
@@ -1816,11 +1955,22 @@ function fillCard(el, id, a) {
   const diskBar = metricBar('디스크', stats.disk_percent, 'disk', diskSub);
   const isApache = (a.server_type === 'apache') || (a.wildfly_version||'').toLowerCase().startsWith('apache');
 
+  // Partner badge — shown when this agent is part of a WEB-WAS pair
+  const _partner = _pairPartner(id);
+  const partnerBadge = (() => {
+    if (!_partner) return '';
+    const pAg  = S.agents[_partner.partnerId];
+    const pSt  = pAg?.status || 'offline';
+    const dotColor = pSt === 'online' ? 'var(--online)' : pSt === 'critical' ? 'var(--critical)' : pSt === 'warning' ? 'var(--high)' : 'var(--dim)';
+    const label = _partner.myRole === 'web' ? 'WAS' : 'WEB';
+    return `<span class="pair-partner-badge">↔ ${label}: <strong style="color:var(--text)">${esc(_partner.partnerId)}</strong> <span class="pair-partner-dot" style="color:${dotColor}">●</span></span>`;
+  })();
+
   el.innerHTML = `
     <div class="srv-head">
       <div>
         <div class="srv-id">${esc(id)}${simBadge}</div>
-        <div class="srv-host">${esc(a.host || '')}</div>
+        <div class="srv-host">${esc(a.host || '')}${partnerBadge}</div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
         <button onclick="event.stopPropagation();openAnalysisPanel('${esc(id)}')"

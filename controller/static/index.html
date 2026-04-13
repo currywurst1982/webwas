@@ -2044,6 +2044,8 @@ function fillCard(el, id, a) {
       <div class="meta-item"><label>감지 이상 수</label><span>${stats.anomalies_detected ?? '—'}</span></div>
       ${isApache && stats.busy_workers != null ? `<div class="meta-item"><label>Busy Workers</label><span>${stats.busy_workers}</span></div>` : ''}
       ${isApache && stats.requests_per_sec != null ? `<div class="meta-item"><label>요청/초</label><span>${Number(stats.requests_per_sec).toFixed(2)}</span></div>` : ''}
+      ${isApache && stats.listen_ports ? `<div class="meta-item"><label>WEB 포트</label><span style="color:var(--online)">${esc(String(stats.listen_ports))}</span></div>` : ''}
+      ${isApache && stats.ajp_port ? `<div class="meta-item"><label>AJP 포트</label><span style="color:#58a6ff">${esc(String(stats.ajp_port))}</span></div>` : ''}
     </div>
     <div class="metrics-grid">${cpuBar}${memBar}${diskBar}</div>
     <div class="sev-badges">${badges}</div>

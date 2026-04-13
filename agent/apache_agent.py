@@ -469,6 +469,13 @@ class ApacheAgent:
         self.mod_status_url  = ap.get("mod_status_url", "http://localhost/server-status?auto")
         self.mod_status      = ApacheModStatus(url=self.mod_status_url)
 
+        # 포트 정보 — 설정 우선, 없으면 Apache 설정 파일에서 자동 감지
+        self.listen_ports = ap.get("listen_ports", "") or self._detect_listen_ports()
+        self.ajp_port     = ap.get("ajp_port", "")     or self._detect_ajp_port()
+        if self.listen_ports or self.ajp_port:
+            logger.info("Ports detected — listen: %s  ajp: %s",
+                        self.listen_ports or "—", self.ajp_port or "—")
+
         # WEB-WAS 연동 체크 설정
         wc = self.cfg.get("was", {})
         self.was_server_id      = wc.get("server_id", "")
@@ -552,6 +559,72 @@ class ApacheAgent:
         })
         logger.info("Registration %s", "OK" if ok else "FAILED — will retry")
 
+    # ── Port detection ────────────────────────────────────────────────────────
+
+    def _detect_listen_ports(self) -> str:
+        """Apache Listen 디렉티브에서 서비스 포트를 감지합니다.
+        설정된 listen_ports가 없을 때만 호출됩니다.
+        """
+        conf_candidates = []
+        if self.apache_root:
+            conf_candidates += [
+                f"{self.apache_root}/conf/httpd.conf",
+                f"{self.apache_root}/conf/extra/httpd-ssl.conf",
+            ]
+        conf_candidates += [
+            "/etc/apache2/ports.conf",
+            "/etc/httpd/conf/httpd.conf",
+        ]
+        ports: list = []
+        for cp in conf_candidates:
+            if not os.path.exists(cp):
+                continue
+            try:
+                with open(cp, errors="replace") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("Listen ") and not line.startswith("#"):
+                            val = line.split()[1]
+                            port = val.split(":")[-1]   # handle "0.0.0.0:443" form
+                            if port.isdigit() and port not in ports:
+                                ports.append(port)
+            except Exception as e:
+                logger.debug("listen port detection error (%s): %s", cp, e)
+        return ",".join(ports)
+
+    def _detect_ajp_port(self) -> str:
+        """Apache ProxyPass / mod_jk 설정에서 AJP 포트를 감지합니다.
+        설정된 ajp_port가 없을 때만 호출됩니다.
+        """
+        conf_dirs = []
+        if self.apache_root:
+            conf_dirs.append(f"{self.apache_root}/conf")
+        conf_dirs += ["/etc/apache2", "/etc/httpd/conf", "/etc/httpd"]
+        for d in conf_dirs:
+            if not os.path.exists(d):
+                continue
+            try:
+                result = subprocess.run(
+                    f"grep -rh 'ajp://' \"{d}/\" 2>/dev/null",
+                    shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
+                )
+                text = result.stdout.decode("utf-8", errors="replace")
+                m = re.search(r'ajp://[^:]+:(\d+)', text)
+                if m:
+                    return m.group(1)
+                # mod_jk workers.properties style: worker.xxx.port=NNNN
+                result2 = subprocess.run(
+                    f"grep -rh 'worker\\..*\\.port' \"{d}/\" 2>/dev/null",
+                    shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
+                )
+                text2 = result2.stdout.decode("utf-8", errors="replace")
+                m2 = re.search(r'worker\.\w+\.port\s*=\s*(\d+)', text2)
+                if m2:
+                    return m2.group(1)
+            except Exception as e:
+                logger.debug("ajp port detection error (%s): %s", d, e)
+        return ""
+
     # ── WAS connectivity check ────────────────────────────────────────────────
 
     def _check_was_connection(self):
@@ -591,6 +664,8 @@ class ApacheAgent:
         stats["access_log_path"]  = self.access_log_path
         stats["error_log_path"]   = self.error_log_path
         stats["mod_status_url"]   = self.mod_status_url
+        stats["listen_ports"]     = self.listen_ports
+        stats["ajp_port"]         = self.ajp_port
 
         # WEB-WAS 연동 상태
         if self.was_server_id:

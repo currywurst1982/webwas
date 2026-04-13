@@ -977,26 +977,55 @@ class WildflyAgent:
         return ""
 
     def _detect_instance_name(self) -> str:
-        """standalone.xml의 jboss.node.name 또는 server name을 감지합니다."""
+        """WildFly 인스턴스명을 감지합니다.
+
+        우선순위:
+        1. 실행 중인 WildFly 프로세스의 -Djboss.node.name 기동 인수
+        2. standalone.xml <system-properties> 의 jboss.node.name 값
+        3. standalone.xml 루트 <server xmlns=... name="..."> 속성
+           (xmlns 속성이 없는 undertow 내부 <server name> 은 무시)
+        """
+        # 1. 실행 중 프로세스 인수에서 jboss.node.name 감지
+        try:
+            result = subprocess.run(
+                "ps aux | grep -E 'jboss|wildfly' | grep -v grep"
+                " | grep -o -- 'jboss\\.node\\.name=[^ ]*' | head -1",
+                shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
+            )
+            out = result.stdout.decode("utf-8", errors="replace").strip()
+            if out:
+                return out.split("=", 1)[-1]
+        except Exception as e:
+            logger.debug("Instance name (process) detection error: %s", e)
+
+        # 2 & 3. standalone.xml 파싱
         xml = self._standalone_xml_path()
         if not xml or not os.path.exists(xml):
             return ""
         try:
             with open(xml, errors="replace") as f:
                 content = f.read()
-            # <property name="jboss.node.name" value="..."/>
+            # <property name="jboss.node.name" value="claude-test"/>
             m = re.search(
                 r'<property\b[^>]*\bname=["\']jboss\.node\.name["\'][^>]*\bvalue=["\']([^"\']+)["\']',
                 content,
             )
             if m:
                 return m.group(1)
-            # <server name="..." xmlns=...>  — root element
-            m2 = re.search(r'<server\b[^>]*\bname=["\']([^"\']+)["\']', content)
+            # 루트 <server> 요소: xmlns 속성 필수 → undertow 내부 <server name="..."> 는 제외됨
+            m2 = re.search(
+                r'<server\b[^>]*\bxmlns=["\'][^"\']+["\'][^>]*\bname=["\']([^"\']+)["\']',
+                content,
+            )
+            if not m2:
+                m2 = re.search(
+                    r'<server\b[^>]*\bname=["\']([^"\']+)["\'][^>]*\bxmlns=["\'][^"\']+["\']',
+                    content,
+                )
             if m2:
                 return m2.group(1)
         except Exception as e:
-            logger.debug("Instance name detection error: %s", e)
+            logger.debug("Instance name (xml) detection error: %s", e)
         return ""
 
     def _heartbeat(self):

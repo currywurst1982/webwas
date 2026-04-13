@@ -941,6 +941,29 @@
       font-weight: 600;
     }
 
+    /* 카드 헤더 (이름+설명+뱃지 영역) + 토글 버튼 */
+    .was-op-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .was-op-header-info { flex: 1; min-width: 0; }
+    .was-toggle-btn {
+      flex-shrink: 0;
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--dim);
+      cursor: pointer;
+      font-size: 10px;
+      border-radius: 3px;
+      padding: 2px 7px;
+      line-height: 1.6;
+      transition: color .15s, border-color .15s;
+      margin-top: 1px;
+    }
+    .was-toggle-btn:hover { color: var(--bright); border-color: var(--accent); }
+
     /* 현재 설정값 확인 박스 */
     .was-verified-box {
       margin-top: 8px;
@@ -2710,11 +2733,18 @@ function _buildWasPanel() {
            </div>`
         : '';
 
-      html += `<div class="was-op-card${applied ? ' selected' : ''}" id="wop-${op.id}" onclick="_selectWasOp('${op.id}')">
-        <div class="was-op-name">${esc(op.name)}</div>
-        <div class="was-op-desc">${esc(op.desc)}</div>
-        ${badge}
-        <div class="was-params" ${applied ? 'style="display:flex"' : ''}>
+      html += `<div class="was-op-card${applied ? ' selected' : ''}" id="wop-${op.id}">
+        <div class="was-op-header" onclick="_selectWasOp('${op.id}')">
+          <div class="was-op-header-info">
+            <div class="was-op-name">${esc(op.name)}</div>
+            <div class="was-op-desc">${esc(op.desc)}</div>
+            ${badge}
+          </div>
+          <button class="was-toggle-btn" id="wtoggle-${op.id}"
+            onclick="event.stopPropagation();_toggleWasOp('${op.id}')"
+            title="${applied ? '접기' : '펼치기'}">${applied ? '▲' : '▼'}</button>
+        </div>
+        <div class="was-params">
           ${paramRows}
           <div class="was-preview" id="wprev-${op.id}"></div>
           <button class="was-exec-btn" id="wexec-${op.id}"
@@ -2741,36 +2771,34 @@ function _buildWasPanel() {
   });
 }
 
+// 카드 헤더 클릭 → 열기만 (닫기는 ▲/▼ 토글 버튼으로만)
 function _selectWasOp(opId) {
   const card = document.getElementById('wop-' + opId);
-  const params = card?.querySelector('.was-params');
   if (!card) return;
-
-  const isOpen = card.classList.contains('selected');
-  // 다른 항목 닫기
-  if (_wasSelOp && _wasSelOp !== opId) {
-    const prev = document.getElementById('wop-' + _wasSelOp);
-    if (prev) {
-      const prevApplied = _appliedState(_wasServerId, _wasSelOp);
-      if (!prevApplied) {
-        prev.classList.remove('selected');
-        const pp = prev.querySelector('.was-params');
-        if (pp) pp.style.display = '';
-      }
-    }
-  }
-
-  if (isOpen && !_appliedState(_wasServerId, opId)) {
-    card.classList.remove('selected');
-    if (params) params.style.display = '';
-    _wasSelOp = null;
-    return;
-  }
+  if (card.classList.contains('selected')) return; // 이미 열려있으면 무시
 
   card.classList.add('selected');
-  if (params) params.style.display = 'flex';
   _wasSelOp = opId;
+  const btn = document.getElementById('wtoggle-' + opId);
+  if (btn) { btn.textContent = '▲'; btn.title = '접기'; }
   _updatePreview(opId);
+}
+
+// ▲/▼ 토글 버튼: 열기/닫기
+function _toggleWasOp(opId) {
+  const card = document.getElementById('wop-' + opId);
+  if (!card) return;
+  const btn = document.getElementById('wtoggle-' + opId);
+  if (card.classList.contains('selected')) {
+    card.classList.remove('selected');
+    if (btn) { btn.textContent = '▼'; btn.title = '펼치기'; }
+    if (_wasSelOp === opId) _wasSelOp = null;
+  } else {
+    card.classList.add('selected');
+    if (btn) { btn.textContent = '▲'; btn.title = '접기'; }
+    _wasSelOp = opId;
+    _updatePreview(opId);
+  }
 }
 
 function _getWasOpParams(op) {
@@ -2898,16 +2926,20 @@ function _handleWasTaskResult(td) {
         : '';
     }
 
-    // 카드 뱃지 갱신
+    // 카드 뱃지 갱신 (헤더 info 영역에 표시 — 접혀있어도 보임)
     const card = document.getElementById('wop-' + opId);
     if (card) {
       let badge = card.querySelector('.was-applied-badge');
       if (!badge) {
         badge = document.createElement('div');
         badge.className = 'was-applied-badge';
-        card.querySelector('.was-op-desc')?.insertAdjacentElement('afterend', badge);
+        const infoArea = card.querySelector('.was-op-header-info');
+        (infoArea || card.querySelector('.was-op-desc'))?.insertAdjacentElement('afterend', badge);
       }
       badge.textContent = `✅ 마지막 적용: ${verified ?? '완료'} · ${now}`;
+      // 토글 버튼을 ▲(열린 상태)로 유지
+      const tBtn = document.getElementById('wtoggle-' + opId);
+      if (tBtn) { tBtn.textContent = '▲'; tBtn.title = '접기'; }
     }
 
   } else {

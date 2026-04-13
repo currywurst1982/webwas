@@ -1830,7 +1830,7 @@ function fillCard(el, id, a) {
         <button onclick="event.stopPropagation();openWasPanel('${esc(id)}')"
           style="background:rgba(56,139,253,.12);border:1px solid rgba(56,139,253,.35);
                  border-radius:5px;padding:3px 9px;font-size:11px;color:var(--medium);
-                 cursor:pointer;font-weight:600;">⚙️ WAS 설정</button>
+                 cursor:pointer;font-weight:600;">⚙️ ${isApache ? 'WEB 설정' : 'WAS 설정'}</button>
         <div class="status-pill ${st}">${stLabel(st)}</div>
       </div>
     </div>

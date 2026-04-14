@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>인증서 만료일 확인기</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    --bg:        #070b12;
+    --panel:     rgba(13, 20, 34, 0.95);
+    --border:    rgba(99, 179, 237, 0.1);
+    --border-hi: rgba(99, 179, 237, 0.3);
+    --accent:    #63b3ed;
+    --accent2:   #9f7aea;
+    --text:      #e2e8f0;
+    --sub:       #a0aec0;
+    --muted:     #718096;
+    --muted2:    #2d3748;
+    --success:   #68d391;
+    --warn:      #f6e05e;
+    --danger:    #fc8181;
+    --orange:    #f6ad55;
+}
+
+body {
+    font-family: 'Segoe UI', -apple-system, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh;
+}
+
+body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+        linear-gradient(rgba(99,179,237,.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99,179,237,.025) 1px, transparent 1px);
+    background-size: 44px 44px;
+    pointer-events: none; z-index: 0;
+}
+
+.orb {
+    position: fixed; border-radius: 50%;
+    pointer-events: none; z-index: 0; filter: blur(80px);
+}
+.orb1 { width:500px; height:500px; top:-180px; left:-100px;
+    background: radial-gradient(circle, rgba(99,179,237,.07), transparent 70%);
+    animation: drift1 14s ease-in-out infinite alternate; }
+.orb2 { width:400px; height:400px; bottom:-150px; right:-80px;
+    background: radial-gradient(circle, rgba(159,122,234,.07), transparent 70%);
+    animation: drift2 18s ease-in-out infinite alternate; }
+@keyframes drift1 { from{transform:translate(0,0)} to{transform:translate(60px,40px)} }
+@keyframes drift2 { from{transform:translate(0,0)} to{transform:translate(-50px,-30px)} }
+
+/* ── 헤더 ── */
+header {
+    position: relative; z-index: 10;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(24px);
+    padding: 0 28px; height: 64px;
+    display: flex; align-items: center; gap: 14px;
+}
+header::after {
+    content: '';
+    position: absolute; bottom: -1px; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--accent), var(--accent2), transparent);
+    opacity: .45;
+}
+.logo-box {
+    width: 42px; height: 42px; flex-shrink: 0;
+    background: linear-gradient(135deg, rgba(99,179,237,.2), rgba(159,122,234,.2));
+    border: 1px solid var(--border-hi); border-radius: 11px;
+    display: flex; align-items: center; justify-content: center; font-size: 1.25em;
+    box-shadow: 0 0 20px rgba(99,179,237,.2);
+}
+.hinfo h1 {
+    font-size: .97em; font-weight: 700;
+    background: linear-gradient(90deg, var(--accent), #b794f4);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+}
+.hinfo p { font-size: .7em; color: var(--muted); margin-top: 3px; }
+
+/* ── 메인 ── */
+main { position: relative; z-index: 1; max-width: 1100px; margin: 0 auto; padding: 32px 20px; }
+
+/* ── 업로드 존 ── */
+.upload-zone {
+    border: 2px dashed var(--border-hi);
+    border-radius: 18px;
+    padding: 52px 32px;
+    text-align: center;
+    cursor: pointer;
+    background: rgba(99,179,237,.03);
+    transition: all .2s ease;
+    margin-bottom: 28px;
+}
+.upload-zone:hover, .upload-zone.drag { border-color: var(--accent); background: rgba(99,179,237,.07); }
+.upload-zone .uz-icon {
+    font-size: 2.8em; margin-bottom: 14px;
+    filter: drop-shadow(0 0 12px rgba(99,179,237,.4));
+}
+.upload-zone h2 { font-size: 1.05em; font-weight: 700; margin-bottom: 8px; }
+.upload-zone p  { font-size: .81em; color: var(--muted); line-height: 1.8; }
+.upload-btn {
+    display: inline-block; margin-top: 18px;
+    padding: 9px 24px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border: none; border-radius: 10px; color: #fff;
+    font-size: .83em; font-weight: 600; cursor: pointer;
+    box-shadow: 0 4px 16px rgba(99,179,237,.3);
+    transition: all .2s;
+}
+.upload-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 22px rgba(99,179,237,.4); }
+#file-input { display: none; }
+
+/* ── 요약 카드 ── */
+.summary-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px;
+    margin-bottom: 28px; animation: fadeUp .4s ease;
+}
+@keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+.sum-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px 20px;
+    backdrop-filter: blur(12px);
+    position: relative; overflow: hidden;
+}
+.sum-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: var(--card-color, var(--accent));
+}
+.sum-card .sc-label { font-size: .7em; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; margin-bottom: 8px; }
+.sum-card .sc-val   { font-size: 2em; font-weight: 800; color: var(--card-color, var(--text)); line-height: 1; }
+.sum-card .sc-sub   { font-size: .72em; color: var(--muted); margin-top: 5px; }
+.card-total  { --card-color: var(--accent); }
+.card-danger { --card-color: var(--danger); }
+.card-warn   { --card-color: var(--orange); }
+.card-ok     { --card-color: var(--success); }
+
+/* ── 필터 바 ── */
+.filter-bar {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+.filter-bar span { font-size: .78em; color: var(--muted); font-weight: 600; margin-right: 4px; }
+.fbtn {
+    padding: 5px 14px; border: 1px solid var(--border);
+    border-radius: 20px; background: transparent;
+    color: var(--muted); font-size: .75em; cursor: pointer;
+    transition: all .15s; font-family: inherit;
+}
+.fbtn:hover, .fbtn.active { background: rgba(99,179,237,.1); border-color: var(--accent); color: var(--accent); }
+.search-wrap {
+    margin-left: auto;
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(255,255,255,.04);
+    border: 1px solid var(--border);
+    border-radius: 10px; padding: 5px 12px;
+}
+.search-wrap input {
+    background: transparent; border: none; outline: none;
+    color: var(--text); font-size: .8em; font-family: inherit; width: 180px;
+}
+.search-wrap input::placeholder { color: var(--muted2); }
+
+/* ── 테이블 ── */
+.tbl-wrap {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 16px; overflow: hidden;
+    backdrop-filter: blur(12px); animation: fadeUp .4s ease;
+}
+table { width: 100%; border-collapse: collapse; }
+thead { background: rgba(99,179,237,.06); border-bottom: 1px solid var(--border); }
+thead th {
+    padding: 13px 16px; text-align: left;
+    font-size: .72em; font-weight: 700; color: var(--sub);
+    letter-spacing: .05em; text-transform: uppercase;
+    white-space: nowrap; cursor: pointer; user-select: none;
+}
+thead th:hover { color: var(--accent); }
+thead th .sort-icon { margin-left: 4px; opacity: .4; font-size: .9em; }
+thead th.sorted .sort-icon { opacity: 1; color: var(--accent); }
+
+tbody tr {
+    border-bottom: 1px solid rgba(99,179,237,.05);
+    transition: background .15s;
+}
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: rgba(99,179,237,.04); }
+tbody td { padding: 13px 16px; font-size: .84em; vertical-align: middle; }
+
+.cert-name { font-weight: 600; color: var(--text); }
+.cert-domain { font-size: .78em; color: var(--muted); margin-top: 2px; }
+.date-cell { color: var(--sub); font-size: .83em; font-variant-numeric: tabular-nums; }
+
+/* ── 배지 ── */
+.badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 12px;
+    font-size: .72em; font-weight: 700; white-space: nowrap;
+}
+.badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; }
+.badge-expired  { background: rgba(252,129,129,.12); color: var(--danger);  border: 1px solid rgba(252,129,129,.3); }
+.badge-expired::before  { background: var(--danger);  box-shadow: 0 0 6px var(--danger); }
+.badge-d30      { background: rgba(252,129,129,.08); color: var(--orange);  border: 1px solid rgba(246,173,85,.3); }
+.badge-d30::before      { background: var(--orange);  box-shadow: 0 0 6px var(--orange); animation: blink 1.5s infinite; }
+.badge-d60      { background: rgba(246,224,94,.06);  color: var(--warn);   border: 1px solid rgba(246,224,94,.3); }
+.badge-d60::before      { background: var(--warn); }
+.badge-ok       { background: rgba(104,211,145,.06); color: var(--success); border: 1px solid rgba(104,211,145,.3); }
+.badge-ok::before       { background: var(--success); }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+/* ── D-day ── */
+.dday { font-size: .85em; font-weight: 700; font-variant-numeric: tabular-nums; }
+.dday.expired { color: var(--danger); }
+.dday.d30     { color: var(--orange); }
+.dday.d60     { color: var(--warn); }
+.dday.ok      { color: var(--success); }
+
+/* ── 프로그레스 바 ── */
+.prog-wrap { width: 100px; height: 5px; background: var(--muted2); border-radius: 4px; overflow: hidden; }
+.prog-bar  { height: 100%; border-radius: 4px; transition: width .6s ease; }
+.prog-expired { background: var(--danger); }
+.prog-d30     { background: var(--orange); }
+.prog-d60     { background: var(--warn); }
+.prog-ok      { background: var(--success); }
+
+/* ── 빈 상태 ── */
+.empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+.empty .ei { font-size: 2.5em; margin-bottom: 12px; }
+.empty p   { font-size: .85em; }
+
+/* ── 열 선택기 힌트 ── */
+.col-hint {
+    background: rgba(99,179,237,.06); border: 1px solid var(--border-hi);
+    border-radius: 12px; padding: 16px 20px; margin-bottom: 20px;
+    animation: fadeUp .4s ease;
+}
+.col-hint p { font-size: .8em; color: var(--sub); margin-bottom: 12px; }
+.col-selects { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.col-selects label { font-size: .75em; color: var(--muted); margin-right: 4px; }
+.col-selects select {
+    background: rgba(255,255,255,.06); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-size: .8em; padding: 5px 10px;
+    outline: none; font-family: inherit; cursor: pointer;
+}
+.apply-btn {
+    padding: 6px 16px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border: none; border-radius: 8px; color: #fff;
+    font-size: .78em; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+
+@media (max-width: 700px) {
+    .summary-grid { grid-template-columns: repeat(2,1fr); }
+    .prog-wrap { display: none; }
+    .search-wrap { margin-left: 0; width: 100%; }
+}
+</style>
+</head>
+<body>
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+
+<header>
+    <div class="logo-box">🔐</div>
+    <div class="hinfo">
+        <h1>인증서 만료일 확인기</h1>
+        <p>Excel 파일에서 인증서 만료기한을 자동 추출합니다</p>
+    </div>
+</header>
+
+<main>
+    <!-- 업로드 존 -->
+    <div class="upload-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <div class="uz-icon">📊</div>
+        <h2>Excel 파일을 드래그하거나 클릭하여 업로드</h2>
+        <p>.xlsx · .xls · .csv 형식 지원<br>인증서명, 만료일 컬럼이 포함된 파일을 올려주세요</p>
+        <button class="upload-btn" onclick="event.stopPropagation(); document.getElementById('file-input').click()">파일 선택</button>
+        <input type="file" id="file-input" accept=".xlsx,.xls,.csv" onchange="handleFile(this.files[0])">
+    </div>
+
+    <!-- 열 선택기 (파일 로드 후 표시) -->
+    <div class="col-hint" id="col-hint" style="display:none">
+        <p>📋 파일을 분석했습니다. 인증서명과 만료일 컬럼을 선택해주세요.</p>
+        <div class="col-selects">
+            <label>인증서명 컬럼</label>
+            <select id="col-name"></select>
+            <label style="margin-left:10px">만료일 컬럼</label>
+            <select id="col-date"></select>
+            <label style="margin-left:10px">도메인/설명 (선택)</label>
+            <select id="col-domain"><option value="">없음</option></select>
+            <button class="apply-btn" onclick="applyColumns()">적용</button>
+        </div>
+    </div>
+
+    <!-- 요약 카드 -->
+    <div class="summary-grid" id="summary" style="display:none">
+        <div class="sum-card card-total">
+            <div class="sc-label">전체</div>
+            <div class="sc-val" id="s-total">0</div>
+            <div class="sc-sub">인증서</div>
+        </div>
+        <div class="sum-card card-danger">
+            <div class="sc-label">만료됨 / 30일 이내</div>
+            <div class="sc-val" id="s-danger">0</div>
+            <div class="sc-sub">즉시 갱신 필요</div>
+        </div>
+        <div class="sum-card card-warn">
+            <div class="sc-label">60일 이내</div>
+            <div class="sc-val" id="s-warn">0</div>
+            <div class="sc-sub">갱신 준비 필요</div>
+        </div>
+        <div class="sum-card card-ok">
+            <div class="sc-label">정상</div>
+            <div class="sc-val" id="s-ok">0</div>
+            <div class="sc-sub">60일 이상 남음</div>
+        </div>
+    </div>
+
+    <!-- 필터 바 -->
+    <div class="filter-bar" id="filter-bar" style="display:none">
+        <span>필터</span>
+        <button class="fbtn active" data-filter="all"     onclick="setFilter('all',this)">전체</button>
+        <button class="fbtn"        data-filter="expired" onclick="setFilter('expired',this)">만료됨</button>
+        <button class="fbtn"        data-filter="d30"     onclick="setFilter('d30',this)">30일 이내</button>
+        <button class="fbtn"        data-filter="d60"     onclick="setFilter('d60',this)">60일 이내</button>
+        <button class="fbtn"        data-filter="ok"      onclick="setFilter('ok',this)">정상</button>
+        <div class="search-wrap">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#718096" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="search-input" placeholder="인증서 검색..." oninput="renderTable()">
+        </div>
+    </div>
+
+    <!-- 테이블 -->
+    <div class="tbl-wrap" id="tbl-wrap" style="display:none">
+        <table>
+            <thead>
+                <tr>
+                    <th onclick="sortBy('name')" id="th-name">#&nbsp;&nbsp;인증서명 <span class="sort-icon">↕</span></th>
+                    <th onclick="sortBy('date')" id="th-date">만료일 <span class="sort-icon">↕</span></th>
+                    <th onclick="sortBy('days')" id="th-days" class="sorted">D-Day <span class="sort-icon">↑</span></th>
+                    <th>남은 기간 비율</th>
+                    <th>상태</th>
+                </tr>
+            </thead>
+            <tbody id="tbl-body"></tbody>
+        </table>
+    </div>
+</main>
+
+<script>
+let allData = [];
+let rawRows = [];
+let headers = [];
+let currentFilter = 'all';
+let sortKey = 'days';
+let sortAsc = true;
+
+/* ── 드래그 앤 드롭 ── */
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag'));
+dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag');
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+});
+
+/* ── 파일 처리 ── */
+function handleFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+        const wb = XLSX.read(e.target.result, { type: 'array', cellDates: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        rawRows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        if (rawRows.length < 2) { alert('데이터가 없습니다.'); return; }
+
+        headers = rawRows[0].map(String);
+        populateSelectors();
+        autoDetectAndApply();
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function populateSelectors() {
+    const selName   = document.getElementById('col-name');
+    const selDate   = document.getElementById('col-date');
+    const selDomain = document.getElementById('col-domain');
+    [selName, selDate].forEach(s => s.innerHTML = '');
+    selDomain.innerHTML = '<option value="">없음</option>';
+    headers.forEach((h, i) => {
+        selName.add(new Option(h || `열 ${i+1}`, i));
+        selDate.add(new Option(h || `열 ${i+1}`, i));
+        selDomain.add(new Option(h || `열 ${i+1}`, i));
+    });
+}
+
+/* ── 자동 컬럼 감지 ── */
+function autoDetectAndApply() {
+    const nameKw = /인증서|서비스명|시스템|도메인명|이름|name|cert|subject|common.?name|cn/i;
+    const dateKw = /만료|expir|유효기간|기한|기간|date|valid.*to|not.*after|end/i;
+    const domKw  = /도메인|domain|url|host|서버|설명|비고|desc/i;
+
+    let nameIdx = headers.findIndex(h => nameKw.test(h));
+    let dateIdx = headers.findIndex(h => dateKw.test(h));
+    let domIdx  = headers.findIndex(h => domKw.test(h) && h !== headers[nameIdx]);
+
+    if (nameIdx < 0) nameIdx = 0;
+    if (dateIdx < 0) {
+        // 날짜 값이 있는 컬럼 찾기
+        for (let ci = 0; ci < headers.length; ci++) {
+            if (ci === nameIdx) continue;
+            const sample = rawRows.slice(1, 6).map(r => r[ci]).filter(Boolean);
+            if (sample.some(v => isValidDate(v))) { dateIdx = ci; break; }
+        }
+    }
+    if (dateIdx < 0) dateIdx = 1;
+
+    document.getElementById('col-name').value   = nameIdx;
+    document.getElementById('col-date').value   = dateIdx;
+    document.getElementById('col-domain').value = domIdx >= 0 ? domIdx : '';
+
+    document.getElementById('col-hint').style.display = 'block';
+    applyColumns();
+}
+
+function applyColumns() {
+    const ni = parseInt(document.getElementById('col-name').value);
+    const di = parseInt(document.getElementById('col-date').value);
+    const domVal = document.getElementById('col-domain').value;
+    const doi = domVal !== '' ? parseInt(domVal) : -1;
+
+    allData = rawRows.slice(1)
+        .filter(r => r[ni] || r[di])
+        .map(r => {
+            const raw = r[di];
+            const dt  = parseDate(raw);
+            const days = dt ? Math.ceil((dt - new Date().setHours(0,0,0,0)) / 86400000) : null;
+            return {
+                name:   String(r[ni] || '').trim(),
+                domain: doi >= 0 ? String(r[doi] || '').trim() : '',
+                date:   dt,
+                dateStr: dt ? formatDate(dt) : String(raw || '').trim(),
+                days:   days,
+                status: getStatus(days),
+            };
+        })
+        .filter(r => r.name || r.dateStr);
+
+    document.getElementById('summary').style.display  = 'grid';
+    document.getElementById('filter-bar').style.display = 'flex';
+    document.getElementById('tbl-wrap').style.display  = 'block';
+    document.getElementById('drop-zone').style.opacity = '.5';
+    document.getElementById('drop-zone').style.pointerEvents = 'none';
+
+    updateSummary();
+    renderTable();
+}
+
+/* ── 날짜 파싱 ── */
+function parseDate(v) {
+    if (!v) return null;
+    if (v instanceof Date) return isNaN(v) ? null : v;
+    if (typeof v === 'number') {
+        // Excel serial date
+        const d = XLSX.SSF.parse_date_code(v);
+        if (d) return new Date(d.y, d.m - 1, d.d);
+    }
+    const s = String(v).trim();
+    // 다양한 형식 시도
+    const fmts = [
+        /^(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})$/,
+        /^(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})$/,
+        /^(\d{4})(\d{2})(\d{2})$/,
+    ];
+    for (const re of fmts) {
+        const m = s.match(re);
+        if (m) {
+            const [y, mo, d] = re.source.startsWith('^(\\d{1,2})')
+                ? [parseInt(m[3]), parseInt(m[1])-1, parseInt(m[2])]
+                : [parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3])];
+            const dt = new Date(y, mo, d);
+            if (!isNaN(dt)) return dt;
+        }
+    }
+    const dt = new Date(s);
+    return isNaN(dt) ? null : dt;
+}
+
+function isValidDate(v) { return parseDate(v) !== null; }
+
+function formatDate(d) {
+    return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function getStatus(days) {
+    if (days === null) return 'unknown';
+    if (days < 0)  return 'expired';
+    if (days <= 30) return 'd30';
+    if (days <= 60) return 'd60';
+    return 'ok';
+}
+
+/* ── 요약 ── */
+function updateSummary() {
+    const counts = { expired:0, d30:0, d60:0, ok:0 };
+    allData.forEach(r => { if (counts[r.status] !== undefined) counts[r.status]++; });
+    document.getElementById('s-total').textContent  = allData.length;
+    document.getElementById('s-danger').textContent = counts.expired + counts.d30;
+    document.getElementById('s-warn').textContent   = counts.d60;
+    document.getElementById('s-ok').textContent     = counts.ok;
+}
+
+/* ── 필터 ── */
+function setFilter(f, el) {
+    currentFilter = f;
+    document.querySelectorAll('.fbtn').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+    renderTable();
+}
+
+/* ── 정렬 ── */
+function sortBy(key) {
+    if (sortKey === key) sortAsc = !sortAsc;
+    else { sortKey = key; sortAsc = (key === 'days'); }
+    document.querySelectorAll('thead th').forEach(th => th.classList.remove('sorted'));
+    const th = document.getElementById('th-' + key);
+    if (th) {
+        th.classList.add('sorted');
+        th.querySelector('.sort-icon').textContent = sortAsc ? '↑' : '↓';
+    }
+    renderTable();
+}
+
+/* ── 렌더 ── */
+function renderTable() {
+    const kw = document.getElementById('search-input').value.toLowerCase();
+    let rows = allData.filter(r => {
+        if (currentFilter !== 'all' && r.status !== currentFilter) return false;
+        if (kw && !r.name.toLowerCase().includes(kw) && !r.domain.toLowerCase().includes(kw)) return false;
+        return true;
+    });
+
+    rows.sort((a, b) => {
+        let va = a[sortKey], vb = b[sortKey];
+        if (sortKey === 'days') {
+            va = a.days ?? 99999;
+            vb = b.days ?? 99999;
+        } else if (sortKey === 'date') {
+            va = a.date?.getTime() ?? 0;
+            vb = b.date?.getTime() ?? 0;
+        } else {
+            va = String(va).toLowerCase();
+            vb = String(vb).toLowerCase();
+        }
+        return sortAsc ? (va < vb ? -1 : va > vb ? 1 : 0)
+                       : (va > vb ? -1 : va < vb ? 1 : 0);
+    });
+
+    const tbody = document.getElementById('tbl-body');
+    if (rows.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5"><div class="empty"><div class="ei">🔍</div><p>조건에 맞는 인증서가 없습니다.</p></div></td></tr>`;
+        return;
+    }
+
+    // 최대 유효기간 추정 (progress bar용)
+    const maxDays = 365 * 3;
+
+    tbody.innerHTML = rows.map((r, i) => {
+        const statusLabel = { expired:'만료됨', d30:'30일 이내', d60:'60일 이내', ok:'정상', unknown:'날짜 없음' }[r.status];
+        const badgeCls = { expired:'badge-expired', d30:'badge-d30', d60:'badge-d60', ok:'badge-ok', unknown:'' }[r.status];
+        const ddayCls  = { expired:'expired', d30:'d30', d60:'d60', ok:'ok', unknown:'' }[r.status];
+
+        let ddayText = '날짜 없음';
+        if (r.days !== null) {
+            ddayText = r.days < 0 ? `D+${Math.abs(r.days)}` : r.days === 0 ? 'D-Day' : `D-${r.days}`;
+        }
+
+        const pct = r.days === null ? 0 : r.days < 0 ? 100 : Math.min(100, Math.round((r.days / maxDays) * 100));
+        const progCls = { expired:'prog-expired', d30:'prog-d30', d60:'prog-d60', ok:'prog-ok', unknown:'' }[r.status];
+
+        return `<tr>
+            <td>
+                <div class="cert-name">${esc(r.name) || '<span style="color:var(--muted)">-</span>'}</div>
+                ${r.domain ? `<div class="cert-domain">${esc(r.domain)}</div>` : ''}
+            </td>
+            <td class="date-cell">${esc(r.dateStr) || '-'}</td>
+            <td><span class="dday ${ddayCls}">${ddayText}</span></td>
+            <td>
+                <div class="prog-wrap" title="${r.days !== null ? r.days + '일 남음' : ''}">
+                    <div class="prog-bar ${progCls}" style="width:${pct}%"></div>
+                </div>
+            </td>
+            <td><span class="badge ${badgeCls}">${statusLabel}</span></td>
+        </tr>`;
+    }).join('');
+}
+
+function esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>

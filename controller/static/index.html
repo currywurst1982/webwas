@@ -3555,7 +3555,7 @@ function _renderApacheStatus(output) {
   var uptime        = (output.match(/ServerUptimeSeconds:\s*(\d+)/) || [])[1];
 
   // Detect custom Apache root (present when apache_root is set in config)
-  var customRootMatch = output.match(/=== Apache Root:\s*([^\n\r]+)/);
+  var customRootMatch = output.match(/=== Apache Root:\s*([^\n\r]+?)\s*===/);
   var customRoot = customRootMatch ? customRootMatch[1].trim() : '';
 
   // Service state — systemctl format

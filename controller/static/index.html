@@ -339,6 +339,37 @@
     .pair-cards .srv-card { flex: 1; min-width: 0; }
     .pair-card-web { border-color: rgba(63,185,80,.4) !important; }
     .pair-card-was { border-color: rgba(56,139,253,.4) !important; }
+    /* 다중 WAS 레이아웃 */
+    .pair-cards-multi {
+      display: grid;
+      grid-template-columns: 1fr 42px 1fr;
+      align-items: stretch;
+      gap: 0;
+    }
+    .pair-cards-multi .pair-card-web { grid-column: 1; }
+    .pair-multi-connectors {
+      grid-column: 2;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-around;
+      padding: 8px 0;
+    }
+    .pair-was-col {
+      grid-column: 3;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .pair-connector-slim {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      padding: 4px 0;
+      width: 42px;
+    }
     .pair-connector {
       display: flex;
       flex-direction: column;
@@ -1913,18 +1944,33 @@ function renderStats() {
   cnt('s-total-anom', totalAnom);
 }
 
-// Returns [{webId, wasId, host}, ...] pairs where the Apache agent declares
-// was.server_id in config and that WAS agent is registered in S.agents.
+// Returns [{webId, wasIds:[...], host}, ...] pairs.
+// wasIds may contain multiple WAS agents (multi-WAS support via was_connections).
 function _computePairs() {
   const pairs = [];
   const used  = new Set();
   for (const [id, ag] of Object.entries(S.agents)) {
     const isAp = ag.server_type === 'apache' || (ag.wildfly_version||'').toLowerCase().startsWith('apache');
-    if (!isAp) continue;
+    if (!isAp || used.has(id)) continue;
+
+    // 다중 WAS 연결 (was_connections 배열)
+    const wasConns = ag.stats?.was_connections;
+    if (Array.isArray(wasConns) && wasConns.length > 0) {
+      const wasIds = wasConns
+        .map(c => c.server_id)
+        .filter(sid => sid && S.agents[sid] && !used.has(sid));
+      if (wasIds.length > 0) {
+        pairs.push({ webId: id, wasIds, host: ag.host || id });
+        used.add(id);
+        wasIds.forEach(sid => used.add(sid));
+        continue;
+      }
+    }
+
+    // 레거시 단일 WAS (was_server_id)
     const wasId = ag.stats?.was_server_id;
-    if (!wasId || !S.agents[wasId]) continue;
-    if (used.has(id) || used.has(wasId)) continue;
-    pairs.push({ webId: id, wasId, host: ag.host || id });
+    if (!wasId || !S.agents[wasId] || used.has(wasId)) continue;
+    pairs.push({ webId: id, wasIds: [wasId], host: ag.host || id });
     used.add(id);
     used.add(wasId);
   }
@@ -1934,8 +1980,8 @@ function _computePairs() {
 // Returns partner info if this id is part of a WEB-WAS pair
 function _pairPartner(id) {
   for (const p of _computePairs()) {
-    if (p.webId === id) return { myRole: 'web', partnerId: p.wasId };
-    if (p.wasId === id) return { myRole: 'was', partnerId: p.webId };
+    if (p.webId === id) return { myRole: 'web', partnerIds: p.wasIds };
+    if (p.wasIds.includes(id)) return { myRole: 'was', partnerId: p.webId };
   }
   return null;
 }
@@ -1954,20 +2000,20 @@ function renderServers() {
   const fullPairs = _computePairs();
 
   // 페어 WAS들의 hostname → siblingIds 매핑 (같은 호스트 미페어 WAS)
-  const assignedIds = new Set(fullPairs.flatMap(p => [p.webId, p.wasId]));
+  const assignedIds = new Set(fullPairs.flatMap(p => [p.webId, ...p.wasIds]));
 
   // 페어 WAS 호스트를 기준으로 같은 호스트 미페어 WAS를 sibling으로 분류
-  const pairSiblings = {};  // wasId → [siblingId, ...]
+  const pairSiblings = {};  // webId → [siblingId, ...]
   fullPairs.forEach(pair => {
-    const wasHost = (S.agents[pair.wasId]?.host || '').trim();
-    if (!wasHost) { pairSiblings[pair.wasId] = []; return; }
+    const wasHost = (S.agents[pair.wasIds[0]]?.host || '').trim();
+    if (!wasHost) { pairSiblings[pair.webId] = []; return; }
     const siblings = ids.filter(id =>
       !assignedIds.has(id) &&
       !_isApacheAgent(id) &&
       (S.agents[id]?.host || '').trim() === wasHost
     );
     siblings.forEach(id => assignedIds.add(id));  // 중복 할당 방지
-    pairSiblings[pair.wasId] = siblings;
+    pairSiblings[pair.webId] = siblings;
   });
 
   // 남은 미배정 에이전트
@@ -1984,11 +2030,12 @@ function renderServers() {
       grid.insertBefore(group, grid.firstChild);
     }
 
-    const siblingIds = pairSiblings[pair.wasId] || [];
+    const siblingIds  = pairSiblings[pair.webId] || [];
+    const isMultiWas  = pair.wasIds.length > 1;
 
-    // 구조 변경 감지: 카드 미존재 또는 sibling 변화
+    // 구조 변경 감지
     const needRebuild = !group.querySelector('#card-' + pair.webId) ||
-                        !group.querySelector('#card-' + pair.wasId) ||
+                        pair.wasIds.some(wid => !group.querySelector('#card-' + wid)) ||
                         siblingIds.some(id => !group.querySelector('#card-' + id)) ||
                         group.querySelectorAll('.was-group-instance-card').length !== siblingIds.length;
 
@@ -2000,40 +2047,58 @@ function renderServers() {
             ${siblingIds.map(id => `<div id="card-${id}" class="srv-card was-group-instance-card"></div>`).join('')}
           </div>
         </div>` : '';
-      group.innerHTML = `
-        <div class="pair-group-header">
-          <span class="pair-tag web">WEB</span>
-          <div class="pair-divider-line"></div>
-          <span class="pair-host-txt">연동 그룹 &middot; ${esc(pair.host)}</span>
-          <div class="pair-divider-line"></div>
-          <span class="pair-tag was">WAS</span>
-        </div>
-        <div class="pair-cards">
-          <div id="card-${pair.webId}" class="srv-card pair-card-web"></div>
-          <div class="pair-connector">
+
+      // 단일 WAS vs 다중 WAS 레이아웃
+      const connectorHtml = isMultiWas
+        ? `<div class="pair-multi-connectors">
+            ${pair.wasIds.map(wid => {
+              const wcid = wid.replace(/[^\w-]/g, '-');
+              return `<div class="pair-connector-slim">
+                <div class="pair-conn-icon" id="pci-${gid}-${wcid}">⇄</div>
+                <div class="pair-conn-status" id="pcs-${gid}-${wcid}">확인 중…</div>
+              </div>`;
+            }).join('')}
+           </div>`
+        : `<div class="pair-connector">
             <div class="pair-conn-line"></div>
             <div class="pair-conn-icon" id="pci-${gid}">⇄</div>
             <div class="pair-conn-status" id="pcs-${gid}">확인 중…</div>
             <div class="pair-conn-line"></div>
-          </div>
-          <div id="card-${pair.wasId}" class="srv-card pair-card-was"></div>
+           </div>`;
+
+      const wasCardsHtml = isMultiWas
+        ? `<div class="pair-was-col">
+            ${pair.wasIds.map(wid => `<div id="card-${wid}" class="srv-card pair-card-was"></div>`).join('')}
+           </div>`
+        : `<div id="card-${pair.wasIds[0]}" class="srv-card pair-card-was"></div>`;
+
+      const wasCnt = pair.wasIds.length > 1 ? ` &middot; WAS ${pair.wasIds.length}개` : '';
+      group.innerHTML = `
+        <div class="pair-group-header">
+          <span class="pair-tag web">WEB</span>
+          <div class="pair-divider-line"></div>
+          <span class="pair-host-txt">연동 그룹 &middot; ${esc(pair.host)}${wasCnt}</span>
+          <div class="pair-divider-line"></div>
+          <span class="pair-tag was">WAS</span>
+        </div>
+        <div class="${isMultiWas ? 'pair-cards pair-cards-multi' : 'pair-cards'}">
+          <div id="card-${pair.webId}" class="srv-card pair-card-web"></div>
+          ${connectorHtml}
+          ${wasCardsHtml}
         </div>
         ${siblingHtml}`;
     }
+
     // 항상 sibling 카드 내용 갱신
     siblingIds.forEach(id => {
       const c = document.getElementById('card-' + id);
       if (c) fillCard(c, id, S.agents[id]);
     });
-    // Always refresh connection status indicator
-    const webStats  = S.agents[pair.webId]?.stats || {};
-    const connected = webStats.was_connected;          // true / false / null
-    const checkUrl  = webStats.was_check_url  || '';
-    const lastCheck = webStats.was_last_check
-      ? new Date(webStats.was_last_check).toLocaleTimeString('ko-KR') : '';
-    const iconEl   = document.getElementById('pci-' + gid);
-    const statusEl = document.getElementById('pcs-' + gid);
-    if (iconEl) {
+
+    // 연결 상태 아이콘 갱신
+    const webConns = S.agents[pair.webId]?.stats?.was_connections || [];
+    const _updateConnIcon = (iconEl, statusEl, connected, checkUrl, lastCheck) => {
+      if (!iconEl) return;
       if (connected === true) {
         iconEl.textContent = '✓';
         iconEl.style.cssText = 'color:var(--online);border-color:rgba(63,185,80,.5);background:rgba(63,185,80,.12)';
@@ -2044,17 +2109,36 @@ function renderServers() {
         iconEl.textContent = '⇄';
         iconEl.style.cssText = '';
       }
-      iconEl.title = checkUrl
-        ? `체크 URL: ${checkUrl}${lastCheck ? '\n마지막 확인: ' + lastCheck : ''}` : '';
+      iconEl.title = checkUrl ? `체크 URL: ${checkUrl}${lastCheck ? '\n마지막 확인: '+lastCheck : ''}` : '';
+      if (statusEl) {
+        statusEl.textContent = connected === true ? '연동됨' : connected === false ? '연동 끊김' : '확인 중…';
+        statusEl.style.color = connected === true ? 'var(--online)' : connected === false ? 'var(--critical)' : 'var(--dim)';
+      }
+    };
+
+    if (isMultiWas) {
+      pair.wasIds.forEach(wid => {
+        const wcid   = wid.replace(/[^\w-]/g, '-');
+        const conn   = webConns.find(c => c.server_id === wid);
+        const lc     = conn?.last_check ? new Date(conn.last_check).toLocaleTimeString('ko-KR') : '';
+        _updateConnIcon(
+          document.getElementById(`pci-${gid}-${wcid}`),
+          document.getElementById(`pcs-${gid}-${wcid}`),
+          conn?.connected ?? null, conn?.check_url || '', lc
+        );
+      });
+    } else {
+      const webStats = S.agents[pair.webId]?.stats || {};
+      const lc = webStats.was_last_check ? new Date(webStats.was_last_check).toLocaleTimeString('ko-KR') : '';
+      _updateConnIcon(
+        document.getElementById('pci-' + gid),
+        document.getElementById('pcs-' + gid),
+        webStats.was_connected ?? null, webStats.was_check_url || '', lc
+      );
     }
-    if (statusEl) {
-      statusEl.textContent = connected === true ? '연동됨'
-                           : connected === false ? '연동 끊김' : '확인 중…';
-      statusEl.style.color = connected === true ? 'var(--online)'
-                           : connected === false ? 'var(--critical)' : 'var(--dim)';
-    }
+
     fillCard(document.getElementById('card-' + pair.webId), pair.webId, S.agents[pair.webId]);
-    fillCard(document.getElementById('card-' + pair.wasId), pair.wasId, S.agents[pair.wasId]);
+    pair.wasIds.forEach(wid => fillCard(document.getElementById('card-' + wid), wid, S.agents[wid]));
   });
 
   // ── 3단계: 나머지 미배정 에이전트 렌더링 — 같은 호스트 WAS끼리 그룹핑
@@ -2191,21 +2275,28 @@ function fillCard(el, id, a) {
       if (!isApache) return '<span class="no-web-badge">⚡ WEB 미연결</span>';
       return '';
     }
-    const pAg      = S.agents[_partner.partnerId];
-    const pSt      = pAg?.status || 'offline';
-    const dotColor = pSt === 'online' ? 'var(--online)' : pSt === 'critical' ? 'var(--critical)' : pSt === 'warning' ? 'var(--high)' : 'var(--dim)';
-    const label    = _partner.myRole === 'web' ? 'WAS' : 'WEB';
-    // For WEB agents, append HTTP check result (e.g. "HTTP 200")
-    let connExtra = '';
-    if (_partner.myRole === 'web') {
-      const connected = a.stats?.was_connected;
-      const httpCode  = a.stats?.was_check_status;
-      if (connected === true)
-        connExtra = ` <span style="color:var(--online);font-size:9px">HTTP ${httpCode||200}</span>`;
-      else if (connected === false)
-        connExtra = ` <span style="color:var(--critical);font-size:9px">${httpCode ? 'HTTP '+httpCode : '연결 실패'}</span>`;
+    if (_partner.myRole === 'was') {
+      // WAS → WEB 배지 (단일)
+      const pAg = S.agents[_partner.partnerId];
+      const pSt = pAg?.status || 'offline';
+      const dotColor = pSt === 'online' ? 'var(--online)' : pSt === 'critical' ? 'var(--critical)' : pSt === 'warning' ? 'var(--high)' : 'var(--dim)';
+      return `<span class="pair-partner-badge">↔ WEB: <strong style="color:var(--text)">${esc(_partner.partnerId)}</strong> <span class="pair-partner-dot" style="color:${dotColor}">●</span></span>`;
+    } else {
+      // WEB → WAS 배지 (다중 지원)
+      const wasConns = a.stats?.was_connections || [];
+      return (_partner.partnerIds || []).map(wasId => {
+        const pAg = S.agents[wasId];
+        const pSt = pAg?.status || 'offline';
+        const dotColor = pSt === 'online' ? 'var(--online)' : pSt === 'critical' ? 'var(--critical)' : pSt === 'warning' ? 'var(--high)' : 'var(--dim)';
+        const conn = wasConns.find(c => c.server_id === wasId);
+        let connExtra = '';
+        if (conn?.connected === true)
+          connExtra = ` <span style="color:var(--online);font-size:9px">HTTP ${conn.check_status||200}</span>`;
+        else if (conn?.connected === false)
+          connExtra = ` <span style="color:var(--critical);font-size:9px">${conn.check_status ? 'HTTP '+conn.check_status : '연결 실패'}</span>`;
+        return `<span class="pair-partner-badge">↔ WAS: <strong style="color:var(--text)">${esc(wasId)}</strong> <span class="pair-partner-dot" style="color:${dotColor}">●</span>${connExtra}</span>`;
+      }).join(' ');
     }
-    return `<span class="pair-partner-badge">↔ ${label}: <strong style="color:var(--text)">${esc(_partner.partnerId)}</strong> <span class="pair-partner-dot" style="color:${dotColor}">●</span>${connExtra}</span>`;
   })();
 
   el.innerHTML = `

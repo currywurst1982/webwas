@@ -20,8 +20,13 @@ apache:
   domain: ""         # 서비스 도메인 (e.g. "www.example.com"), 비어있으면 ServerName 자동 감지
 
 was:
-  server_id: "wildfly-server-01"           # 연동된 WAS 에이전트 server_id
-  check_url: "http://localhost/test.jsp"   # HTTP 200 응답이면 WEB-WAS 연동 확인
+  # 다중 WAS 연동 설정 (connections 배열로 여러 WAS 지정 가능)
+  connections:
+    - server_id: "wildfly-server-01"           # 연동된 WAS 에이전트 server_id
+      check_url: "http://localhost/test.jsp"   # HTTP 200 응답이면 WEB-WAS 연동 확인
+    - server_id: "chatbot-server-01"
+      check_url: "http://localhost/chatbot/test.jsp"
+  # server_id: "wildfly-server-01"  # ← 단일 WAS 레거시 방식 (connections가 없을 때 사용)
   check_interval: 30                       # 연동 확인 주기 (초)
   check_timeout: 5                         # 응답 타임아웃 (초)
 

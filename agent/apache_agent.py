@@ -479,15 +479,27 @@ class ApacheAgent:
             logger.info("WEB info — listen: %s  domain: %s",
                         self.listen_ports or "—", self.domain or "—")
 
-        # WEB-WAS 연동 체크 설정
+        # WEB-WAS 연동 체크 설정 (다중 WAS 지원)
         wc = self.cfg.get("was", {})
-        self.was_server_id      = wc.get("server_id", "")
-        self.was_check_url      = wc.get("check_url", "")
+        connections_cfg = wc.get("connections", [])
+        if not connections_cfg and wc.get("server_id"):
+            # 레거시 단일 WAS 설정 호환
+            connections_cfg = [{"server_id": wc["server_id"], "check_url": wc.get("check_url", "")}]
+        self._was_connections_cfg = [
+            {"server_id": c.get("server_id", ""), "check_url": c.get("check_url", "")}
+            for c in connections_cfg if c.get("server_id")
+        ]
         self.was_check_interval = int(wc.get("check_interval", 30))
         self.was_check_timeout  = int(wc.get("check_timeout", 5))
-        self._was_connected: Optional[bool] = None  # None=미확인, True=연동, False=단절
-        self._was_check_status  = 0
-        self._was_last_check    = 0.0
+        # 연결 상태 딕셔너리: server_id → {check_url, connected, check_status, last_check}
+        self._was_states: Dict[str, dict] = {
+            c["server_id"]: {"check_url": c["check_url"], "connected": None, "check_status": 0, "last_check": 0.0}
+            for c in self._was_connections_cfg
+        }
+        # 레거시 단일 속성 (외부 참조 호환용 — 첫 번째 WAS 기준)
+        _first = self._was_connections_cfg[0] if self._was_connections_cfg else {}
+        self.was_server_id = _first.get("server_id", "")
+        self.was_check_url = _first.get("check_url", "")
 
         acfg = self.cfg.get("anomaly", {})
         self.detector = ApacheAnomalyDetector(
@@ -642,30 +654,31 @@ class ApacheAgent:
     # ── WAS connectivity check ────────────────────────────────────────────────
 
     def _check_was_connection(self):
-        """check_url에 HTTP GET을 수행하여 WEB-WAS 연동 상태를 확인합니다.
+        """각 WAS check_url에 HTTP GET을 수행하여 WEB-WAS 연동 상태를 확인합니다.
         HTTP 200 응답이면 connected=True, 그 외 또는 오류면 False.
         was.check_interval 주기마다 실행됩니다.
         """
-        if not self.was_check_url:
-            return
         now = time.time()
-        if now - self._was_last_check < self.was_check_interval:
-            return
-        self._was_last_check = now
-        try:
-            r = requests.get(
-                self.was_check_url,
-                timeout=self.was_check_timeout,
-                allow_redirects=True,
-            )
-            self._was_check_status = r.status_code
-            self._was_connected    = (r.status_code == 200)
-            logger.info("WAS check [%s] → HTTP %d  connected=%s",
-                        self.was_check_url, r.status_code, self._was_connected)
-        except Exception as e:
-            self._was_check_status = 0
-            self._was_connected    = False
-            logger.debug("WAS check failed (%s): %s", self.was_check_url, e)
+        for sid, state in self._was_states.items():
+            if now - state["last_check"] < self.was_check_interval:
+                continue
+            state["last_check"] = now
+            if not state["check_url"]:
+                continue
+            try:
+                r = requests.get(
+                    state["check_url"],
+                    timeout=self.was_check_timeout,
+                    allow_redirects=True,
+                )
+                state["check_status"] = r.status_code
+                state["connected"]    = (r.status_code == 200)
+                logger.info("WAS check [%s] %s → HTTP %d  connected=%s",
+                            sid, state["check_url"], r.status_code, state["connected"])
+            except Exception as e:
+                state["check_status"] = 0
+                state["connected"]    = False
+                logger.debug("WAS check [%s] failed: %s", sid, e)
 
     # ── Heartbeat ─────────────────────────────────────────────────────────────
 
@@ -681,15 +694,29 @@ class ApacheAgent:
         stats["listen_ports"]     = self.listen_ports
         stats["domain"]           = self.domain
 
-        # WEB-WAS 연동 상태
-        if self.was_server_id:
-            stats["was_server_id"]    = self.was_server_id
-            stats["was_check_url"]    = self.was_check_url
-            stats["was_connected"]    = self._was_connected
-            stats["was_check_status"] = self._was_check_status
-            if self._was_last_check:
-                stats["was_last_check"] = datetime.fromtimestamp(
-                    self._was_last_check).isoformat()
+        # WEB-WAS 연동 상태 (다중 WAS 지원)
+        if self._was_states:
+            conn_list = []
+            for sid, state in self._was_states.items():
+                entry = {
+                    "server_id":    sid,
+                    "check_url":    state["check_url"],
+                    "connected":    state["connected"],
+                    "check_status": state["check_status"],
+                }
+                if state["last_check"]:
+                    entry["last_check"] = datetime.fromtimestamp(state["last_check"]).isoformat()
+                conn_list.append(entry)
+            stats["was_connections"] = conn_list
+            # 레거시 단일 필드 (첫 번째 WAS 기준 — UI 하위 호환성 유지)
+            if conn_list:
+                first = conn_list[0]
+                stats["was_server_id"]    = first["server_id"]
+                stats["was_check_url"]    = first["check_url"]
+                stats["was_connected"]    = first["connected"]
+                stats["was_check_status"] = first["check_status"]
+                if "last_check" in first:
+                    stats["was_last_check"] = first["last_check"]
 
         ms = self.mod_status.fetch()
         if ms:

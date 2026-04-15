@@ -7,10 +7,10 @@ controller:
   api_key: ""                     # controller config.yaml의 api_key와 일치시킬 것
 
 apache:
-  access_log: "/opt/apache-2.4.63/logs/TEST_ssl_access_log_2026-04-10"
+  access_log: "/opt/apache-2.4.63/logs/TEST_ssl_access_log_{date}"
   # access_log: "/var/log/apache2/access.log"    # Ubuntu/Debian
   # access_log: "/etc/httpd/logs/access_log"     # CentOS/RHEL
-  error_log: "/opt/apache-2.4.63/logs/TEST_ssl_error_log_2026-04-10"
+  error_log: "/opt/apache-2.4.63/logs/TEST_ssl_error_log_{date}"
   # error_log: "/var/log/apache2/error.log"      # Ubuntu/Debian
   # error_log: "/etc/httpd/logs/error_log"       # CentOS/RHEL
   mod_status_url: "http://localhost/server-status?auto"

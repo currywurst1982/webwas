@@ -462,12 +462,15 @@ class ApacheAgent:
         self.simulate       = simulate
 
         ap = self.cfg.get("apache", {})
-        self.apache_version  = ap.get("version", "2.4")
-        self.apache_root     = ap.get("apache_root", "")          # e.g. /opt/apache-2.4.63
-        self.access_log_path = ap.get("access_log", "")
-        self.error_log_path  = ap.get("error_log", "")
-        self.mod_status_url  = ap.get("mod_status_url", "http://localhost/server-status?auto")
-        self.mod_status      = ApacheModStatus(url=self.mod_status_url)
+        self.apache_version       = ap.get("version", "2.4")
+        self.apache_root          = ap.get("apache_root", "")   # e.g. /opt/apache-2.4.63
+        # {date} 플레이스홀더 지원 — 오늘 날짜(YYYY-MM-DD)로 자동 치환
+        self.access_log_template  = ap.get("access_log", "")
+        self.error_log_template   = ap.get("error_log", "")
+        self.access_log_path      = self._resolve_log_path(self.access_log_template)
+        self.error_log_path       = self._resolve_log_path(self.error_log_template)
+        self.mod_status_url       = ap.get("mod_status_url", "http://localhost/server-status?auto")
+        self.mod_status           = ApacheModStatus(url=self.mod_status_url)
 
         # 포트 및 도메인 — 설정 우선, 없으면 Apache 설정 파일에서 자동 감지
         self.listen_ports = ap.get("listen_ports", "") or self._detect_listen_ports()
@@ -558,6 +561,16 @@ class ApacheAgent:
             "registered_at":  datetime.now().isoformat(),
         })
         logger.info("Registration %s", "OK" if ok else "FAILED — will retry")
+
+    # ── Log path resolution ───────────────────────────────────────────────────
+
+    def _resolve_log_path(self, template: str) -> str:
+        """{date} 플레이스홀더를 오늘 날짜(YYYY-MM-DD)로 치환합니다.
+        플레이스홀더가 없으면 그대로 반환합니다.
+        """
+        if not template or '{date}' not in template:
+            return template
+        return template.replace('{date}', datetime.now().strftime('%Y-%m-%d'))
 
     # ── Port detection ────────────────────────────────────────────────────────
 
@@ -797,6 +810,21 @@ class ApacheAgent:
         time.sleep(self.poll_interval)
         if self.simulate:
             return self.simulator.next_entries(random.randint(2, 8))
+
+        # {date} 플레이스홀더가 있는 경우 오늘 날짜로 재해석 — 자정 날짜 변경 자동 대응
+        new_access = self._resolve_log_path(self.access_log_template)
+        new_error  = self._resolve_log_path(self.error_log_template)
+        if new_access != self.access_log_path or new_error != self.error_log_path:
+            logger.info("날짜 변경 감지: %s → %s", self.access_log_path, new_access)
+            self.access_log_path = new_access
+            self.error_log_path  = new_error
+            self.parser = ApacheLogParser(
+                access_log=self.access_log_path,
+                error_log=self.error_log_path or None,
+            )
+            if not self.parser.open():
+                logger.warning("새 로그 파일 없음 — 다음 폴링에 재시도: %s", new_access)
+
         return self.parser.read_new()
 
     def run(self):

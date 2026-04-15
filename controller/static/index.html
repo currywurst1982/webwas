@@ -247,6 +247,44 @@
     .srv-card.st-warning  { border-color: var(--high); }
     .srv-card.st-offline  { opacity: .55; }
 
+    /* ── WAS 서버 그룹 (동일 호스트 다중 인스턴스) ──────────────────── */
+    .was-server-group {
+      grid-column: 1 / -1;
+      background: rgba(187,128,9,.04);
+      border: 1px solid rgba(187,128,9,.2);
+      border-radius: 10px;
+      padding: 12px 14px 14px;
+    }
+    .was-group-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+    }
+    .was-group-host {
+      font-size: 12px;
+      color: var(--bright);
+      font-weight: 600;
+    }
+    .was-group-tag {
+      font-size: 11px;
+      color: var(--dim);
+      background: rgba(187,128,9,.15);
+      border: 1px solid rgba(187,128,9,.3);
+      border-radius: 4px;
+      padding: 1px 7px;
+    }
+    .was-group-instances {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 12px;
+    }
+    .was-group-instance-card {
+      margin: 0 !important;
+    }
+
     /* ── WEB-WAS 연동 그룹 ─────────────────────────────────────────── */
     .pair-group {
       grid-column: 1 / -1;
@@ -1949,8 +1987,64 @@ function renderServers() {
     fillCard(document.getElementById('card-' + pair.wasId), pair.wasId, S.agents[pair.wasId]);
   });
 
-  // Render unpaired agents
-  ids.filter(id => !pairedIds.has(id)).forEach(id => {
+  // Render unpaired agents — WAS 인스턴스는 같은 호스트끼리 그룹핑
+  const unpairedIds = ids.filter(id => !pairedIds.has(id));
+
+  // 호스트별로 WAS 인스턴스 묶기 (Apache는 개별 렌더링)
+  const wasGroups = {};   // host → [id, ...]
+  const soloIds   = [];   // Apache 또는 WAS 단독 호스트
+
+  unpairedIds.forEach(id => {
+    const ag = S.agents[id];
+    const isAp = ag.server_type === 'apache' || (ag.wildfly_version||'').toLowerCase().startsWith('apache');
+    if (isAp) { soloIds.push(id); return; }
+    const host = ag.host || id;
+    (wasGroups[host] = wasGroups[host] || []).push(id);
+  });
+
+  // WAS 그룹 렌더링
+  Object.entries(wasGroups).forEach(([host, gids]) => {
+    if (gids.length === 1) { soloIds.push(gids[0]); return; }
+
+    // 다중 인스턴스 그룹 카드
+    const gid = 'wasgroup-' + host.replace(/[^\w-]/g, '-');
+    let group = document.getElementById(gid);
+    if (!group) {
+      group = document.createElement('div');
+      group.id = gid;
+      group.className = 'was-server-group';
+      group.style.cssText = 'grid-column:1/-1';
+      grid.appendChild(group);
+    }
+
+    // 그룹 헤더
+    const overallStatus = gids.some(id => S.agents[id]?.status === 'critical') ? 'critical'
+                        : gids.some(id => S.agents[id]?.status === 'warning')  ? 'warning'
+                        : gids.every(id => S.agents[id]?.status === 'online')  ? 'online' : 'offline';
+    const statusColor = overallStatus === 'online' ? 'var(--online)'
+                      : overallStatus === 'critical' ? 'var(--critical)'
+                      : overallStatus === 'warning'  ? 'var(--high)' : 'var(--dim)';
+
+    let headerHtml = `
+      <div class="was-group-header">
+        <span style="font-size:13px;">🖥️</span>
+        <span class="was-group-host">${esc(host)}</span>
+        <span class="was-group-tag">WAS 서버 그룹 &nbsp;·&nbsp; ${gids.length}개 인스턴스</span>
+        <span style="color:${statusColor};font-size:11px;margin-left:auto;">● ${overallStatus}</span>
+      </div>
+      <div class="was-group-instances">`;
+
+    gids.forEach(id => {
+      headerHtml += `<div id="card-${id}" class="srv-card was-group-instance-card st-${S.agents[id]?.status||'unknown'}"></div>`;
+    });
+    headerHtml += '</div>';
+    group.innerHTML = headerHtml;
+
+    gids.forEach(id => fillCard(document.getElementById('card-' + id), id, S.agents[id]));
+  });
+
+  // 나머지 단독 에이전트 렌더링
+  soloIds.forEach(id => {
     let card = document.getElementById('card-' + id);
     if (!card) {
       card = document.createElement('div');

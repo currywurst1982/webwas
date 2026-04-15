@@ -1065,9 +1065,23 @@ class WildflyAgent:
                 )
             if m:
                 val = m.group(1)
-                # resolve expression ${prop:default}
+                # AJP 기본 포트: ${jboss.ajp.port:8009} → 8009
                 expr = re.search(r'\$\{[^:}]+:(\d+)\}', val)
-                return expr.group(1) if expr else (val if val.isdigit() else "")
+                base_port = int(expr.group(1)) if expr else (int(val) if val.isdigit() else 0)
+                if not base_port:
+                    return ""
+                # socket-binding-group의 port-offset 반영
+                # <socket-binding-group ... port-offset="${jboss.socket.binding.port-offset:200}">
+                offset = 0
+                om = re.search(
+                    r'<socket-binding-group\b[^>]*\bport-offset=["\']([^"\']+)["\']',
+                    content,
+                )
+                if om:
+                    ov = om.group(1)
+                    oe = re.search(r'\$\{[^:}]+:(\d+)\}', ov)
+                    offset = int(oe.group(1)) if oe else (int(ov) if ov.isdigit() else 0)
+                return str(base_port + offset)
         except Exception as e:
             logger.debug("AJP port detection error: %s", e)
         return ""

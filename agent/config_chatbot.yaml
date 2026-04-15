@@ -8,9 +8,9 @@ server:
 
 wildfly:
   log_path: "/opt/wildfly-26/domains/chatbot/logs/stdlog/server.log"
-  instance_name: ""                  # 비어있으면 standalone.xml에서 자동 감지
-  ajp_port: ""                       # 비어있으면 standalone.xml에서 자동 감지
-  standalone_xml: ""                 # 비어있으면 프로세스 인수 / 파일시스템에서 자동 감지
+  instance_name: "chatbot"           # chatbot 인스턴스명 직접 지정
+  ajp_port: ""                       # 비어있으면 standalone.xml + port-offset으로 자동 감지
+  standalone_xml: "/opt/wildfly-26/domains/chatbot/conf/standalone-chatbot.xml"
 
 controller:
   url: "http://localhost:8380"
@@ -28,7 +28,7 @@ anomaly:
 jboss_cli:
   path: "/opt/wildfly-26/bin/jboss-cli.sh"
   host: "localhost"
-  port: 9991                         # chatbot management 포트 (claude-test가 9990이면 9991)
+  port: 9991                         # chatbot management 포트 (claude-test 9990 + 1)
   user: "admin"
   password: "admin123"
   timeout: 60

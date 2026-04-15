@@ -1936,10 +1936,30 @@ function renderServers() {
     return;
   }
 
+  // ── 1단계: 그룹 구조 사전 계산 ────────────────────────────────────────────
   const fullPairs = _computePairs();
-  const pairedIds = new Set(fullPairs.flatMap(p => [p.webId, p.wasId]));
 
-  // Render WEB-WAS pair groups first
+  // 페어 WAS들의 hostname → siblingIds 매핑 (같은 호스트 미페어 WAS)
+  const assignedIds = new Set(fullPairs.flatMap(p => [p.webId, p.wasId]));
+
+  // 페어 WAS 호스트를 기준으로 같은 호스트 미페어 WAS를 sibling으로 분류
+  const pairSiblings = {};  // wasId → [siblingId, ...]
+  fullPairs.forEach(pair => {
+    const wasHost = (S.agents[pair.wasId]?.host || '').trim();
+    if (!wasHost) { pairSiblings[pair.wasId] = []; return; }
+    const siblings = ids.filter(id =>
+      !assignedIds.has(id) &&
+      !_isApacheAgent(id) &&
+      (S.agents[id]?.host || '').trim() === wasHost
+    );
+    siblings.forEach(id => assignedIds.add(id));  // 중복 할당 방지
+    pairSiblings[pair.wasId] = siblings;
+  });
+
+  // 남은 미배정 에이전트
+  const remainingIds = ids.filter(id => !assignedIds.has(id));
+
+  // ── 2단계: 페어 그룹 렌더링 ──────────────────────────────────────────────
   fullPairs.forEach(pair => {
     const gid = 'pg-' + pair.webId.replace(/[^\w-]/g, '-');
     let group = document.getElementById(gid);
@@ -1950,21 +1970,15 @@ function renderServers() {
       grid.insertBefore(group, grid.firstChild);
     }
 
-    // 같은 호스트의 추가 WAS 인스턴스 (페어에 포함되지 않은 것)
-    const wasHost = S.agents[pair.wasId]?.host;
-    const siblingIds = wasHost
-      ? ids.filter(id => !pairedIds.has(id)
-          && !(_isApacheAgent(id))
-          && (S.agents[id]?.host === wasHost))
-      : [];
-    // sibling은 이 페어 그룹에서 처리하므로 unpaired 목록에서 제외
-    siblingIds.forEach(id => pairedIds.add(id));
+    const siblingIds = pairSiblings[pair.wasId] || [];
 
-    // Build static structure if cards are missing or moved out
-    const webCard = document.getElementById('card-' + pair.webId);
-    const wasCard = document.getElementById('card-' + pair.wasId);
-    const siblingChanged = siblingIds.some(id => !group.querySelector('#card-' + id));
-    if (!webCard || !group.contains(webCard) || !wasCard || !group.contains(wasCard) || siblingChanged) {
+    // 구조 변경 감지: 카드 미존재 또는 sibling 변화
+    const needRebuild = !group.querySelector('#card-' + pair.webId) ||
+                        !group.querySelector('#card-' + pair.wasId) ||
+                        siblingIds.some(id => !group.querySelector('#card-' + id)) ||
+                        group.querySelectorAll('.was-group-instance-card').length !== siblingIds.length;
+
+    if (needRebuild) {
       const siblingHtml = siblingIds.length ? `
         <div class="pair-sibling-section">
           <div class="pair-sibling-label">🔧 같은 서버의 추가 WAS 인스턴스</div>
@@ -1992,6 +2006,7 @@ function renderServers() {
         </div>
         ${siblingHtml}`;
     }
+    // 항상 sibling 카드 내용 갱신
     siblingIds.forEach(id => {
       const c = document.getElementById('card-' + id);
       if (c) fillCard(c, id, S.agents[id]);
@@ -2028,14 +2043,12 @@ function renderServers() {
     fillCard(document.getElementById('card-' + pair.wasId), pair.wasId, S.agents[pair.wasId]);
   });
 
-  // Render unpaired agents — WAS 인스턴스는 같은 호스트끼리 그룹핑
-  const unpairedIds = ids.filter(id => !pairedIds.has(id));
-
+  // ── 3단계: 나머지 미배정 에이전트 렌더링 — 같은 호스트 WAS끼리 그룹핑
   // 호스트별로 WAS 인스턴스 묶기 (Apache는 개별 렌더링)
   const wasGroups = {};   // host → [id, ...]
   const soloIds   = [];   // Apache 또는 WAS 단독 호스트
 
-  unpairedIds.forEach(id => {
+  remainingIds.forEach(id => {
     const ag = S.agents[id];
     const isAp = ag.server_type === 'apache' || (ag.wildfly_version||'').toLowerCase().startsWith('apache');
     if (isAp) { soloIds.push(id); return; }

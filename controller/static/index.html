@@ -2097,7 +2097,7 @@ function renderServers() {
 
     // 연결 상태 아이콘 갱신
     const webConns = S.agents[pair.webId]?.stats?.was_connections || [];
-    const _updateConnIcon = (iconEl, statusEl, connected, checkUrl, lastCheck) => {
+    const _updateConnIcon = (iconEl, statusEl, connected, checkUrl, lastCheck, errMsg) => {
       if (!iconEl) return;
       if (connected === true) {
         iconEl.textContent = '✓';
@@ -2109,10 +2109,16 @@ function renderServers() {
         iconEl.textContent = '⇄';
         iconEl.style.cssText = '';
       }
-      iconEl.title = checkUrl ? `체크 URL: ${checkUrl}${lastCheck ? '\n마지막 확인: '+lastCheck : ''}` : '';
+      let tip = checkUrl ? `체크 URL: ${checkUrl}` : '';
+      if (lastCheck) tip += `\n마지막 확인: ${lastCheck}`;
+      if (errMsg)    tip += `\n오류: ${errMsg}`;
+      iconEl.title = tip;
       if (statusEl) {
-        statusEl.textContent = connected === true ? '연동됨' : connected === false ? '연동 끊김' : '확인 중…';
+        statusEl.textContent = connected === true ? '연동됨'
+                             : connected === false ? (errMsg ? '연동 오류' : '연동 끊김')
+                             : '확인 중…';
         statusEl.style.color = connected === true ? 'var(--online)' : connected === false ? 'var(--critical)' : 'var(--dim)';
+        if (errMsg && connected === false) statusEl.title = errMsg;
       }
     };
 
@@ -2124,7 +2130,7 @@ function renderServers() {
         _updateConnIcon(
           document.getElementById(`pci-${gid}-${wcid}`),
           document.getElementById(`pcs-${gid}-${wcid}`),
-          conn?.connected ?? null, conn?.check_url || '', lc
+          conn?.connected ?? null, conn?.check_url || '', lc, conn?.error || ''
         );
       });
     } else {
@@ -2133,7 +2139,8 @@ function renderServers() {
       _updateConnIcon(
         document.getElementById('pci-' + gid),
         document.getElementById('pcs-' + gid),
-        webStats.was_connected ?? null, webStats.was_check_url || '', lc
+        webStats.was_connected ?? null, webStats.was_check_url || '', lc,
+        webStats.was_connections?.[0]?.error || ''
       );
     }
 
@@ -2292,8 +2299,11 @@ function fillCard(el, id, a) {
         let connExtra = '';
         if (conn?.connected === true)
           connExtra = ` <span style="color:var(--online);font-size:9px">HTTP ${conn.check_status||200}</span>`;
-        else if (conn?.connected === false)
-          connExtra = ` <span style="color:var(--critical);font-size:9px">${conn.check_status ? 'HTTP '+conn.check_status : '연결 실패'}</span>`;
+        else if (conn?.connected === false) {
+          const errTip = conn.error ? ` title="${esc(conn.error)}"` : '';
+          const errLabel = conn.check_status ? 'HTTP '+conn.check_status : (conn.error ? '오류' : '연결 실패');
+          connExtra = ` <span style="color:var(--critical);font-size:9px;cursor:help;"${errTip}>${errLabel}</span>`;
+        }
         return `<span class="pair-partner-badge">↔ WAS: <strong style="color:var(--text)">${esc(wasId)}</strong> <span class="pair-partner-dot" style="color:${dotColor}">●</span>${connExtra}</span>`;
       }).join(' ');
     }

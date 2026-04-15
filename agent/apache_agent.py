@@ -664,6 +664,7 @@ class ApacheAgent:
                 continue
             state["last_check"] = now
             if not state["check_url"]:
+                state["error"] = "check_url 미설정"
                 continue
             try:
                 r = requests.get(
@@ -673,12 +674,14 @@ class ApacheAgent:
                 )
                 state["check_status"] = r.status_code
                 state["connected"]    = (r.status_code == 200)
+                state["error"]        = "" if r.status_code == 200 else f"HTTP {r.status_code}"
                 logger.info("WAS check [%s] %s → HTTP %d  connected=%s",
                             sid, state["check_url"], r.status_code, state["connected"])
             except Exception as e:
                 state["check_status"] = 0
                 state["connected"]    = False
-                logger.debug("WAS check [%s] failed: %s", sid, e)
+                state["error"]        = str(e)
+                logger.warning("WAS check [%s] %s → 실패: %s", sid, state["check_url"], e)
 
     # ── Heartbeat ─────────────────────────────────────────────────────────────
 
@@ -704,6 +707,8 @@ class ApacheAgent:
                     "connected":    state["connected"],
                     "check_status": state["check_status"],
                 }
+                if state.get("error"):
+                    entry["error"] = state["error"]
                 if state["last_check"]:
                     entry["last_check"] = datetime.fromtimestamp(state["last_check"]).isoformat()
                 conn_list.append(entry)

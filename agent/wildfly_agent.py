@@ -968,19 +968,30 @@ class WildflyAgent:
         return []
 
     def _standalone_xml_path(self) -> str:
-        """jboss_cli.path에서 WildFly 홈 디렉토리를 유추하여 standalone.xml 경로 반환."""
+        """standalone.xml 경로를 반환합니다.
+        우선순위: config wildfly.standalone_xml > jboss_cli.path 유추 > 공통 경로 후보
+        """
+        # 1. config에 직접 지정된 경우
+        explicit = self.cfg.get("wildfly", {}).get("standalone_xml", "")
+        if explicit and os.path.exists(explicit):
+            return explicit
+
+        # 2. jboss_cli.path에서 WildFly 홈 유추
         cli_path = self.cfg.get("jboss_cli", {}).get("path", "")
         if cli_path and "/bin/" in cli_path:
             wf_home = cli_path.split("/bin/")[0]
-            return f"{wf_home}/standalone/configuration/standalone.xml"
-        # 공통 경로 후보
+            candidate = f"{wf_home}/standalone/configuration/standalone.xml"
+            if os.path.exists(candidate):
+                return candidate
+
+        # 3. 공통 경로 후보
         for p in [
             "/opt/wildfly/standalone/configuration/standalone.xml",
             "/opt/jboss/standalone/configuration/standalone.xml",
         ]:
             if os.path.exists(p):
                 return p
-        return ""
+        return explicit  # 존재 여부와 무관하게 지정값 반환 (경고용)
 
     def _detect_ajp_port(self) -> str:
         """standalone.xml의 AJP 소켓 바인딩에서 포트를 감지합니다."""

@@ -508,8 +508,8 @@ class ApacheAgent:
                         acfg.get("simulation_anomaly_rate", 0.05) * 100)
         else:
             self.parser = ApacheLogParser(
-                access_log=ap.get("access_log", "/var/log/apache2/access.log"),
-                error_log=ap.get("error_log"),
+                access_log=self.access_log_path,
+                error_log=self.error_log_path or None,
             )
             self.simulator = None
 

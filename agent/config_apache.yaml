@@ -13,7 +13,7 @@ apache:
   error_log: "/opt/apache-2.4.63/logs/TEST_ssl_error_log_{date}"
   # error_log: "/var/log/apache2/error.log"      # Ubuntu/Debian
   # error_log: "/etc/httpd/logs/error_log"       # CentOS/RHEL
-  mod_status_url: "http://localhost/server-status?auto"
+  mod_status_url: "http://localhost:3000/server-status?auto"
   version: "2.4"
   apache_root: "/opt/apache-2.4.63"  # 커스텀 설치 경로 (비어있으면 시스템 기본 명령 사용)
   listen_ports: ""   # WEB 서비스 포트 (e.g. "80" or "80,443"), 비어있으면 자동 감지

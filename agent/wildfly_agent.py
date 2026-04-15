@@ -840,7 +840,7 @@ class WildflyAgent:
 
         self.cfg = _load_config(config_path)
         self.server_id: str = self.cfg["server"]["id"]
-        self.host: str = self.cfg["server"].get("host", socket.gethostname())
+        self.host: str = self.cfg["server"].get("host", "") or socket.gethostname()
         self.controller_url: str = self.cfg["controller"]["url"].rstrip("/")
         self.api_key: str = self.cfg["controller"].get("api_key", "")
         self.poll_interval: int = self.cfg["monitoring"].get("poll_interval", 5)

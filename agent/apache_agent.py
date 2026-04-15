@@ -454,7 +454,7 @@ class ApacheAgent:
         self.cfg            = _load_config(config_path)
         _validate_config(self.cfg)
         self.server_id      = self.cfg["server"]["id"]
-        self.host           = self.cfg["server"].get("host", socket.gethostname())
+        self.host           = self.cfg["server"].get("host", "") or socket.gethostname()
         self.controller_url = self.cfg["controller"]["url"].rstrip("/")
         self.api_key        = self.cfg["controller"].get("api_key", "")
         self.poll_interval  = int(self.cfg["monitoring"].get("poll_interval", 5))

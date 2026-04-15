@@ -941,7 +941,9 @@ class WildflyAgent:
         """
         xml = self._standalone_xml_path()
         if not xml or not os.path.exists(xml):
+            logger.debug("standalone.xml 없음 — datasource 감지 불가: %s", xml or "(경로 미설정)")
             return []
+        logger.info("Datasource 감지 대상 파일: %s", xml)
         try:
             with open(xml, errors="replace") as f:
                 content = f.read()

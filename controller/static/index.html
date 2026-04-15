@@ -2709,14 +2709,44 @@ function _buildWasPanel() {
   const cats = {};
   activeOps.forEach(op => { (cats[op.cat] = cats[op.cat] || []).push(op); });
 
+  // 에이전트 stats에서 데이터소스 목록 가져오기
+  const agStats = (S.agents[_wasServerId] && S.agents[_wasServerId].stats) || {};
+  const dsNames = Array.isArray(agStats.datasources) ? agStats.datasources : undefined;
+  const dsAvailable = dsNames !== undefined;   // 에이전트가 이미 보고한 경우
+  const dsConfigured = dsAvailable && dsNames.length > 0;
+
   let html = '';
   for (const [cat, ops] of Object.entries(cats)) {
+    const isDsCat = (cat === '데이터소스');
+
+    // 데이터소스 카테고리 & 미설정 → 비활성화 표시
+    if (isDsCat && dsAvailable && !dsConfigured) {
+      html += `<div class="was-category">
+        <div class="was-cat-title" style="opacity:0.45">🚫 ${esc(cat)}</div>
+        <div style="padding:12px 14px;font-size:12px;color:var(--muted);background:rgba(255,255,255,0.03);
+                    border-radius:6px;border:1px dashed rgba(255,255,255,0.1);margin-bottom:8px;">
+          WildFly에 설정된 데이터소스가 없습니다.<br>
+          <span style="color:var(--bright);font-family:monospace;font-size:11px;">
+            standalone.xml &gt; &lt;subsystem xmlns="urn:jboss:domain:datasources:…"&gt;</span>
+          에서 datasource를 먼저 추가하세요.
+        </div>
+      </div>`;
+      continue;
+    }
+
     html += `<div class="was-category"><div class="was-cat-title">${esc(cat)}</div>`;
     ops.forEach(op => {
       const applied = _appliedState(_wasServerId, op.id);
 
+      // 데이터소스 카테고리이고 실제 DS 이름이 있으면 드롭다운으로 교체
+      const effectiveParams = (isDsCat && dsConfigured)
+        ? op.params.map(p => p.id === 'ds'
+            ? { ...p, type: 'select', opts: dsNames, def: applied?.params?.ds || dsNames[0] }
+            : p)
+        : op.params;
+
       // 파라미터 입력 행 (적용된 값이 있으면 해당 값으로 pre-fill)
-      const paramRows = op.params.map(p => {
+      const paramRows = effectiveParams.map(p => {
         const storedVal = applied?.params?.[p.id] ?? p.def;
         const inputEl = p.type === 'select'
           ? `<select class="was-input" id="wp-${op.id}-${p.id}" onchange="_updatePreview('${op.id}')">

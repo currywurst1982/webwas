@@ -875,10 +875,12 @@ class WildflyAgent:
         wf_cfg = self.cfg.get("wildfly", {})
         self.instance_name = wf_cfg.get("instance_name", "") or self._detect_instance_name()
         self.ajp_port      = wf_cfg.get("ajp_port", "")      or self._detect_ajp_port()
+        self.datasources   = self._detect_datasources()
         if not self.instance_name:
             self.instance_name = self.server_id   # 최종 fallback
-        logger.info("WAS info — instance: %s  ajp: %s",
-                    self.instance_name, self.ajp_port or "—")
+        logger.info("WAS info — instance: %s  ajp: %s  datasources: %s",
+                    self.instance_name, self.ajp_port or "—",
+                    self.datasources or "없음")
 
         self._pending: List[Dict] = []
         self._stats: Dict = defaultdict(int)
@@ -932,6 +934,34 @@ class WildflyAgent:
             logger.warning("Registration failed — will retry on next heartbeat")
 
     # ── WAS info detection ────────────────────────────────────────────────────
+
+    def _detect_datasources(self) -> list:
+        """standalone.xml에서 활성화된 데이터소스 pool-name 목록을 반환합니다."""
+        xml = self._standalone_xml_path()
+        if not xml or not os.path.exists(xml):
+            return []
+        try:
+            with open(xml, errors="replace") as f:
+                content = f.read()
+            result = []
+            for m in re.finditer(r'<datasource\b([^>]+)>', content):
+                attrs = m.group(1)
+                # enabled 속성이 false이면 건너뜀 (기본값 true)
+                ena = re.search(r'enabled=["\']([^"\']+)["\']', attrs)
+                if ena and ena.group(1).lower() == 'false':
+                    continue
+                # pool-name 우선, 없으면 jndi-name 마지막 세그먼트 사용
+                pn = re.search(r'pool-name=["\']([^"\']+)["\']', attrs)
+                if pn:
+                    result.append(pn.group(1))
+                else:
+                    jn = re.search(r'jndi-name=["\'][^"\']*?([^/"\']+)["\']', attrs)
+                    if jn:
+                        result.append(jn.group(1))
+            return result
+        except Exception as e:
+            logger.debug("Datasource detection error: %s", e)
+        return []
 
     def _standalone_xml_path(self) -> str:
         """jboss_cli.path에서 WildFly 홈 디렉토리를 유추하여 standalone.xml 경로 반환."""
@@ -1033,6 +1063,7 @@ class WildflyAgent:
         stats.update(_collect_system_metrics())
         stats["instance_name"] = self.instance_name
         stats["ajp_port"]      = self.ajp_port
+        stats["datasources"]   = self.datasources
         self._post(
             "/api/agents/heartbeat",
             {

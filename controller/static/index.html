@@ -284,6 +284,23 @@
     .was-group-instance-card {
       margin: 0 !important;
     }
+    .pair-sibling-section {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px dashed rgba(187,128,9,.3);
+    }
+    .pair-sibling-label {
+      font-size: 11px;
+      color: rgba(187,128,9,.9);
+      font-weight: 600;
+      margin-bottom: 10px;
+      letter-spacing: 0.3px;
+    }
+    .pair-sibling-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 12px;
+    }
 
     /* ── WEB-WAS 연동 그룹 ─────────────────────────────────────────── */
     .pair-group {
@@ -1932,10 +1949,29 @@ function renderServers() {
       group.className = 'pair-group';
       grid.insertBefore(group, grid.firstChild);
     }
+
+    // 같은 호스트의 추가 WAS 인스턴스 (페어에 포함되지 않은 것)
+    const wasHost = S.agents[pair.wasId]?.host;
+    const siblingIds = wasHost
+      ? ids.filter(id => !pairedIds.has(id)
+          && !(_isApacheAgent(id))
+          && (S.agents[id]?.host === wasHost))
+      : [];
+    // sibling은 이 페어 그룹에서 처리하므로 unpaired 목록에서 제외
+    siblingIds.forEach(id => pairedIds.add(id));
+
     // Build static structure if cards are missing or moved out
     const webCard = document.getElementById('card-' + pair.webId);
     const wasCard = document.getElementById('card-' + pair.wasId);
-    if (!webCard || !group.contains(webCard) || !wasCard || !group.contains(wasCard)) {
+    const siblingChanged = siblingIds.some(id => !group.querySelector('#card-' + id));
+    if (!webCard || !group.contains(webCard) || !wasCard || !group.contains(wasCard) || siblingChanged) {
+      const siblingHtml = siblingIds.length ? `
+        <div class="pair-sibling-section">
+          <div class="pair-sibling-label">🔧 같은 서버의 추가 WAS 인스턴스</div>
+          <div class="pair-sibling-cards">
+            ${siblingIds.map(id => `<div id="card-${id}" class="srv-card was-group-instance-card"></div>`).join('')}
+          </div>
+        </div>` : '';
       group.innerHTML = `
         <div class="pair-group-header">
           <span class="pair-tag web">WEB</span>
@@ -1953,8 +1989,13 @@ function renderServers() {
             <div class="pair-conn-line"></div>
           </div>
           <div id="card-${pair.wasId}" class="srv-card pair-card-was"></div>
-        </div>`;
+        </div>
+        ${siblingHtml}`;
     }
+    siblingIds.forEach(id => {
+      const c = document.getElementById('card-' + id);
+      if (c) fillCard(c, id, S.agents[id]);
+    });
     // Always refresh connection status indicator
     const webStats  = S.agents[pair.webId]?.stats || {};
     const connected = webStats.was_connected;          // true / false / null

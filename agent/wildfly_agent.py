@@ -936,13 +936,17 @@ class WildflyAgent:
     # ── WAS info detection ────────────────────────────────────────────────────
 
     def _detect_datasources(self) -> list:
-        """standalone.xml에서 활성화된 데이터소스 pool-name 목록을 반환합니다."""
+        """standalone.xml에서 활성화된 데이터소스 pool-name 목록을 반환합니다.
+        XML 주석(<!-- ... -->)으로 비활성화된 datasource는 무시합니다.
+        """
         xml = self._standalone_xml_path()
         if not xml or not os.path.exists(xml):
             return []
         try:
             with open(xml, errors="replace") as f:
                 content = f.read()
+            # XML 주석 제거 (<!-- ... --> — 멀티라인 포함)
+            content = re.sub(r'<!--.*?-->', '', content, flags=re.DOTALL)
             result = []
             for m in re.finditer(r'<datasource\b([^>]+)>', content):
                 attrs = m.group(1)

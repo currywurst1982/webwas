@@ -384,6 +384,20 @@
       margin-top: 3px;
     }
     .pair-partner-dot { font-size: 10px; }
+    .no-web-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 10px;
+      color: rgba(187,128,9,.95);
+      background: rgba(187,128,9,.1);
+      border: 1px solid rgba(187,128,9,.35);
+      border-radius: 4px;
+      padding: 1px 6px;
+      margin-top: 3px;
+      font-weight: 600;
+      letter-spacing: 0.2px;
+    }
 
     .srv-head {
       display: flex;
@@ -1981,7 +1995,7 @@ function renderServers() {
     if (needRebuild) {
       const siblingHtml = siblingIds.length ? `
         <div class="pair-sibling-section">
-          <div class="pair-sibling-label">🔧 같은 서버의 추가 WAS 인스턴스</div>
+          <div class="pair-sibling-label">🔧 추가 WAS 인스턴스 &nbsp;·&nbsp; <span style="color:rgba(187,128,9,.7);font-weight:500;">WEB 미연결</span></div>
           <div class="pair-sibling-cards">
             ${siblingIds.map(id => `<div id="card-${id}" class="srv-card was-group-instance-card"></div>`).join('')}
           </div>
@@ -2172,7 +2186,11 @@ function fillCard(el, id, a) {
   // Partner badge — shown when this agent is part of a WEB-WAS pair
   const _partner = _pairPartner(id);
   const partnerBadge = (() => {
-    if (!_partner) return '';
+    if (!_partner) {
+      // WAS 에이전트이지만 WEB 서버와 연결되지 않은 경우 미연결 표시
+      if (!isApache) return '<span class="no-web-badge">⚡ WEB 미연결</span>';
+      return '';
+    }
     const pAg      = S.agents[_partner.partnerId];
     const pSt      = pAg?.status || 'offline';
     const dotColor = pSt === 'online' ? 'var(--online)' : pSt === 'critical' ? 'var(--critical)' : pSt === 'warning' ? 'var(--high)' : 'var(--dim)';

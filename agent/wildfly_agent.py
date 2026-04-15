@@ -971,29 +971,78 @@ class WildflyAgent:
 
     def _standalone_xml_path(self) -> str:
         """standalone.xml 경로를 반환합니다.
-        우선순위: config wildfly.standalone_xml > jboss_cli.path 유추 > 공통 경로 후보
+        우선순위:
+        1. config wildfly.standalone_xml 직접 지정
+        2. 실행 중인 WildFly 프로세스 JVM 인수 (-Djboss.server.config.dir / -Djboss.server.base.dir + -c)
+        3. WildFly 홈 디렉토리에서 standalone*.xml 파일 탐색 (최근 수정순)
+        4. jboss_cli.path 기반 표준 경로
+        5. 공통 경로 후보
         """
         # 1. config에 직접 지정된 경우
         explicit = self.cfg.get("wildfly", {}).get("standalone_xml", "")
         if explicit and os.path.exists(explicit):
             return explicit
 
-        # 2. jboss_cli.path에서 WildFly 홈 유추
-        cli_path = self.cfg.get("jboss_cli", {}).get("path", "")
-        if cli_path and "/bin/" in cli_path:
-            wf_home = cli_path.split("/bin/")[0]
-            candidate = f"{wf_home}/standalone/configuration/standalone.xml"
-            if os.path.exists(candidate):
-                return candidate
+        # 2. 실행 중인 WildFly 프로세스 인수에서 설정 파일 경로 감지
+        try:
+            r = subprocess.run(
+                "ps aux | grep -E 'jboss|wildfly' | grep -v grep | head -1",
+                shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5,
+            )
+            cmdline = r.stdout.decode(errors="replace").strip()
+            if cmdline:
+                # 설정 디렉토리: -Djboss.server.config.dir=...
+                cfg_dir = ""
+                m = re.search(r'-Djboss\.server\.config\.dir=(\S+)', cmdline)
+                if m:
+                    cfg_dir = m.group(1).rstrip("/")
+                # 베이스 디렉토리: -Djboss.server.base.dir=...
+                if not cfg_dir:
+                    m = re.search(r'-Djboss\.server\.base\.dir=(\S+)', cmdline)
+                    if m:
+                        base = m.group(1).rstrip("/")
+                        # configuration/ 또는 conf/ 둘 다 시도
+                        for sub in ("configuration", "conf"):
+                            if os.path.isdir(f"{base}/{sub}"):
+                                cfg_dir = f"{base}/{sub}"
+                                break
+                # 설정 파일명: -c filename.xml 또는 --server-config=filename.xml
+                cfg_file = "standalone.xml"
+                fm = re.search(r'(?:(?:^|\s)-c\s+|--server-config=)(\S+\.xml)', cmdline)
+                if fm:
+                    cfg_file = os.path.basename(fm.group(1))
+                if cfg_dir:
+                    candidate = f"{cfg_dir}/{cfg_file}"
+                    if os.path.exists(candidate):
+                        return candidate
+        except Exception as e:
+            logger.debug("Process-based standalone.xml detection error: %s", e)
 
-        # 3. 공통 경로 후보
+        # 3. WildFly 홈 디렉토리에서 standalone*.xml 탐색 (최근 수정된 파일 우선)
+        cli_path = self.cfg.get("jboss_cli", {}).get("path", "")
+        wf_home = cli_path.split("/bin/")[0] if cli_path and "/bin/" in cli_path else ""
+        if wf_home and os.path.isdir(wf_home):
+            import glob as _glob
+            found = _glob.glob(f"{wf_home}/**/standalone*.xml", recursive=True)
+            if found:
+                found.sort(key=os.path.getmtime, reverse=True)
+                return found[0]
+
+        # 4. jboss_cli.path 기반 표준 경로
+        if wf_home:
+            std = f"{wf_home}/standalone/configuration/standalone.xml"
+            if os.path.exists(std):
+                return std
+
+        # 5. 공통 경로 후보
         for p in [
             "/opt/wildfly/standalone/configuration/standalone.xml",
             "/opt/jboss/standalone/configuration/standalone.xml",
         ]:
             if os.path.exists(p):
                 return p
-        return explicit  # 존재 여부와 무관하게 지정값 반환 (경고용)
+
+        return explicit or ""
 
     def _detect_ajp_port(self) -> str:
         """standalone.xml의 AJP 소켓 바인딩에서 포트를 감지합니다."""

@@ -1,0 +1,37 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# WildFly Agent Configuration — chatbot 인스턴스
+# ──────────────────────────────────────────────────────────────────────────────
+
+server:
+  id: "chatbot-server-01"            # 컨트롤러에 등록될 고유 ID (다른 에이전트와 중복 불가)
+  host: ""                           # 표시할 호스트명 (비어있으면 시스템 hostname 사용)
+
+wildfly:
+  log_path: ""                       # chatbot 인스턴스 server.log 경로
+                                     # 예: "/opt/wildfly-26/domains/chatbot/logs/stdlog/server.log"
+  instance_name: ""                  # 비어있으면 standalone.xml에서 자동 감지
+  ajp_port: ""                       # 비어있으면 standalone.xml에서 자동 감지
+  standalone_xml: ""                 # 비어있으면 프로세스 인수 / 파일시스템에서 자동 감지
+                                     # 예: "/opt/wildfly-26/domains/chatbot/conf/standalone-chatbot.xml"
+
+controller:
+  url: "http://localhost:8380"       # 컨트롤러 주소 (claude-test와 동일)
+  api_key: ""
+
+monitoring:
+  poll_interval: 5
+  report_interval: 30
+
+anomaly:
+  error_storm_threshold: 10
+  error_storm_window: 60
+  simulation_anomaly_rate: 0.08
+
+jboss_cli:
+  path: "/opt/wildfly-26/bin/jboss-cli.sh"   # WildFly bin 경로
+  host: "localhost"
+  port: 9991                         # chatbot 인스턴스 management 포트 (claude-test와 다른 포트)
+  user: "admin"
+  password: "admin123"
+  timeout: 60
+  enabled: true

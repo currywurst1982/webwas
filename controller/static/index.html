@@ -3432,9 +3432,9 @@ const ANALYSIS_CMDS = {
     '/core-service=platform-mbean/type=threading:read-attribute(name=peak-thread-count)',
     '/core-service=platform-mbean/type=threading:read-attribute(name=daemon-thread-count)',
     '/core-service=platform-mbean/type=threading:read-attribute(name=total-started-thread-count)',
-    '/core-service=platform-mbean/type=threading:invoke-operation(name=findDeadlockedThreads)',
-    '/core-service=platform-mbean/type=threading:invoke-operation(name=findMonitorDeadlockedThreads)',
-    '/core-service=platform-mbean/type=threading:invoke-operation(name=dumpAllThreads,parameters=[true,true])',
+    '/core-service=platform-mbean/type=threading:find-deadlocked-threads()',
+    '/core-service=platform-mbean/type=threading:find-monitor-deadlocked-threads()',
+    '/core-service=platform-mbean/type=threading:dump-all-threads(locked-monitors=true,locked-synchronizers=true)',
   ],
 };
 

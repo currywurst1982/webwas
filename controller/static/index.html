@@ -4072,7 +4072,8 @@ function _renderThreadDump(output) {
                     (monDeadlock && monDeadlock !== null && String(monDeadlock) !== 'null');
 
   var states = {RUNNABLE:0, BLOCKED:0, WAITING:0, TIMED_WAITING:0, TERMINATED:0, NEW:0};
-  var re = /"thread-state"\s*=>\s*"([^"]+)"/g, sm;
+  // WildFly DMR: enum 값은 따옴표 없이 출력됨 (e.g. "thread-state" => RUNNABLE)
+  var re = /"thread-state"\s*=>\s*"?([A-Z_]+)"?/g, sm;
   while ((sm = re.exec(output)) !== null) {
     if (states[sm[1]] !== undefined) states[sm[1]]++;
     else states.RUNNABLE++;
@@ -4145,7 +4146,7 @@ function _renderThreadDump(output) {
   }
 
   // 스레드 목록 (BLOCKED 우선 정렬)
-  var threadEntries = [], tr2 = /"thread-name"\s*=>\s*"([^"]+)"[\s\S]*?"thread-state"\s*=>\s*"([^"]+)"[\s\S]*?"lock-name"\s*=>\s*"?([^",\n}]+)"?/g, tm;
+  var threadEntries = [], tr2 = /"thread-name"\s*=>\s*"([^"]+)"[\s\S]*?"thread-state"\s*=>\s*"?([A-Z_]+)"?[\s\S]*?"lock-name"\s*=>\s*"?([^",\n}]+)"?/g, tm;
   while ((tm = tr2.exec(dumpOutput)) !== null && threadEntries.length < 30) {
     threadEntries.push({name:tm[1], state:tm[2], lock:tm[3]!=='null'&&tm[3]!=='undefined'?tm[3]:null});
   }

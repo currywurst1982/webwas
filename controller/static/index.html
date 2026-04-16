@@ -4079,46 +4079,144 @@ function _renderThreadDump(output) {
   }
   var stateTotal = Object.values(states).reduce(function(a,b){ return a+b; }, 0);
 
-  var stateClsMap = {RUNNABLE:'ok', BLOCKED:'crit', WAITING:'warn', TIMED_WAITING:'warn', TERMINATED:'ok', NEW:'ok'};
-  var stateChart = stateTotal > 0
-    ? '<div style="margin-bottom:14px"><div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">\uc2a4\ub808\ub4dc \uc0c1\ud0dc \ubd84\ud3ec</div>' +
-      Object.entries(states).filter(function(kv){ return kv[1] > 0; }).map(function(kv) {
-        var k = kv[0], v = kv[1];
-        var pct = Math.round(v/stateTotal*100);
-        var cls = stateClsMap[k] || 'ok';
-        return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">' +
-          '<span class="thread-state ' + k + '" style="min-width:100px;text-align:center">' + k + '</span>' +
-          '<div style="flex:1;height:7px;background:rgba(255,255,255,.06);border-radius:3px;overflow:hidden">' +
-          '<div class="analysis-bar-fill ' + cls + '" style="height:100%;width:' + pct + '%"></div></div>' +
-          '<span style="font-size:12px;color:var(--text);min-width:38px">' + v + '\uac1c</span></div>';
-      }).join('') + '</div>'
+  var stateColors = {
+    RUNNABLE:      '#3fb950', BLOCKED:       '#f85149',
+    WAITING:       '#d29922', TIMED_WAITING: '#58a6ff',
+    TERMINATED:    '#6e7681', NEW:           '#6e7681'
+  };
+  var stateLabels = {
+    RUNNABLE:'실행 중', BLOCKED:'차단됨', WAITING:'대기',
+    TIMED_WAITING:'시간제 대기', TERMINATED:'종료', NEW:'새로 생성'
+  };
+  var stateOrder = ['BLOCKED','WAITING','TIMED_WAITING','RUNNABLE','NEW','TERMINATED'];
+
+  // 상태 비율 스택 바
+  var stackedBar = stateTotal > 0
+    ? '<div style="height:10px;border-radius:5px;overflow:hidden;display:flex;margin-bottom:6px">' +
+        Object.entries(states).filter(function(kv){ return kv[1]>0; }).map(function(kv) {
+          return '<div style="flex:' + kv[1] + ';background:' + (stateColors[kv[0]]||'#6e7681') + ';opacity:.8" title="' + kv[0] + ': ' + kv[1] + '개"></div>';
+        }).join('') +
+      '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:4px">' +
+        Object.entries(states).filter(function(kv){ return kv[1]>0; }).map(function(kv) {
+          return '<div style="display:flex;align-items:center;gap:3px">' +
+            '<span style="width:7px;height:7px;border-radius:50%;background:' + (stateColors[kv[0]]||'#6e7681') + ';flex-shrink:0"></span>' +
+            '<span style="font-size:10px;color:var(--dim)">' + kv[0] + ' ' + kv[1] + '</span>' +
+          '</div>';
+        }).join('') +
+      '</div>'
     : '';
 
-  // Extract thread entries (name + state + lock) from dump
-  var threadEntries = [], tr2 = /"thread-name"\s*=>\s*"([^"]+)"[\s\S]*?"thread-state"\s*=>\s*"([^"]+)"[\s\S]*?"lock-name"\s*=>\s*"?([^",\n}]+)"?/g, tm;
-  while ((tm = tr2.exec(dumpOutput)) !== null && threadEntries.length < 25) {
-    threadEntries.push({name: tm[1], state: tm[2], lock: tm[3] !== 'null' && tm[3] !== 'undefined' ? tm[3] : null});
+  // 오른쪽 패널 — 상태별 수평 바
+  var maxState = Math.max.apply(null, Object.values(states).concat([1]));
+  var activeStates = Object.entries(states).filter(function(kv){ return kv[1]>0; });
+  activeStates.sort(function(a,b){
+    return (stateOrder.indexOf(a[0])<0?99:stateOrder.indexOf(a[0])) -
+           (stateOrder.indexOf(b[0])<0?99:stateOrder.indexOf(b[0]));
+  });
+
+  var stateBarsHtml = activeStates.length
+    ? activeStates.map(function(kv) {
+        var k = kv[0], v = kv[1];
+        var barPct = Math.round(v / maxState * 100);
+        var col = stateColors[k] || '#6e7681';
+        return '<div class="jvm-pool-block">' +
+          '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">' +
+            '<span class="thread-state ' + k + '">' + k + '</span>' +
+            '<span style="font-size:10px;color:var(--dim)">' + (stateLabels[k]||k) + '</span>' +
+          '</div>' +
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<div style="flex:1;height:8px;background:rgba(255,255,255,.07);border-radius:4px;overflow:hidden">' +
+              '<div style="height:100%;width:' + barPct + '%;background:' + col + ';border-radius:4px;transition:width .4s"></div>' +
+            '</div>' +
+            '<span style="font-size:13px;font-weight:700;color:var(--text);min-width:32px;text-align:right">' + v + '</span>' +
+          '</div>' +
+        '</div>';
+      }).join('')
+    : '<div style="color:var(--dim);font-size:12px;padding:8px 0">상태 정보를 가져오지 못했습니다</div>';
+
+  // 통계 요약 카드
+  function statCard(label, val, sub, valColor) {
+    return '<div style="background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:5px;padding:7px 9px">' +
+      '<div style="font-size:10px;color:var(--dim);margin-bottom:2px">' + label + '</div>' +
+      '<div style="font-size:16px;font-weight:700;color:' + (valColor||'var(--text)') + '">' + (val!=null?val:'—') + '</div>' +
+      (sub ? '<div style="font-size:10px;color:var(--dim);margin-top:1px">' + sub + '</div>' : '') +
+    '</div>';
   }
 
-  var threadTable = threadEntries.length
-    ? '<div style="margin-bottom:14px"><div style="font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">\uc8fc\uc694 \uc2a4\ub808\ub4dc \ubaa9\ub85d</div>' +
-      '<table class="analysis-table"><thead><tr><th>\uc2a4\ub808\ub4dc \uc774\ub984</th><th>\uc0c1\ud0dc</th><th>\ub300\uae30 \ub77d</th></tr></thead><tbody>' +
-      threadEntries.map(function(t) {
-        return '<tr><td style="font-family:monospace;font-size:11px">' + esc(t.name) +
-          '</td><td><span class="thread-state ' + t.state + '">' + t.state + '</span></td>' +
-          '<td style="font-size:11px;color:var(--dim)">' + (t.lock ? esc(t.lock) : '—') + '</td></tr>';
-      }).join('') + '</tbody></table></div>'
+  // 스레드 목록 (BLOCKED 우선 정렬)
+  var threadEntries = [], tr2 = /"thread-name"\s*=>\s*"([^"]+)"[\s\S]*?"thread-state"\s*=>\s*"([^"]+)"[\s\S]*?"lock-name"\s*=>\s*"?([^",\n}]+)"?/g, tm;
+  while ((tm = tr2.exec(dumpOutput)) !== null && threadEntries.length < 30) {
+    threadEntries.push({name:tm[1], state:tm[2], lock:tm[3]!=='null'&&tm[3]!=='undefined'?tm[3]:null});
+  }
+  threadEntries.sort(function(a,b){
+    return (stateOrder.indexOf(a.state)<0?99:stateOrder.indexOf(a.state)) -
+           (stateOrder.indexOf(b.state)<0?99:stateOrder.indexOf(b.state));
+  });
+
+  var threadListHtml = threadEntries.length
+    ? '<div class="jvm-region" style="margin-bottom:10px">' +
+        '<div class="jvm-region-label" style="color:var(--dim);margin-bottom:6px">스레드 목록' +
+          (threadCount!=null && threadEntries.length<threadCount ? ' (상위 '+threadEntries.length+'개 / 전체 '+threadCount+'개)' : ' ('+threadEntries.length+'개)') +
+        '</div>' +
+        '<table class="analysis-table"><thead><tr><th>스레드 이름</th><th>상태</th><th>대기 락</th></tr></thead><tbody>' +
+        threadEntries.map(function(t) {
+          return '<tr><td style="font-family:monospace;font-size:11px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(t.name) +
+            '</td><td><span class="thread-state ' + t.state + '">' + t.state + '</span></td>' +
+            '<td style="font-size:11px;color:var(--dim);font-family:monospace;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (t.lock ? esc(t.lock) : '—') + '</td></tr>';
+        }).join('') +
+      '</tbody></table></div>'
     : '';
 
-  return '<div class="analysis-banner ' + (hasDeadlock ? 'warn' : 'ok') + '">' +
-    (hasDeadlock ? '\ud83d\udea8 \uad50\ucc29 \uc0c1\ud0dc(\ub370\ub4dc\ub77d) \uac10\uc9c0! \uc989\uc2dc \uc2a4\ub808\ub4dc \ub364\ud504\ub97c \ubd84\uc11d\ud558\uc138\uc694.' : '\u2705 \uad50\ucc29 \uc0c1\ud0dc \uc5c6\uc74c') +
+  var recs = [];
+  if (hasDeadlock)
+    recs.push({icon:'🚨', text:'교착 상태(데드락) 감지! 관련 스레드를 식별하고 락 획득 순서를 검토하세요.'});
+  if (states.BLOCKED > 0)
+    recs.push({icon:'⚠️', text:'BLOCKED 스레드 ' + states.BLOCKED + '개 — 특정 락을 기다리는 스레드가 있습니다. 락 경합 여부를 확인하세요.'});
+  var waitTotal = states.WAITING + states.TIMED_WAITING;
+  if (waitTotal > 20)
+    recs.push({icon:'⚠️', text:'대기 스레드(WAITING + TIMED_WAITING) ' + waitTotal + '개 — 스레드 풀 포화 또는 외부 I/O 블로킹을 확인하세요.'});
+  if (!hasDeadlock && states.BLOCKED === 0)
+    recs.push({icon:'✅', text:'교착 상태 없음, BLOCKED 스레드 없음 — 스레드 상태가 정상입니다.'});
+
+  return (hasDeadlock
+    ? '<div class="analysis-banner warn">🚨 교착 상태(데드락) 감지! 즉시 스레드 덤프를 분석하세요.</div>'
+    : '') +
+    '<div class="jvm-mem-title">📊 스레드 분석</div>' +
+    '<div class="jvm-mem-diagram">' +
+      // 왼쪽: 스레드 현황
+      '<div class="jvm-zone heap-zone">' +
+        '<div class="jvm-zone-header">' +
+          '<span class="jvm-zone-tag heap-tag">스레드</span>' +
+          '<span class="jvm-zone-stat">현황 · 수치</span>' +
+          (threadCount!=null ? '<span class="jvm-zone-pct ' + (states.BLOCKED>0?'crit':'ok') + '">' + threadCount + '개</span>' : '') +
+        '</div>' +
+        '<div class="jvm-zone-body">' +
+          (stateTotal > 0 ? '<div style="margin-bottom:10px">' +
+            '<div style="font-size:10px;color:var(--dim);margin-bottom:5px">상태 비율</div>' +
+            stackedBar + '</div>' : '') +
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">' +
+            statCard('현재 스레드', threadCount, '최고 기록: '+(peakCount!=null?peakCount:'—')) +
+            statCard('데몬 스레드', daemonCount, '누적 시작: '+(totalStarted!=null?Number(totalStarted).toLocaleString():'—')) +
+            statCard('BLOCKED', states.BLOCKED, '스레드 차단',
+              states.BLOCKED>0 ? 'var(--critical)' : 'var(--online)') +
+            statCard('WAITING', waitTotal, 'WAIT + TIMED_WAIT',
+              waitTotal>20 ? 'var(--high)' : 'var(--text)') +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      // 오른쪽: 상태 분포
+      '<div class="jvm-zone" style="background:rgba(88,166,255,.04);border-color:rgba(88,166,255,.22)">' +
+        '<div class="jvm-zone-header">' +
+          '<span class="jvm-zone-tag" style="background:rgba(88,166,255,.15);color:#58a6ff;border:1px solid rgba(88,166,255,.3)">상태 분포</span>' +
+          '<span class="jvm-zone-stat">전체 ' + stateTotal + '개 스레드</span>' +
+        '</div>' +
+        '<div class="jvm-zone-body">' + stateBarsHtml + '</div>' +
+      '</div>' +
     '</div>' +
-    '<div class="analysis-cards">' +
-    '<div class="analysis-card"><div class="analysis-card-label">\ud604\uc7ac \uc2a4\ub808\ub4dc</div><div class="analysis-card-val">' + (threadCount != null ? threadCount : '—') + '</div><div class="analysis-card-sub">\ucd5c\uace0: ' + (peakCount != null ? peakCount : '—') + '</div></div>' +
-    '<div class="analysis-card"><div class="analysis-card-label">\ub370\ubab0 \uc2a4\ub808\ub4dc</div><div class="analysis-card-val">' + (daemonCount != null ? daemonCount : '—') + '</div><div class="analysis-card-sub">\uc99d \uc2dc\uc791: ' + (totalStarted != null ? Number(totalStarted).toLocaleString() : '—') + '</div></div>' +
-    '<div class="analysis-card"><div class="analysis-card-label">BLOCKED</div><div class="analysis-card-val" style="color:' + (states.BLOCKED > 0 ? 'var(--critical)' : 'var(--bright)') + '">' + states.BLOCKED + '</div><div class="analysis-card-sub">WAITING: ' + (states.WAITING + states.TIMED_WAITING) + '</div></div>' +
-    '<div class="analysis-card"><div class="analysis-card-label">RUNNABLE</div><div class="analysis-card-val" style="color:var(--low)">' + states.RUNNABLE + '</div><div class="analysis-card-sub">\uac10\uc9c0 \ud569\uacc4: ' + stateTotal + '</div></div>' +
-    '</div>' + stateChart + threadTable + _rawBlock(output, 'threads-raw');
+    threadListHtml +
+    _recsBlock(recs) +
+    _rawBlock(output, 'threads-raw');
 }
 
 

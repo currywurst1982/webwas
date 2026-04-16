@@ -1219,7 +1219,10 @@ class WildflyAgent:
         if result.get("success"):
             logger.info("Task %s 완료 ✓", task_id)
         else:
-            logger.warning("Task %s 실패: %s", task_id, result.get("error"))
+            err = result.get("error") or ""
+            out = (result.get("output") or "")[:300]
+            logger.warning("Task %s 실패: %s%s", task_id, err,
+                           f"\nstdout: {out}" if out and not err else "")
 
         self._post(
             f"/api/tasks/{task_id}/result",

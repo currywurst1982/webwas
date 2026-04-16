@@ -1190,6 +1190,55 @@
     .analysis-bar-fill.warn { background:var(--high); }
     .analysis-bar-fill.crit { background:var(--critical); }
 
+    /* ── JVM 메모리 구조 다이어그램 ─────────────────────────────────────── */
+    .jvm-mem-title {
+      font-size:12px; font-weight:700; color:var(--dim); text-transform:uppercase;
+      letter-spacing:.5px; margin-bottom:8px;
+    }
+    .jvm-mem-diagram {
+      display:grid; grid-template-columns:1.7fr 1fr; gap:10px; margin-bottom:12px;
+    }
+    .jvm-zone {
+      border-radius:8px; padding:10px 12px; border:1px solid;
+    }
+    .jvm-zone.heap-zone    { background:rgba(63,185,80,.04);  border-color:rgba(63,185,80,.22); }
+    .jvm-zone.nonheap-zone { background:rgba(255,166,87,.04); border-color:rgba(255,166,87,.22); }
+    .jvm-zone-header {
+      display:flex; align-items:center; gap:7px; margin-bottom:9px;
+      padding-bottom:7px; border-bottom:1px solid rgba(255,255,255,.06);
+    }
+    .jvm-zone-tag {
+      font-size:9px; font-weight:700; padding:2px 6px; border-radius:3px; letter-spacing:.5px;
+    }
+    .jvm-zone-tag.heap-tag    { background:rgba(63,185,80,.15);  color:#3fb950; border:1px solid rgba(63,185,80,.3); }
+    .jvm-zone-tag.nonheap-tag { background:rgba(255,166,87,.15); color:#ffa657; border:1px solid rgba(255,166,87,.3); }
+    .jvm-zone-stat { font-size:11px; color:var(--text); flex:1; }
+    .jvm-zone-pct  { font-size:12px; font-weight:700; }
+    .jvm-zone-pct.ok { color:var(--online); } .jvm-zone-pct.warn { color:var(--high); } .jvm-zone-pct.crit { color:var(--critical); }
+    .jvm-zone-body { display:flex; flex-direction:column; gap:7px; }
+    .jvm-region {
+      background:rgba(255,255,255,.025); border:1px solid rgba(255,255,255,.06);
+      border-radius:5px; padding:7px 9px;
+    }
+    .jvm-region-label {
+      font-size:9px; font-weight:700; letter-spacing:.5px; margin-bottom:6px; text-transform:uppercase;
+    }
+    .jvm-region-label.young { color:#3fb950; }
+    .jvm-region-label.old   { color:#a371f7; }
+    .jvm-region-label.meta  { color:#ffa657; }
+    .jvm-region-label.code  { color:#f78166; }
+    .jvm-region-hint { font-weight:400; text-transform:none; font-size:9px; color:var(--dim); letter-spacing:0; }
+    .jvm-pool-block { margin-bottom:6px; }
+    .jvm-pool-block:last-child { margin-bottom:0; }
+    .jvm-pool-header { display:flex; align-items:center; gap:5px; margin-bottom:3px; }
+    .jvm-pool-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+    .jvm-pool-name { font-size:11px; color:var(--text); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .jvm-pool-pct  { font-size:11px; font-weight:700; min-width:30px; text-align:right; }
+    .jvm-pool-pct.ok { color:var(--online); } .jvm-pool-pct.warn { color:var(--high); } .jvm-pool-pct.crit { color:var(--critical); }
+    .jvm-pool-bar-wrap { height:6px; background:rgba(255,255,255,.07); border-radius:3px; overflow:hidden; margin-bottom:3px; }
+    .jvm-pool-bar-fill { height:100%; border-radius:3px; transition:width .4s ease; }
+    .jvm-pool-stats { display:flex; justify-content:space-between; font-size:10px; color:var(--dim); }
+
     /* Table */
     .analysis-table { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:16px; }
     .analysis-table th { text-align:left; padding:6px 10px; background:var(--surface2); color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.4px; border-bottom:1px solid var(--border); }
@@ -3712,38 +3761,149 @@ function _renderGcAnalysis(output) {
 
 // ── Heap Analysis Render ──────────────────────────────────────────────────────
 function _renderHeapAnalysis(output) {
-  var blocks = _splitBlocks(output), i = 0;
+  var blocks  = _splitBlocks(output), i = 0;
   var heap    = _dmrBlock(blocks[i++]) || {};
   var nonheap = _dmrBlock(blocks[i++]) || {};
-  // read-children-resources returns all memory pools in one block
-  var pools = _parseChildResources(blocks[i] || '') || [];
+  var pools   = _parseChildResources(blocks[i] || '') || [];
+
   var heapUsed = heap.used || 0, heapMax = heap.max || 0;
-  var heapPct  = heapMax > 0 ? Math.round(heapUsed/heapMax*100) : 0;
+  var nhUsed   = nonheap.used || 0, nhMax = nonheap.max > 0 ? nonheap.max : 0;
+  var heapPct  = heapMax > 0 ? Math.round(heapUsed / heapMax * 100) : 0;
+  var nhPct    = nhMax  > 0 ? Math.round(nhUsed  / nhMax  * 100) : 0;
 
-  var poolRows = pools.map(function(p) {
-    var used = (p.usage && p.usage.used != null) ? p.usage.used : 0;
-    var max  = (p.usage && p.usage.max  != null && p.usage.max > 0) ? p.usage.max : 0;
+  // 풀 이름 → 영역 분류
+  function classify(name) {
+    var n = (name || '').toLowerCase();
+    if (n.indexOf('eden')     >= 0) return 'eden';
+    if (n.indexOf('survivor') >= 0) return 'survivor';
+    if (n.indexOf('old')      >= 0 || n.indexOf('tenured') >= 0 || n === 'zheap' || n.indexOf('shenandoah') >= 0) return 'old';
+    if (n.indexOf('metaspace') >= 0 && n.indexOf('compressed') < 0) return 'metaspace';
+    if (n.indexOf('compressed') >= 0 || n.indexOf('class space') >= 0) return 'ccs';
+    if (n.indexOf('code') >= 0) return 'code';
+    return 'other';
+  }
+
+  var poolColors = { eden:'#3fb950', survivor:'#58a6ff', old:'#a371f7',
+                     metaspace:'#ffa657', ccs:'#ff9a3c', code:'#f78166', other:'#8b949e' };
+
+  function poolBlock(p) {
+    var used      = (p.usage && p.usage.used      != null) ? p.usage.used      : 0;
+    var max       = (p.usage && p.usage.max       != null && p.usage.max > 0)  ? p.usage.max       : 0;
     var committed = (p.usage && p.usage.committed != null) ? p.usage.committed : 0;
-    var pct  = max > 0 ? Math.round(used/max*100) : (committed > 0 ? Math.round(used/committed*100) : 0);
+    var cap  = max > 0 ? max : committed;
+    var pct  = cap > 0 ? Math.round(used / cap * 100) : 0;
+    var type = classify(p.name);
+    var col  = poolColors[type];
     var cls  = _barCls(pct);
-    var displayMax = max > 0 ? _fmtBytes(max) : (committed > 0 ? _fmtBytes(committed) + '*' : 'N/A');
-    return '<tr><td>' + esc(p.name || '—') + '</td><td>' + _fmtBytes(used) +
-      '</td><td>' + displayMax + '</td><td>' +
-      '<div style="display:flex;align-items:center;gap:6px">' +
-      '<div style="flex:1;height:5px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden">' +
-      '<div class="analysis-bar-fill ' + cls + '" style="height:100%;width:' + Math.min(pct,100) + '%"></div></div>' +
-      '<span style="font-size:11px;color:var(--dim);min-width:28px">' + pct + '%</span></div></td></tr>';
-  }).join('');
+    return '<div class="jvm-pool-block">' +
+      '<div class="jvm-pool-header">' +
+        '<span class="jvm-pool-dot" style="background:' + col + ';box-shadow:0 0 5px ' + col + '55"></span>' +
+        '<span class="jvm-pool-name">' + esc(p.name || '—') + '</span>' +
+        '<span class="jvm-pool-pct ' + cls + '">' + pct + '%</span>' +
+      '</div>' +
+      '<div class="jvm-pool-bar-wrap">' +
+        '<div class="jvm-pool-bar-fill" style="width:' + Math.min(pct,100) + '%;background:' + col + ';opacity:' + (0.55 + pct/220).toFixed(2) + '"></div>' +
+      '</div>' +
+      '<div class="jvm-pool-stats">' +
+        '<span>사용 <strong style="color:var(--text)">' + _fmtBytes(used) + '</strong></span>' +
+        '<span>' + (max > 0 ? '최대 ' + _fmtBytes(max) : '할당 ' + _fmtBytes(committed)) + '</span>' +
+      '</div>' +
+    '</div>';
+  }
 
+  function zonePoolBlock(label, used, max) {
+    var pct = max > 0 ? Math.round(used/max*100) : 0;
+    var col = label === 'HEAP' ? '#3fb950' : '#ffa657';
+    var cls = _barCls(pct);
+    return '<div class="jvm-pool-block">' +
+      '<div class="jvm-pool-header">' +
+        '<span class="jvm-pool-dot" style="background:' + col + '"></span>' +
+        '<span class="jvm-pool-name">' + label + '</span>' +
+        '<span class="jvm-pool-pct ' + cls + '">' + pct + '%</span>' +
+      '</div>' +
+      '<div class="jvm-pool-bar-wrap"><div class="jvm-pool-bar-fill" style="width:' + Math.min(pct,100) + '%;background:' + col + '"></div></div>' +
+      '<div class="jvm-pool-stats"><span>사용 <strong style="color:var(--text)">' + _fmtBytes(used) + '</strong></span>' +
+      (max > 0 ? '<span>최대 ' + _fmtBytes(max) + '</span>' : '') + '</div>' +
+    '</div>';
+  }
+
+  // HEAP 풀 분류
+  var youngPools = pools.filter(function(p){ var t=classify(p.name); return t==='eden'||t==='survivor'; });
+  var oldPools   = pools.filter(function(p){ return classify(p.name)==='old'; });
+  var metaPools  = pools.filter(function(p){ var t=classify(p.name); return t==='metaspace'||t==='ccs'; });
+  var codePools  = pools.filter(function(p){ return classify(p.name)==='code'; });
+  var otherPools = pools.filter(function(p){ return classify(p.name)==='other'; });
+
+  var youngHtml = youngPools.length
+    ? '<div class="jvm-region"><div class="jvm-region-label young">Young Generation <span class="jvm-region-hint">— Minor GC 대상</span></div>' +
+        youngPools.map(poolBlock).join('') + '</div>'
+    : '';
+
+  var oldHtml = oldPools.length
+    ? '<div class="jvm-region"><div class="jvm-region-label old">Old Generation <span class="jvm-region-hint">— Major GC / Full GC 대상</span></div>' +
+        oldPools.map(poolBlock).join('') + '</div>'
+    : '';
+
+  var heapBodyHtml = (youngHtml || oldHtml)
+    ? youngHtml + oldHtml
+    : zonePoolBlock('전체 힙', heapUsed, heapMax);
+
+  var metaHtml = metaPools.length
+    ? '<div class="jvm-region"><div class="jvm-region-label meta">Metaspace <span class="jvm-region-hint">— 클래스 메타데이터</span></div>' +
+        metaPools.map(poolBlock).join('') + '</div>'
+    : '';
+
+  var codeHtml = codePools.length
+    ? '<div class="jvm-region"><div class="jvm-region-label code">Code Cache <span class="jvm-region-hint">— JIT 컴파일 코드</span></div>' +
+        codePools.map(poolBlock).join('') + '</div>'
+    : '';
+
+  var nhBodyHtml = (metaHtml || codeHtml)
+    ? metaHtml + codeHtml
+    : zonePoolBlock('Non-Heap', nhUsed, nhMax);
+
+  // 권장 사항
   var recs = [];
-  if (heapPct > 85) recs.push({icon:'\ud83d\udea8', text:'\ud799 \uc0ac\uc6a9\ub960 85%+ — \ud799 \ub364\ud504\ub97c \uc0dd\uc131\ud558\uc5ec \uba54\ubaa8\ub9ac \ub204\uc218\ub97c \ud655\uc778\ud558\uc138\uc694.'});
+  if (heapPct >= 90) recs.push({icon:'🚨', text:'힙 사용률 ' + heapPct + '% — 즉시 힙 덤프를 생성해 메모리 누수를 분석하세요. (-Xmx 증가 검토)'});
+  else if (heapPct >= 75) recs.push({icon:'⚠️', text:'힙 사용률 ' + heapPct + '% — GC 빈도를 확인하고 모니터링을 강화하세요.'});
+  metaPools.forEach(function(p) {
+    if (classify(p.name) !== 'metaspace') return;
+    var used = (p.usage && p.usage.used) || 0;
+    var committed = (p.usage && p.usage.committed) || 1;
+    if (used / committed > 0.85)
+      recs.push({icon:'⚠️', text:'Metaspace 사용률 85%+ — -XX:MaxMetaspaceSize 상한 설정을 확인하세요.'});
+  });
+  codePools.forEach(function(p) {
+    var used = (p.usage && p.usage.used) || 0;
+    var max  = (p.usage && p.usage.max > 0) ? p.usage.max : ((p.usage && p.usage.committed) || 0);
+    if (max > 0 && used/max > 0.8)
+      recs.push({icon:'⚠️', text:'Code Cache 사용률 80%+ — JIT 비활성화 위험. -XX:ReservedCodeCacheSize 증가를 검토하세요.'});
+  });
 
-  return '<div class="analysis-cards">' + _memCard('\uc804\uccb4 \ud799', heapUsed, heapMax) + _memCard('Non-\ud799', nonheap.used||0, nonheap.max > 0 ? nonheap.max : null) + '</div>' +
-    (pools.length ? '<table class="analysis-table"><thead><tr><th>\uba54\ubaa8\ub9ac \ud480</th><th>\uc0ac\uc6a9 \uc911</th><th>\ucd5c\ub300</th><th>\uc0ac\uc6a9\ub960</th></tr></thead><tbody>' + poolRows + '</tbody></table>' : '<div style="color:var(--dim);font-size:12px;margin-bottom:12px;">\uba54\ubaa8\ub9ac \ud480 \uc815\ubcf4\ub97c \uac00\uc838\uc624\uc9c0 \ubabb\ud588\uc2b5\ub2c8\ub2e4.</div>') +
+  return '<div class="jvm-mem-title">📊 JVM 메모리 구조</div>' +
+    '<div class="jvm-mem-diagram">' +
+      '<div class="jvm-zone heap-zone">' +
+        '<div class="jvm-zone-header">' +
+          '<span class="jvm-zone-tag heap-tag">HEAP</span>' +
+          '<span class="jvm-zone-stat">' + _fmtBytes(heapUsed) + ' / ' + _fmtBytes(heapMax) + '</span>' +
+          (heapMax > 0 ? '<span class="jvm-zone-pct ' + _barCls(heapPct) + '">' + heapPct + '%</span>' : '') +
+        '</div>' +
+        '<div class="jvm-zone-body">' + heapBodyHtml + '</div>' +
+      '</div>' +
+      '<div class="jvm-zone nonheap-zone">' +
+        '<div class="jvm-zone-header">' +
+          '<span class="jvm-zone-tag nonheap-tag">NON-HEAP</span>' +
+          '<span class="jvm-zone-stat">' + _fmtBytes(nhUsed) + (nhMax > 0 ? ' / ' + _fmtBytes(nhMax) : '') + '</span>' +
+          (nhMax > 0 ? '<span class="jvm-zone-pct ' + _barCls(nhPct) + '">' + nhPct + '%</span>' : '') +
+        '</div>' +
+        '<div class="jvm-zone-body">' + nhBodyHtml + '</div>' +
+      '</div>' +
+    '</div>' +
+    (otherPools.length ? '<div class="jvm-region" style="margin-bottom:10px"><div class="jvm-region-label" style="color:var(--dim)">기타 메모리 풀</div>' + otherPools.map(poolBlock).join('') + '</div>' : '') +
     _recsBlock(recs) +
     '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:10px 14px;font-size:12px;color:var(--dim);margin-bottom:12px">' +
-    '\ud83d\udca1 \ud799 \ub364\ud504 \ud30c\uc77c \uc0dd\uc131\uc740 <strong>\"\u26a0\ufe0f \ud799 \ub364\ud504 \ud30c\uc77c \uc0dd\uc131\"</strong> \ubc84\ud2bc\uc744 \uc0ac\uc6a9\ud558\uc138\uc694.<br>' +
-    '\uc0dd\uc131\ub41c \ud30c\uc77c\uc740 \uc5d0\uc774\uc804\ud2b8 \uc11c\ubc84\uc758 <code style="color:var(--medium)">/tmp/wildfly_heap.hprof</code>\uc5d0 \uc800\uc7a5\ub429\ub2c8\ub2e4.' +
+    '💡 힙 덤프 파일 생성은 <strong>"⚠️ 힙 덤프 파일 생성"</strong> 버튼을 사용하세요.<br>' +
+    '생성된 파일은 에이전트 서버의 <code style="color:var(--medium)">/tmp/wildfly_heap.hprof</code>에 저장됩니다.' +
     '</div>' + _rawBlock(output, 'heap-raw');
 }
 

@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🔐 인증서 만료일 관리</title>
+<script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+<style>
+:root {
+  --bg:       #0d1117;
+  --surface:  #161b22;
+  --surface2: #21262d;
+  --border:   #30363d;
+  --text:     #e6edf3;
+  --dim:      #7d8590;
+  --expired:  #f85149;
+  --critical: #f85149;
+  --warning:  #d29922;
+  --caution:  #e3b341;
+  --ok:       #3fb950;
+  --blue:     #58a6ff;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans KR', sans-serif;
+       background: var(--bg); color: var(--text); min-height: 100vh; }
+
+/* ─── Header ──────────────────────────────────────────────── */
+.header { background: var(--surface); border-bottom: 1px solid var(--border);
+          padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+.header h1 { font-size: 18px; font-weight: 700; }
+.header-sub { font-size: 12px; color: var(--dim); margin-left: auto; }
+
+/* ─── Main ────────────────────────────────────────────────── */
+.main { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+/* ─── Upload Zone ─────────────────────────────────────────── */
+.upload-zone { border: 2px dashed var(--border); border-radius: 12px;
+               padding: 48px 24px; text-align: center; cursor: pointer;
+               transition: all .2s; background: var(--surface); }
+.upload-zone.drag { border-color: var(--blue); background: rgba(88,166,255,.05); }
+.upload-zone:hover { border-color: var(--blue); background: rgba(88,166,255,.04); }
+.upload-icon { font-size: 48px; margin-bottom: 12px; }
+.upload-title { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+.upload-sub   { font-size: 13px; color: var(--dim); }
+.upload-btn   { display: inline-block; margin-top: 16px; padding: 8px 20px;
+                background: rgba(88,166,255,.1); border: 1px solid rgba(88,166,255,.3);
+                color: var(--blue); border-radius: 6px; font-size: 13px; cursor: pointer; }
+#file-input   { display: none; }
+
+/* ─── Column Picker ────────────────────────────────────────── */
+.modal-backdrop { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6);
+                  z-index:100; align-items:center; justify-content:center; }
+.modal-backdrop.show { display:flex; }
+.modal { background:var(--surface); border:1px solid var(--border); border-radius:10px;
+         padding:24px; min-width:340px; max-width:480px; width:100%; }
+.modal h2 { font-size:15px; font-weight:700; margin-bottom:4px; }
+.modal-sub { font-size:12px; color:var(--dim); margin-bottom:20px; }
+.modal-row { margin-bottom:14px; }
+.modal-row label { display:block; font-size:12px; color:var(--dim); margin-bottom:5px; }
+.modal-row select { width:100%; background:var(--surface2); border:1px solid var(--border);
+                    color:var(--text); border-radius:6px; padding:7px 10px; font-size:13px; }
+.modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+.btn { padding:7px 18px; border-radius:6px; font-size:13px; cursor:pointer;
+       border:1px solid var(--border); }
+.btn-primary { background:var(--blue); color:#000; border-color:var(--blue); font-weight:600; }
+.btn-ghost   { background:transparent; color:var(--dim); }
+
+/* ─── Summary Cards ────────────────────────────────────────── */
+.summary { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:20px; }
+.sum-card { background:var(--surface); border:1px solid var(--border); border-radius:8px;
+            padding:14px 16px; }
+.sum-card-label { font-size:11px; color:var(--dim); margin-bottom:6px; text-transform:uppercase;
+                  letter-spacing:.4px; }
+.sum-card-val   { font-size:24px; font-weight:700; }
+.sum-card-sub   { font-size:11px; color:var(--dim); margin-top:3px; }
+.sum-card.s-expired  { border-color:rgba(248,81,73,.3);  background:rgba(248,81,73,.04); }
+.sum-card.s-critical { border-color:rgba(248,81,73,.25); background:rgba(248,81,73,.03); }
+.sum-card.s-warning  { border-color:rgba(210,153,34,.3); background:rgba(210,153,34,.04); }
+.sum-card.s-ok       { border-color:rgba(63,185,80,.2);  background:rgba(63,185,80,.03); }
+.c-expired  { color:var(--expired); }
+.c-critical { color:var(--critical); }
+.c-warning  { color:var(--warning); }
+.c-caution  { color:var(--caution); }
+.c-ok       { color:var(--ok); }
+
+/* ─── Toolbar ─────────────────────────────────────────────── */
+.toolbar { display:flex; align-items:center; gap:10px; margin-bottom:14px; flex-wrap:wrap; }
+.filter-tabs { display:flex; gap:4px; }
+.ftab { padding:5px 12px; border-radius:5px; font-size:12px; cursor:pointer;
+        background:var(--surface2); border:1px solid var(--border); color:var(--dim); }
+.ftab.active { background:rgba(88,166,255,.15); border-color:rgba(88,166,255,.4);
+               color:var(--blue); font-weight:600; }
+.search-box { flex:1; min-width:180px; position:relative; }
+.search-box input { width:100%; background:var(--surface); border:1px solid var(--border);
+                    color:var(--text); border-radius:6px; padding:6px 10px 6px 30px;
+                    font-size:13px; outline:none; }
+.search-box input:focus { border-color:var(--blue); }
+.search-box .si { position:absolute; left:9px; top:50%; transform:translateY(-50%);
+                  color:var(--dim); font-size:13px; pointer-events:none; }
+.sort-info { font-size:12px; color:var(--dim); margin-left:auto; }
+.reload-btn { padding:5px 12px; background:var(--surface2); border:1px solid var(--border);
+              color:var(--dim); border-radius:5px; font-size:12px; cursor:pointer; }
+.reload-btn:hover { color:var(--text); border-color:var(--blue); }
+
+/* ─── Table ───────────────────────────────────────────────── */
+.table-wrap { background:var(--surface); border:1px solid var(--border); border-radius:8px;
+              overflow:hidden; overflow-x:auto; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+thead th { background:var(--surface2); padding:10px 14px; text-align:left;
+           font-size:11px; font-weight:600; color:var(--dim); white-space:nowrap;
+           border-bottom:1px solid var(--border); cursor:pointer; user-select:none;
+           text-transform:uppercase; letter-spacing:.4px; }
+thead th:hover { color:var(--text); }
+thead th .sort-arrow { margin-left:4px; opacity:.4; }
+thead th.asc  .sort-arrow::after { content:'▲'; opacity:1; color:var(--blue); }
+thead th.desc .sort-arrow::after { content:'▼'; opacity:1; color:var(--blue); }
+thead th .sort-arrow::after { content:'⇅'; }
+tbody tr { border-bottom:1px solid rgba(48,54,61,.6); transition:background .1s; }
+tbody tr:last-child { border-bottom:none; }
+tbody tr:hover { background:rgba(255,255,255,.03); }
+tbody tr.row-expired  { background:rgba(248,81,73,.04); }
+tbody tr.row-critical { background:rgba(248,81,73,.03); }
+tbody tr.row-warning  { background:rgba(210,153,34,.03); }
+td { padding:10px 14px; white-space:nowrap; max-width:280px;
+     overflow:hidden; text-overflow:ellipsis; }
+td.domain-cell { font-family:monospace; font-size:12px; color:var(--blue); max-width:320px; }
+td.domain-cell a { color:inherit; text-decoration:none; }
+td.domain-cell a:hover { text-decoration:underline; }
+
+/* ─── Status Badge ────────────────────────────────────────── */
+.badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px;
+         font-weight:700; white-space:nowrap; }
+.badge.expired  { background:rgba(248,81,73,.15);  color:var(--expired); }
+.badge.critical { background:rgba(248,81,73,.12);  color:var(--critical); }
+.badge.warning  { background:rgba(210,153,34,.15); color:var(--warning); }
+.badge.caution  { background:rgba(227,179,65,.12); color:var(--caution); }
+.badge.ok       { background:rgba(63,185,80,.12);  color:var(--ok); }
+
+/* ─── D-day ────────────────────────────────────────────────── */
+.dday { font-weight:700; font-size:13px; }
+
+/* ─── Empty / Footer ─────────────────────────────────────── */
+.empty-row td { text-align:center; padding:40px; color:var(--dim); }
+.footer { text-align:center; font-size:11px; color:var(--dim); padding:20px 0; }
+
+/* ─── Skeleton ────────────────────────────────────────────── */
+#app-content { display:none; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <span style="font-size:22px">🔐</span>
+  <h1>인증서 만료일 관리</h1>
+  <span class="header-sub" id="file-name-display"></span>
+</div>
+
+<div class="main">
+
+  <!-- Upload Zone -->
+  <div id="upload-section">
+    <div class="upload-zone" id="drop-zone">
+      <div class="upload-icon">📂</div>
+      <div class="upload-title">엑셀 파일을 여기에 드래그하거나 클릭하여 업로드</div>
+      <div class="upload-sub">.xlsx, .xls 형식 지원 · 도메인과 인증서 만료일이 포함된 파일</div>
+      <div class="upload-btn" onclick="document.getElementById('file-input').click()">파일 선택</div>
+      <input type="file" id="file-input" accept=".xlsx,.xls,.csv">
+    </div>
+  </div>
+
+  <!-- Column Picker Modal -->
+  <div class="modal-backdrop" id="col-modal">
+    <div class="modal">
+      <h2>📋 열(컬럼) 선택</h2>
+      <div class="modal-sub">도메인과 만료일 열을 선택해주세요</div>
+      <div class="modal-row">
+        <label>도메인 열</label>
+        <select id="col-domain"></select>
+      </div>
+      <div class="modal-row">
+        <label>인증서 만료일 열</label>
+        <select id="col-date"></select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" onclick="closeModal()">취소</button>
+        <button class="btn btn-primary" onclick="applyColumns()">적용</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Content -->
+  <div id="app-content">
+
+    <!-- Summary Cards -->
+    <div class="summary" id="summary-cards"></div>
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="filter-tabs" id="filter-tabs">
+        <div class="ftab active" data-filter="all"   onclick="setFilter('all')">전체 <span id="cnt-all"></span></div>
+        <div class="ftab" data-filter="expired"  onclick="setFilter('expired')">만료됨 <span id="cnt-expired"></span></div>
+        <div class="ftab" data-filter="critical" onclick="setFilter('critical')">7일 이내 <span id="cnt-critical"></span></div>
+        <div class="ftab" data-filter="warning"  onclick="setFilter('warning')">30일 이내 <span id="cnt-warning"></span></div>
+        <div class="ftab" data-filter="caution"  onclick="setFilter('caution')">60일 이내 <span id="cnt-caution"></span></div>
+        <div class="ftab" data-filter="ok"       onclick="setFilter('ok')">정상 <span id="cnt-ok"></span></div>
+      </div>
+      <div class="search-box">
+        <span class="si">🔍</span>
+        <input type="text" id="search-input" placeholder="도메인 검색..." oninput="renderTable()">
+      </div>
+      <button class="reload-btn" onclick="document.getElementById('file-input').click()">📂 파일 변경</button>
+      <button class="reload-btn" onclick="openModal()">⚙ 열 설정</button>
+      <span class="sort-info" id="sort-info"></span>
+    </div>
+
+    <!-- Table -->
+    <div class="table-wrap">
+      <table id="cert-table">
+        <thead id="table-head"></thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">인증서 만료일 관리 · 엑셀 파일 기반 · 데이터는 브라우저에서만 처리됩니다</div>
+
+<script>
+// ─── State ──────────────────────────────────────────────────────
+var S = {
+  rows: [],          // parsed rows from Excel (array of objects)
+  headers: [],       // original column headers
+  domainCol: null,   // detected domain column key
+  dateCol: null,     // detected date column key
+  extraCols: [],     // other columns to display
+  filter: 'all',
+  sortKey: null,
+  sortDir: 'asc',
+  fileName: '',
+};
+
+// ─── Date Parsing ───────────────────────────────────────────────
+function parseDate(val) {
+  if (!val && val !== 0) return null;
+  if (val instanceof Date) { return isNaN(val.getTime()) ? null : val; }
+  if (typeof val === 'number') {
+    // Excel serial: SheetJS already converts with cellDates:true, but fallback
+    try {
+      var d = new Date(Math.round((val - 25569) * 86400 * 1000));
+      if (!isNaN(d.getTime()) && d.getFullYear() > 1990) return d;
+    } catch(e) {}
+    return null;
+  }
+  var str = String(val).trim();
+  if (!str) return null;
+  // Korean: 2024년 12월 31일
+  var m = str.match(/(\d{4})[년\-\/\.](\d{1,2})[월\-\/\.](\d{1,2})/);
+  if (m) { var d = new Date(+m[1], +m[2]-1, +m[3]); return isNaN(d)?null:d; }
+  // Standard: 2024-12-31 or 2024/12/31
+  var d = new Date(str);
+  if (!isNaN(d.getTime()) && d.getFullYear() > 1990) return d;
+  return null;
+}
+
+function daysUntil(date) {
+  var today = new Date(); today.setHours(0,0,0,0);
+  var t = new Date(date); t.setHours(0,0,0,0);
+  return Math.ceil((t - today) / 86400000);
+}
+
+function classify(days) {
+  if (days === null) return 'unknown';
+  if (days <= 0)  return 'expired';
+  if (days <= 7)  return 'critical';
+  if (days <= 30) return 'warning';
+  if (days <= 60) return 'caution';
+  return 'ok';
+}
+
+function statusLabel(cls) {
+  return {expired:'만료됨', critical:'위험', warning:'경고', caution:'주의', ok:'정상', unknown:'알 수 없음'}[cls] || cls;
+}
+
+function ddayText(days) {
+  if (days === null) return '—';
+  if (days === 0) return 'D-Day';
+  if (days > 0) return 'D-' + days;
+  return 'D+' + Math.abs(days);
+}
+
+function fmtDate(date) {
+  if (!date) return '—';
+  var y = date.getFullYear(), m = String(date.getMonth()+1).padStart(2,'0'),
+      d = String(date.getDate()).padStart(2,'0');
+  return y + '-' + m + '-' + d;
+}
+
+// ─── Column Auto-Detection ──────────────────────────────────────
+var DOMAIN_KW = ['도메인','domain','hostname','host','url','주소','site','서버','서비스','서버명','사이트'];
+var DATE_KW   = ['만료','expire','expiry','expiration','인증서','certificate','cert','유효','날짜','date','갱신','notafter'];
+
+function scoreCol(key, keywords) {
+  var k = key.toLowerCase().replace(/[\s_\-]/g,'');
+  for (var i=0; i<keywords.length; i++) {
+    var kw = keywords[i].toLowerCase().replace(/[\s_\-]/g,'');
+    if (k === kw) return 100;
+    if (k.indexOf(kw) >= 0 || kw.indexOf(k) >= 0) return 50;
+  }
+  return 0;
+}
+
+function autoDetectColumns(headers, rows) {
+  var domainScores = {}, dateScores = {};
+  headers.forEach(function(h) {
+    domainScores[h] = scoreCol(h, DOMAIN_KW);
+    dateScores[h]   = scoreCol(h, DATE_KW);
+  });
+
+  // Boost date score if column contains date-like values
+  headers.forEach(function(h) {
+    var parsedCount = 0;
+    rows.slice(0, Math.min(10, rows.length)).forEach(function(r) {
+      if (parseDate(r[h])) parsedCount++;
+    });
+    if (parsedCount >= 3) dateScores[h] += 40;
+  });
+
+  var bestDomain = headers.reduce(function(a,b){ return domainScores[a]>=domainScores[b]?a:b; });
+  var bestDate   = headers.reduce(function(a,b){ return dateScores[a]>=dateScores[b]?a:b; });
+
+  return {
+    domain: domainScores[bestDomain] > 0 ? bestDomain : null,
+    date:   dateScores[bestDate]   > 0 ? bestDate   : null,
+  };
+}
+
+// ─── File Reading ────────────────────────────────────────────────
+function readFile(file) {
+  S.fileName = file.name;
+  document.getElementById('file-name-display').textContent = file.name;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var wb = XLSX.read(e.target.result, {type:'array', cellDates:true, cellNF:false});
+      var ws = wb.Sheets[wb.SheetNames[0]];
+      var data = XLSX.utils.sheet_to_json(ws, {defval:'', raw:false, dateNF:'yyyy-mm-dd'});
+      if (!data.length) { alert('데이터가 없습니다.'); return; }
+      S.headers = Object.keys(data[0]);
+      S.rows = data;
+
+      var det = autoDetectColumns(S.headers, S.rows);
+      S.domainCol = det.domain;
+      S.dateCol   = det.date;
+
+      if (!S.domainCol || !S.dateCol) {
+        openModal();
+      } else {
+        buildExtraCols();
+        processAndRender();
+      }
+    } catch(err) {
+      alert('파일을 읽는 중 오류가 발생했습니다: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function buildExtraCols() {
+  S.extraCols = S.headers.filter(function(h){ return h!==S.domainCol && h!==S.dateCol; });
+}
+
+// ─── Processing ──────────────────────────────────────────────────
+function processAndRender() {
+  // Attach parsed date + days + status to each row
+  S.rows.forEach(function(r) {
+    r._date = parseDate(r[S.dateCol]);
+    r._days = r._date ? daysUntil(r._date) : null;
+    r._status = classify(r._days);
+  });
+  document.getElementById('upload-section').style.display = 'none';
+  document.getElementById('app-content').style.display   = 'block';
+  updateCounts();
+  renderTable();
+}
+
+function updateCounts() {
+  var cnts = {all:0, expired:0, critical:0, warning:0, caution:0, ok:0};
+  S.rows.forEach(function(r) {
+    cnts.all++;
+    if (cnts[r._status] !== undefined) cnts[r._status]++;
+  });
+  ['all','expired','critical','warning','caution','ok'].forEach(function(k) {
+    var el = document.getElementById('cnt-'+k);
+    if (el) el.textContent = cnts[k] ? '('+cnts[k]+')' : '';
+  });
+  // Summary cards
+  document.getElementById('summary-cards').innerHTML =
+    card('전체','all',cnts.all,'개') +
+    card('만료됨','s-expired', cnts.expired, '개', 'c-expired') +
+    card('7일 이내','s-critical', cnts.critical, '개', 'c-critical') +
+    card('30일 이내','s-warning', cnts.warning, '개', 'c-warning') +
+    card('정상 (60일+)','s-ok', cnts.ok, '개', 'c-ok');
+}
+
+function card(label, cls, val, unit, vc) {
+  return '<div class="sum-card '+cls+'">' +
+    '<div class="sum-card-label">'+label+'</div>' +
+    '<div class="sum-card-val '+(vc||'')+'">'+val+'<span style="font-size:14px;font-weight:400;margin-left:2px">'+unit+'</span></div>' +
+    '</div>';
+}
+
+// ─── Filter / Sort / Render ──────────────────────────────────────
+var currentFilter = 'all';
+function setFilter(f) {
+  currentFilter = f;
+  document.querySelectorAll('.ftab').forEach(function(t){ t.classList.remove('active'); });
+  document.querySelector('.ftab[data-filter="'+f+'"]').classList.add('active');
+  renderTable();
+}
+
+function getFilteredSorted() {
+  var search = (document.getElementById('search-input')||{value:''}).value.toLowerCase().trim();
+  var rows = S.rows.filter(function(r) {
+    if (currentFilter !== 'all' && r._status !== currentFilter) return false;
+    if (search) {
+      var domain = String(r[S.domainCol]||'').toLowerCase();
+      if (domain.indexOf(search) < 0) return false;
+    }
+    return true;
+  });
+
+  if (S.sortKey) {
+    rows.sort(function(a,b) {
+      var av, bv;
+      if (S.sortKey === '_days') {
+        av = a._days !== null ? a._days : 99999;
+        bv = b._days !== null ? b._days : 99999;
+      } else if (S.sortKey === '_status') {
+        var order = {expired:0,critical:1,warning:2,caution:3,ok:4,unknown:5};
+        av = order[a._status]||5; bv = order[b._status]||5;
+      } else {
+        av = String(a[S.sortKey]||'').toLowerCase();
+        bv = String(b[S.sortKey]||'').toLowerCase();
+      }
+      if (av < bv) return S.sortDir === 'asc' ? -1 : 1;
+      if (av > bv) return S.sortDir === 'asc' ?  1 : -1;
+      return 0;
+    });
+  } else {
+    // Default sort: expired/critical first
+    var order = {expired:0, critical:1, warning:2, caution:3, ok:4, unknown:5};
+    rows.sort(function(a,b){ return (order[a._status]||5)-(order[b._status]||5); });
+  }
+  return rows;
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderTable() {
+  var rows = getFilteredSorted();
+  var si = document.getElementById('sort-info');
+  if (si) si.textContent = '총 ' + rows.length + '개';
+
+  // Header
+  var headCols = [
+    {key: S.domainCol, label: '도메인'},
+    {key: S.dateCol,   label: '만료일'},
+    {key: '_days',     label: '남은 일수'},
+    {key: '_status',   label: '상태'},
+  ];
+  S.extraCols.forEach(function(c) { headCols.push({key:c, label:c}); });
+
+  var ths = headCols.map(function(c) {
+    var cls = S.sortKey === c.key ? S.sortDir : '';
+    return '<th class="'+cls+'" onclick="sortBy(\''+esc(c.key)+'\')">'
+      + esc(c.label) + '<span class="sort-arrow"></span></th>';
+  }).join('');
+  document.getElementById('table-head').innerHTML = '<tr>' + ths + '</tr>';
+
+  // Body
+  if (!rows.length) {
+    document.getElementById('table-body').innerHTML =
+      '<tr class="empty-row"><td colspan="'+headCols.length+'">조건에 맞는 항목이 없습니다</td></tr>';
+    return;
+  }
+
+  var html = rows.map(function(r) {
+    var rowCls = 'row-' + r._status;
+    var domainVal = esc(r[S.domainCol] || '—');
+    var domainHref = domainVal.match(/^https?:\/\//) ? domainVal :
+                     (domainVal.match(/\./) ? 'https://' + domainVal : null);
+    var domainHtml = domainHref
+      ? '<a href="'+domainHref+'" target="_blank" rel="noopener">'+domainVal+'</a>'
+      : domainVal;
+
+    var dateStr = r._date ? fmtDate(r._date) : esc(r[S.dateCol]||'—');
+    var days    = r._days;
+    var cls     = r._status;
+
+    var ddayHtml = '<span class="dday c-'+cls+'">' + ddayText(days) + '</span>';
+    var badgeHtml = '<span class="badge '+cls+'">' + statusLabel(cls) + '</span>';
+
+    var extraTds = S.extraCols.map(function(c) {
+      return '<td title="'+esc(r[c]||'')+'">'+esc(r[c]||'—')+'</td>';
+    }).join('');
+
+    return '<tr class="'+rowCls+'">' +
+      '<td class="domain-cell">'+domainHtml+'</td>' +
+      '<td>'+dateStr+'</td>' +
+      '<td>'+ddayHtml+'</td>' +
+      '<td>'+badgeHtml+'</td>' +
+      extraTds + '</tr>';
+  }).join('');
+
+  document.getElementById('table-body').innerHTML = html;
+}
+
+function sortBy(key) {
+  if (S.sortKey === key) {
+    S.sortDir = S.sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    S.sortKey = key;
+    S.sortDir = (key === '_days') ? 'asc' : 'asc';
+  }
+  renderTable();
+}
+
+// ─── Modal ───────────────────────────────────────────────────────
+function openModal() {
+  var dm = document.getElementById('col-domain');
+  var dd = document.getElementById('col-date');
+  dm.innerHTML = S.headers.map(function(h){
+    return '<option value="'+esc(h)+'" '+(h===S.domainCol?'selected':'')+'>'+esc(h)+'</option>';
+  }).join('');
+  dd.innerHTML = S.headers.map(function(h){
+    return '<option value="'+esc(h)+'" '+(h===S.dateCol?'selected':'')+'>'+esc(h)+'</option>';
+  }).join('');
+  document.getElementById('col-modal').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('col-modal').classList.remove('show');
+}
+
+function applyColumns() {
+  S.domainCol = document.getElementById('col-domain').value;
+  S.dateCol   = document.getElementById('col-date').value;
+  closeModal();
+  buildExtraCols();
+  processAndRender();
+}
+
+// ─── File Drop / Upload ──────────────────────────────────────────
+var dropZone = document.getElementById('drop-zone');
+
+dropZone.addEventListener('dragover', function(e) {
+  e.preventDefault(); dropZone.classList.add('drag');
+});
+dropZone.addEventListener('dragleave', function() {
+  dropZone.classList.remove('drag');
+});
+dropZone.addEventListener('drop', function(e) {
+  e.preventDefault(); dropZone.classList.remove('drag');
+  var file = e.dataTransfer.files[0];
+  if (file) readFile(file);
+});
+dropZone.addEventListener('click', function() {
+  document.getElementById('file-input').click();
+});
+
+document.getElementById('file-input').addEventListener('change', function(e) {
+  var file = e.target.files[0];
+  if (file) readFile(file);
+  e.target.value = '';
+});
+
+document.getElementById('col-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+</script>
+</body>
+</html>

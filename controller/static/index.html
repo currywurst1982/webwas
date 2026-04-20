@@ -604,6 +604,24 @@
     .notif-title { font-size:13px; font-weight:600; color:var(--bright); margin-bottom:2px; }
     .notif-body  { font-size:12px; color:var(--dim); }
 
+    /* ── Notification toggle button ─────────────────────────────────────────── */
+    #notif-toggle-btn {
+      margin-left: 10px;
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--dim);
+      cursor: pointer;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    #notif-toggle-btn.on {
+      background: rgba(250,173,20,.15);
+      border-color: var(--warn);
+      color: var(--warn);
+    }
+
     /* ── Detail panel ────────────────────────────────────────────────────────── */
     .panel-overlay {
       display: none;
@@ -1345,6 +1363,7 @@
     <div class="dot" id="dot"></div>
     <span id="conn-lbl">연결 중...</span>
     <span id="upd-lbl" style="font-size:12px;margin-left:6px;"></span>
+    <button id="notif-toggle-btn" onclick="toggleBrowserNotif()" title="브라우저 알림 설정">🔔 알림 꺼짐</button>
   </div>
 </header>
 
@@ -1443,6 +1462,7 @@
         <button class="fbtn" onclick="setFilter('HIGH')">High</button>
         <button class="fbtn" onclick="setFilter('MEDIUM')">Medium</button>
         <button class="fbtn clear" onclick="clearFeed()">초기화</button>
+        <button class="fbtn" onclick="exportCsv()" title="이벤트 이력 CSV 다운로드">⬇ CSV</button>
       </div>
     </div>
     <div class="feed-body" id="feed-body">
@@ -1648,6 +1668,118 @@ const S = {
   filter: 'ALL',
 };
 
+// ── History / Notification / Tab-badge constants ──────────────────────────────
+const _HIST_KEY  = 'wfmon_anomaly_history';
+const _NOTIF_KEY = 'wfmon_notif_enabled';
+let _unreadCritical = 0;
+let _notifEnabled   = false;
+const _baseTitle    = document.title;
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(_HIST_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw);
+    if (Array.isArray(saved) && saved.length) {
+      S.anomalies  = saved;
+      S.totalAnom  = saved.length;
+      renderFeed();
+      renderStats();
+    }
+  } catch(e) {}
+}
+
+function saveHistory() {
+  try {
+    const slice = S.anomalies.slice(0, 200);
+    localStorage.setItem(_HIST_KEY, JSON.stringify(slice));
+  } catch(e) {}
+}
+
+function updateTabTitle() {
+  document.title = _unreadCritical > 0
+    ? `🚨(${_unreadCritical}) ${_baseTitle}`
+    : _baseTitle;
+}
+
+window.addEventListener('focus', () => {
+  _unreadCritical = 0;
+  updateTabTitle();
+});
+
+function _updateNotifBtn() {
+  const btn = document.getElementById('notif-toggle-btn');
+  if (!btn) return;
+  if (_notifEnabled) {
+    btn.textContent = '🔔 알림 켜짐';
+    btn.classList.add('on');
+  } else {
+    btn.textContent = '🔔 알림 꺼짐';
+    btn.classList.remove('on');
+  }
+}
+
+function toggleBrowserNotif() {
+  if (_notifEnabled) {
+    _notifEnabled = false;
+    localStorage.setItem(_NOTIF_KEY, '0');
+    _updateNotifBtn();
+    return;
+  }
+  if (!('Notification' in window)) {
+    alert('이 브라우저는 알림을 지원하지 않습니다.');
+    return;
+  }
+  if (Notification.permission === 'granted') {
+    _notifEnabled = true;
+    localStorage.setItem(_NOTIF_KEY, '1');
+    _updateNotifBtn();
+  } else if (Notification.permission !== 'denied') {
+    Notification.requestPermission().then(p => {
+      if (p === 'granted') {
+        _notifEnabled = true;
+        localStorage.setItem(_NOTIF_KEY, '1');
+      }
+      _updateNotifBtn();
+    });
+  } else {
+    alert('알림 권한이 차단되어 있습니다.\n브라우저 설정에서 이 사이트의 알림을 허용해 주세요.');
+  }
+}
+
+function _sendBrowserNotif(severity, title, body) {
+  if (!_notifEnabled) return;
+  if (Notification.permission !== 'granted') return;
+  try {
+    const n = new Notification(title, {
+      body: body || '',
+      icon: severity === 'CRITICAL' ? '/favicon.ico' : undefined,
+      tag:  severity + '_' + Date.now(),
+    });
+    setTimeout(() => n.close(), 8000);
+  } catch(e) {}
+}
+
+function exportCsv() {
+  if (!S.anomalies.length) { alert('내보낼 이벤트가 없습니다.'); return; }
+  const cols = ['timestamp','server_id','host','severity','rule_name','description'];
+  const header = cols.join(',');
+  const rows = S.anomalies.map(a => cols.map(c => {
+    const v = String(a[c] || '').replace(/"/g, '""');
+    return `"${v}"`;
+  }).join(','));
+  const csv = '\uFEFF' + header + '\r\n' + rows.join('\r\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `wfmon_events_${new Date().toISOString().slice(0,19).replace(/:/g,'-')}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 let ws, retryTimer;
 
@@ -1741,11 +1873,18 @@ function handle(msg) {
       renderFeed();
       renderStats();
 
+      saveHistory();
+
       items.filter(a => ['CRITICAL','HIGH'].includes(a.severity)).forEach(a => {
-        const icon = a.severity === 'CRITICAL' ? '🚨' : '⚠️';
-        notify(a.severity,
-          `${icon} [${msg.data.server_id}] ${a.rule_name}`,
-          (a.log_entry?.message || a.description || '').substring(0, 80));
+        const icon    = a.severity === 'CRITICAL' ? '🚨' : '⚠️';
+        const notifTitle = `${icon} [${msg.data.server_id}] ${a.rule_name}`;
+        const notifBody  = (a.log_entry?.message || a.description || '').substring(0, 80);
+        notify(a.severity, notifTitle, notifBody);
+        _sendBrowserNotif(a.severity, notifTitle, notifBody);
+        if (a.severity === 'CRITICAL' && !document.hasFocus()) {
+          _unreadCritical++;
+          updateTabTitle();
+        }
       });
       break;
     }
@@ -2439,6 +2578,9 @@ function setFilter(f) {
 function clearFeed() {
   S.anomalies = [];
   S.totalAnom = 0;
+  _unreadCritical = 0;
+  updateTabTitle();
+  try { localStorage.removeItem(_HIST_KEY); } catch(e) {}
   renderFeed();
   renderStats();
 }
@@ -4481,6 +4623,18 @@ function _renderApacheErrors(output) {
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
+(function initNotifPref() {
+  try {
+    if (localStorage.getItem(_NOTIF_KEY) === '1'
+        && 'Notification' in window
+        && Notification.permission === 'granted') {
+      _notifEnabled = true;
+    }
+  } catch(e) {}
+  _updateNotifBtn();
+})();
+
+loadHistory();
 connect();
 </script>
 </body>

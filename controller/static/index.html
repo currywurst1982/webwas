@@ -605,7 +605,7 @@
     .notif-body  { font-size:12px; color:var(--dim); }
 
     /* ── Notification toggle button ─────────────────────────────────────────── */
-    #notif-toggle-btn {
+    #notif-toggle-btn, #sound-toggle-btn {
       margin-left: 10px;
       padding: 4px 10px;
       font-size: 12px;
@@ -616,10 +616,43 @@
       cursor: pointer;
       transition: background .15s, color .15s, border-color .15s;
     }
-    #notif-toggle-btn.on {
+    #notif-toggle-btn.on, #sound-toggle-btn.on {
       background: rgba(250,173,20,.15);
       border-color: var(--warn);
       color: var(--warn);
+    }
+
+    /* ── Server card filter row ──────────────────────────────────────────────── */
+    .card-filter-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    /* ── Analysis auto-refresh controls ─────────────────────────────────────── */
+    #auto-refresh-btn {
+      padding: 4px 10px;
+      font-size: 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--dim);
+      cursor: pointer;
+      transition: background .15s, color .15s, border-color .15s;
+    }
+    #auto-refresh-btn.on {
+      background: rgba(63,185,80,.12);
+      border-color: rgba(63,185,80,.5);
+      color: var(--online);
+    }
+    #auto-refresh-interval {
+      padding: 3px 6px;
+      font-size: 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--dim);
+      cursor: pointer;
     }
 
     /* ── Detail panel ────────────────────────────────────────────────────────── */
@@ -1364,6 +1397,7 @@
     <span id="conn-lbl">연결 중...</span>
     <span id="upd-lbl" style="font-size:12px;margin-left:6px;"></span>
     <button id="notif-toggle-btn" onclick="toggleBrowserNotif()" title="브라우저 알림 설정">🔔 알림 꺼짐</button>
+    <button id="sound-toggle-btn" onclick="toggleSound()" title="CRITICAL 알림음 설정">🔇 무음</button>
   </div>
 </header>
 
@@ -1441,6 +1475,12 @@
   <div class="sec-title">
     서버 현황
     <span class="sec-count" id="srv-count">0</span>
+  </div>
+  <div class="card-filter-row">
+    <button class="fbtn active" onclick="setCardFilter('ALL')">전체</button>
+    <button class="fbtn" onclick="setCardFilter('apache')">Apache</button>
+    <button class="fbtn" onclick="setCardFilter('wildfly')">WildFly</button>
+    <button class="fbtn" onclick="setCardFilter('offline')">오프라인</button>
   </div>
   <div class="server-grid" id="server-grid">
     <div style="color:var(--dim);padding:32px;grid-column:1/-1;text-align:center;">
@@ -1565,7 +1605,15 @@
       <div class="was-panel-title" id="analysis-panel-title">🔍 JVM 분석</div>
       <div class="was-panel-sub" id="analysis-panel-sub">서버 선택됨</div>
     </div>
-    <button class="panel-close" onclick="closeAnalysisPanel()">✕</button>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <select id="auto-refresh-interval" title="자동 갱신 주기">
+        <option value="1">1분</option>
+        <option value="3" selected>3분</option>
+        <option value="5">5분</option>
+      </select>
+      <button id="auto-refresh-btn" onclick="toggleAutoRefresh()">⏱ 자동 갱신 꺼짐</button>
+      <button class="panel-close" onclick="closeAnalysisPanel()">✕</button>
+    </div>
   </div>
   <!-- WildFly tabs -->
   <div class="analysis-tabs" id="analysis-tabs-wildfly">
@@ -1666,6 +1714,7 @@ const S = {
   anomalies: [],    // newest first
   totalAnom: 0,
   filter: 'ALL',
+  cardFilter: 'ALL',
 };
 
 // ── History / Notification / Tab-badge constants ──────────────────────────────
@@ -1780,6 +1829,120 @@ function exportCsv() {
   URL.revokeObjectURL(url);
 }
 
+// ── Sound alert ───────────────────────────────────────────────────────────────
+let _soundEnabled = false;
+let _audioCtx = null;
+
+function toggleSound() {
+  _soundEnabled = !_soundEnabled;
+  _updateSoundBtn();
+}
+
+function _updateSoundBtn() {
+  const btn = document.getElementById('sound-toggle-btn');
+  if (!btn) return;
+  btn.textContent = _soundEnabled ? '🔊 소리 켜짐' : '🔇 무음';
+  btn.classList.toggle('on', _soundEnabled);
+}
+
+function _playCriticalBeep() {
+  if (!_soundEnabled) return;
+  try {
+    if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    [880, 660].forEach((freq, i) => {
+      const osc  = _audioCtx.createOscillator();
+      const gain = _audioCtx.createGain();
+      osc.connect(gain); gain.connect(_audioCtx.destination);
+      osc.frequency.value = freq;
+      const t = _audioCtx.currentTime + i * 0.18;
+      gain.gain.setValueAtTime(0.25, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+      osc.start(t); osc.stop(t + 0.15);
+    });
+  } catch(e) {}
+}
+
+// ── Analysis auto-refresh ─────────────────────────────────────────────────────
+let _autoRefreshEnabled = false;
+let _autoRefreshTimer   = null;
+
+function toggleAutoRefresh() {
+  _autoRefreshEnabled = !_autoRefreshEnabled;
+  const btn = document.getElementById('auto-refresh-btn');
+  if (_autoRefreshEnabled) {
+    btn.textContent = '⏱ 자동 갱신 켜짐';
+    btn.classList.add('on');
+    _scheduleAutoRefresh();
+  } else {
+    btn.textContent = '⏱ 자동 갱신 꺼짐';
+    btn.classList.remove('on');
+    clearTimeout(_autoRefreshTimer);
+    _autoRefreshTimer = null;
+  }
+}
+
+function _scheduleAutoRefresh() {
+  clearTimeout(_autoRefreshTimer);
+  if (!_autoRefreshEnabled) return;
+  const mins = parseInt(document.getElementById('auto-refresh-interval')?.value || '3', 10);
+  _autoRefreshTimer = setTimeout(() => {
+    if (_autoRefreshEnabled && _analysisServerId) runAnalysis(_analysisTab);
+    _scheduleAutoRefresh();
+  }, mins * 60 * 1000);
+}
+
+// ── Server card filter ────────────────────────────────────────────────────────
+function setCardFilter(f) {
+  S.cardFilter = f;
+  document.querySelectorAll('.card-filter-row .fbtn').forEach(b => {
+    const txt = b.textContent.trim();
+    b.classList.toggle('active',
+      (f === 'ALL' && txt === '전체') ||
+      (f === 'apache'  && txt === 'Apache')  ||
+      (f === 'wildfly' && txt === 'WildFly') ||
+      (f === 'offline' && txt === '오프라인'));
+  });
+  applyCardFilter();
+}
+
+function applyCardFilter() {
+  const f = S.cardFilter;
+  if (f === 'ALL') {
+    document.querySelectorAll('#server-grid > .srv-card, #server-grid > .pair-group, #server-grid > .was-server-group').forEach(el => el.style.display = '');
+    return;
+  }
+  const match = card => {
+    if (f === 'offline') return card.dataset.serverStatus === 'offline';
+    if (f === 'apache')  return card.dataset.serverType   === 'apache';
+    return card.dataset.serverType === 'wildfly';
+  };
+  document.querySelectorAll('#server-grid > .srv-card').forEach(card => {
+    card.style.display = match(card) ? '' : 'none';
+  });
+  document.querySelectorAll('#server-grid > .pair-group, #server-grid > .was-server-group').forEach(group => {
+    const has = Array.from(group.querySelectorAll('.srv-card')).some(match);
+    group.style.display = has ? '' : 'none';
+  });
+}
+
+// ── Relative heartbeat time ───────────────────────────────────────────────────
+function _relativeTime(ts) {
+  if (!ts) return 'N/A';
+  const sec = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+  if (sec < 10)   return '방금 전';
+  if (sec < 60)   return sec + '초 전';
+  if (sec < 3600) return Math.floor(sec / 60) + '분 전';
+  return Math.floor(sec / 3600) + '시간 전';
+}
+
+setInterval(() => {
+  Object.keys(S.agents).forEach(id => {
+    const safeId = id.replace(/[^\w]/g, '-');
+    const el = document.getElementById('hb-' + safeId);
+    if (el && S.agents[id]?.last_heartbeat) el.textContent = _relativeTime(S.agents[id].last_heartbeat);
+  });
+}, 10000);
+
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 let ws, retryTimer;
 
@@ -1881,6 +2044,7 @@ function handle(msg) {
         const notifBody  = (a.log_entry?.message || a.description || '').substring(0, 80);
         notify(a.severity, notifTitle, notifBody);
         _sendBrowserNotif(a.severity, notifTitle, notifBody);
+        if (a.severity === 'CRITICAL') _playCriticalBeep();
         if (a.severity === 'CRITICAL' && !document.hasFocus()) {
           _unreadCritical++;
           updateTabTitle();
@@ -2400,6 +2564,8 @@ function renderServers() {
     }
     fillCard(card, id, S.agents[id]);
   });
+
+  applyCardFilter();
 }
 
 function refreshCard(id) {
@@ -2413,6 +2579,8 @@ function fillCard(el, id, a) {
   const pairCls = el.classList.contains('pair-card-web') ? ' pair-card-web'
                 : el.classList.contains('pair-card-was') ? ' pair-card-was' : '';
   el.className = `srv-card st-${st}${pairCls}`;
+  el.dataset.serverType   = (a.server_type === 'apache' || (a.wildfly_version||'').toLowerCase().startsWith('apache')) ? 'apache' : 'wildfly';
+  el.dataset.serverStatus = st;
 
   const counts  = a.anomaly_counts || {};
   const badges  = ['CRITICAL','HIGH','MEDIUM','LOW']
@@ -2432,7 +2600,8 @@ function fillCard(el, id, a) {
       }).join('')
     : '<div style="color:var(--dim);font-size:12px;">최근 이상 없음</div>';
 
-  const hb    = a.last_heartbeat ? new Date(a.last_heartbeat).toLocaleTimeString('ko-KR') : 'N/A';
+  const hb    = _relativeTime(a.last_heartbeat);
+  const hbId  = 'hb-' + id.replace(/[^\w]/g, '-');
   const stats = a.stats || {};
   const simBadge = a.simulate ? ' <em style="color:var(--dim);font-weight:400;font-size:11px;">[시뮬레이션]</em>' : '';
 
@@ -2516,7 +2685,7 @@ function fillCard(el, id, a) {
       </div>
     </div>
     <div class="srv-meta">
-      <div class="meta-item"><label>마지막 Heartbeat</label><span>${hb}</span></div>
+      <div class="meta-item"><label>마지막 Heartbeat</label><span id="${hbId}">${hb}</span></div>
       <div class="meta-item"><label>${isApache ? 'Apache 버전' : 'WildFly 버전'}</label><span>${esc(a.wildfly_version || (isApache ? '2.4' : '26'))}</span></div>
       <div class="meta-item"><label>처리 로그 수</label><span>${stats.entries_processed ?? '—'}</span></div>
       <div class="meta-item"><label>감지 이상 수</label><span>${stats.anomalies_detected ?? '—'}</span></div>
@@ -3610,6 +3779,11 @@ function closeAnalysisPanel() {
   document.getElementById('analysis-overlay').classList.remove('open');
   document.getElementById('analysis-panel').classList.remove('open');
   document.body.style.overflow = '';
+  _autoRefreshEnabled = false;
+  clearTimeout(_autoRefreshTimer);
+  _autoRefreshTimer = null;
+  const btn = document.getElementById('auto-refresh-btn');
+  if (btn) { btn.textContent = '⏱ 자동 갱신 꺼짐'; btn.classList.remove('on'); }
 }
 
 function switchAnalysisTab(tab) {

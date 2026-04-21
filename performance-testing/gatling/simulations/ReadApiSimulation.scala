@@ -96,19 +96,19 @@ class ReadApiSimulation extends Simulation {
   // ── 부하 프로파일: 점진적 램프업 후 유지 ────────────────────────────────
   setUp(
     itemDetailScenario.inject(
-      rampUsers(targetUsers)       over (rampDuration.seconds),
+      rampUsers(targetUsers).during(rampDuration.seconds),
       constantUsersPerSec(targetUsers / 10.0) during (holdDuration.seconds)
     ),
     itemListScenario.inject(
-      rampUsers(targetUsers / 2)   over (rampDuration.seconds),
+      rampUsers(targetUsers / 2).during(rampDuration.seconds),
       constantUsersPerSec(targetUsers / 20.0) during (holdDuration.seconds)
     ),
     searchScenario.inject(
-      rampUsers(targetUsers / 4)   over (rampDuration.seconds),
+      rampUsers(targetUsers / 4).during(rampDuration.seconds),
       constantUsersPerSec(targetUsers / 40.0) during (holdDuration.seconds)
     ),
     userHistoryScenario.inject(
-      rampUsers(targetUsers / 4)   over (rampDuration.seconds),
+      rampUsers(targetUsers / 4).during(rampDuration.seconds),
       constantUsersPerSec(targetUsers / 40.0) during (holdDuration.seconds)
     )
   ).protocols(httpProtocol)

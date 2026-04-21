@@ -117,12 +117,12 @@ class WriteApiSimulation extends Simulation {
   setUp(
     crudScenario.inject(
       nothingFor(5.seconds),
-      rampUsers(targetUsers)      over (rampDuration.seconds),
+      rampUsers(targetUsers).during(rampDuration.seconds),
       constantUsersPerSec(targetUsers / 10.0) during (holdDuration.seconds)
     ),
     bulkInsertScenario.inject(
       nothingFor(10.seconds),
-      rampUsers(targetUsers / 5)  over (rampDuration.seconds),
+      rampUsers(targetUsers / 5).during(rampDuration.seconds),
       constantUsersPerSec(targetUsers / 50.0) during (holdDuration.seconds)
     )
   ).protocols(httpProtocol)

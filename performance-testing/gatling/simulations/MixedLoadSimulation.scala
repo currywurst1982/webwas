@@ -126,24 +126,24 @@ class MixedLoadSimulation extends Simulation {
     case _ =>
       // 기본 Load Test
       List(
-        rampUsers((targetUsers * 0.7).toInt) over (rampDuration.seconds),
+        rampUsers((targetUsers * 0.7).toInt).during(rampDuration.seconds),
         constantUsersPerSec(targetUsers * 0.07) during (holdDuration.seconds)
       )
   }
 
   setUp(
     readScenario.inject(
-      rampUsers((targetUsers * 0.7).toInt) over (rampDuration.seconds),
+      rampUsers((targetUsers * 0.7).toInt).during(rampDuration.seconds),
       constantUsersPerSec(targetUsers * 0.07) during (holdDuration.seconds)
     ),
     writeScenario.inject(
       nothingFor(15.seconds),
-      rampUsers((targetUsers * 0.2).toInt) over (rampDuration.seconds),
+      rampUsers((targetUsers * 0.2).toInt).during(rampDuration.seconds),
       constantUsersPerSec(targetUsers * 0.02) during (holdDuration.seconds)
     ),
     transactionScenario.inject(
       nothingFor(30.seconds),
-      rampUsers((targetUsers * 0.1).toInt) over (rampDuration.seconds),
+      rampUsers((targetUsers * 0.1).toInt).during(rampDuration.seconds),
       constantUsersPerSec(targetUsers * 0.01) during (holdDuration.seconds)
     )
   ).protocols(httpProtocol)

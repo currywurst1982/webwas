@@ -76,7 +76,7 @@ class EnduranceSimulation extends Simulation {
 
   setUp(
     enduranceScenario.inject(
-      rampUsers(users) over (120.seconds),      // 2분 램프업
+      rampUsers(users).during(120.seconds),      // 2분 램프업
       constantUsersPerSec(users / 10.0) during (holdHours.hours)
     ),
     healthCheckScenario.inject(

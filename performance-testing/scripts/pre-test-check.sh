@@ -114,28 +114,44 @@ check_jvm_memory() {
 
   local wf_pid
   wf_pid=$(pgrep -f "jboss-modules" | head -1)
-  local java_home="${JAVA_HOME:-/usr/lib/jvm/java-11-openjdk}"
 
-  if [[ -x "${java_home}/bin/jstat" ]]; then
-    local gc_info
-    gc_info=$("${java_home}/bin/jstat" -gcutil "${wf_pid}" 1 2>/dev/null | tail -1 || echo "")
-    if [[ -n "${gc_info}" ]]; then
-      read -r S0 S1 E O M CCS YGC YGCT FGC FGCT CGC CGCT GCT <<< "${gc_info}"
-      log "    Eden: ${E}% | Old: ${O}% | Meta: ${M}%"
-      log "    YoungGC: ${YGC}회 (${YGCT}s) | FullGC: ${FGC}회 (${FGCT}s)"
+  # JAVA_HOME 후보를 순서대로 탐색
+  local java_home=""
+  for candidate in \
+      "${JAVA_HOME:-}" \
+      "/usr/lib/jvm/java-1.8.0" \
+      "/usr/lib/jvm/java-11-openjdk" \
+      "/usr/lib/jvm/java-11" \
+      "/usr/lib/jvm/java-17-openjdk" \
+      "$(dirname "$(readlink -f "$(which java)" 2>/dev/null)" 2>/dev/null)/.."; do
+    [[ -x "${candidate}/bin/jstat" ]] && java_home="${candidate}" && break
+  done
 
-      if (( $(echo "${O} > 80" | bc -l 2>/dev/null || echo 0) )); then
-        warn "Old Gen 사용률 ${O}% - Heap 부족 또는 누수 의심, 재기동 권장"
-      else
-        ok "Heap 상태 정상 (Old Gen ${O}%)"
-      fi
+  if [[ -z "${java_home}" ]]; then
+    warn "jstat 없음 (JDK 미설치 또는 JAVA_HOME 경로 확인 필요) - JVM 메모리 점검 생략"
+    return
+  fi
 
-      if (( FGC > 0 )); then
-        warn "Full GC ${FGC}회 이력 있음 - 테스트 전 WildFly 재기동 권장"
-      fi
+  # 5초 타임아웃으로 jstat 실행 (hang 방지)
+  local gc_info
+  gc_info=$(timeout 5 "${java_home}/bin/jstat" -gcutil "${wf_pid}" 1 2>/dev/null | tail -1 || echo "")
+
+  if [[ -n "${gc_info}" ]]; then
+    read -r S0 S1 E O M CCS YGC YGCT FGC FGCT CGC CGCT GCT <<< "${gc_info}"
+    log "    Eden: ${E}% | Old: ${O}% | Meta: ${M}%"
+    log "    YoungGC: ${YGC}회 (${YGCT}s) | FullGC: ${FGC}회 (${FGCT}s)"
+
+    if (( $(echo "${O} > 80" | bc -l 2>/dev/null || echo 0) )); then
+      warn "Old Gen 사용률 ${O}% - Heap 부족 또는 누수 의심, 재기동 권장"
+    else
+      ok "Heap 상태 정상 (Old Gen ${O}%)"
+    fi
+
+    if (( FGC > 0 )); then
+      warn "Full GC ${FGC}회 이력 있음 - 테스트 전 WildFly 재기동 권장"
     fi
   else
-    warn "jstat 명령 없음 (JAVA_HOME 확인)"
+    warn "jstat 응답 없음 (5초 타임아웃) - JVM 접근 권한 또는 프로세스 상태 확인"
   fi
 }
 

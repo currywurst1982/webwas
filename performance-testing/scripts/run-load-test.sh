@@ -182,7 +182,18 @@ run_gatling() {
   local result_dir="${RUN_DIR}/gatling_run${run_num}"
   mkdir -p "${result_dir}"
 
-  log "  Gatling 실행 (${run_num}/${REPEAT}): ${SIM_CLASS}"
+  # Gatling 3.x는 Java 11 이상 필요 — GATLING_JAVA_HOME 우선 사용
+  local gj="${GATLING_JAVA_HOME:-${JAVA_HOME:-}}"
+  if [[ -n "${gj}" && -x "${gj}/bin/java" ]]; then
+    local java_ver
+    java_ver=$("${gj}/bin/java" -version 2>&1 | awk -F'"' '/version/{print $2}' | cut -d. -f1)
+    if (( java_ver < 11 )); then
+      die "Gatling은 Java 11 이상 필요. 현재 GATLING_JAVA_HOME(${gj}) = Java ${java_ver}. config.env의 GATLING_JAVA_HOME을 Java 11 경로로 변경하세요."
+    fi
+    export JAVA_HOME="${gj}"
+  fi
+
+  log "  Gatling 실행 (${run_num}/${REPEAT}): ${SIM_CLASS} [JAVA_HOME=${JAVA_HOME:-system}]"
   "${GATLING_HOME}/bin/gatling.sh" \
     -s "${SIM_CLASS}" \
     -rd "WildFly-${TEST_TYPE}-run${run_num}-${TIMESTAMP}" \

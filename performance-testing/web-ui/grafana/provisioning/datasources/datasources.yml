@@ -1,0 +1,24 @@
+apiVersion: 1
+
+datasources:
+  # ── Prometheus (JVM + OS 메트릭) ────────────────────────────────────────
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: "5s"
+      queryTimeout: "60s"
+
+  # ── InfluxDB (Gatling 실시간 결과) ──────────────────────────────────────
+  - name: InfluxDB-Gatling
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    database: gatling
+    isDefault: false
+    editable: false
+    jsonData:
+      httpMode: GET

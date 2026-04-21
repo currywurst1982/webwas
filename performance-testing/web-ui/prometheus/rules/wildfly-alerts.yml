@@ -1,0 +1,90 @@
+groups:
+  - name: wildfly_performance
+    interval: 10s
+    rules:
+
+      # ── JVM Heap 사용률 80% 초과 ─────────────────────────────────────────
+      - alert: HeapUsageHigh
+        expr: |
+          (jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"}) * 100 > 80
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "JVM Heap 사용률 높음"
+          description: "Heap 사용률 {{ printf \"%.1f\" $value }}% (기준: 80%)"
+
+      # ── Full GC 발생 감지 ─────────────────────────────────────────────────
+      - alert: FullGCDetected
+        expr: increase(jvm_gc_collection_seconds_count{gc="G1 Old Generation"}[1m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Full GC 발생"
+          description: "1분 내 Full GC {{ $value }}회 발생 - 즉시 확인 필요"
+
+      # ── GC 오버헤드 10% 초과 ─────────────────────────────────────────────
+      - alert: GCOverheadHigh
+        expr: |
+          rate(jvm_gc_collection_seconds_sum[1m]) / rate(jvm_gc_collection_seconds_count[1m]) * 100 > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GC 오버헤드 높음"
+          description: "GC 오버헤드 {{ printf \"%.1f\" $value }}% (기준: 10%)"
+
+      # ── CPU 사용률 80% 초과 (1분 지속) ───────────────────────────────────
+      - alert: CPUUsageHigh
+        expr: |
+          100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[1m])) * 100) > 80
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU 사용률 높음"
+          description: "CPU {{ printf \"%.1f\" $value }}% (기준: 80%)"
+
+      # ── IOWait 10% 초과 ───────────────────────────────────────────────────
+      - alert: IOWaitHigh
+        expr: |
+          avg by(instance) (rate(node_cpu_seconds_total{mode="iowait"}[1m])) * 100 > 10
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "IOWait 높음 - 디스크/DB 병목 의심"
+          description: "IOWait {{ printf \"%.1f\" $value }}%"
+
+      # ── 가용 메모리 20% 미만 ─────────────────────────────────────────────
+      - alert: MemoryLow
+        expr: |
+          (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 < 20
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "가용 메모리 부족"
+          description: "가용 메모리 {{ printf \"%.1f\" $value }}% (기준: 20% 이상)"
+
+      # ── Swap 사용 시작 ────────────────────────────────────────────────────
+      - alert: SwapUsed
+        expr: |
+          (node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes) > 100 * 1024 * 1024
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Swap 사용 감지"
+          description: "Swap {{ $value | humanizeBytes }} 사용 - JVM GC Pause 급증 가능"
+
+      # ── WildFly Thread 수 급증 ────────────────────────────────────────────
+      - alert: ThreadCountHigh
+        expr: jvm_threads_current > 500
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Thread 수 급증"
+          description: "현재 Thread {{ $value }}개 - Thread 누수 또는 과부하 의심"

@@ -1,0 +1,105 @@
+---
+# ============================================================
+# JMX Exporter 설정 - WildFly 26 JVM 메트릭 수집
+# WildFly JVM 옵션에 jmxremote 포트 활성화 필요 (jvm-options.conf 참조)
+# ============================================================
+
+hostPort: "wildfly-host:9091"   # WildFly JMX 원격 포트
+username:
+password:
+
+# JMX SSL (운영에서는 true 권장)
+ssl: false
+
+lowercaseOutputName: true
+lowercaseOutputLabelNames: true
+
+# ── 수집 규칙 ─────────────────────────────────────────────────────────────────
+rules:
+
+  # ── JVM Memory (Heap / Non-Heap) ─────────────────────────────────────────
+  - pattern: 'java.lang<type=Memory><>(HeapMemoryUsage|NonHeapMemoryUsage):\s*(\w+)'
+    name: jvm_memory_usage_bytes
+    type: GAUGE
+    labels:
+      area: "$1"
+      type: "$2"
+
+  - pattern: 'java.lang<type=MemoryPool,name=(.*)><>(Usage|PeakUsage):\s*(\w+)'
+    name: jvm_memory_pool_bytes
+    type: GAUGE
+    labels:
+      pool: "$1"
+      usage_type: "$2"
+      measure: "$3"
+
+  # ── JVM GC ───────────────────────────────────────────────────────────────
+  - pattern: 'java.lang<type=GarbageCollector,name=(.*)><>(CollectionCount|CollectionTime)'
+    name: jvm_gc_$2_total
+    type: COUNTER
+    labels:
+      gc: "$1"
+    attrNameSnakeCase: true
+
+  # ── JVM Thread ────────────────────────────────────────────────────────────
+  - pattern: 'java.lang<type=Threading><>(ThreadCount|DaemonThreadCount|PeakThreadCount|TotalStartedThreadCount)'
+    name: jvm_threads_$1
+    type: GAUGE
+    attrNameSnakeCase: true
+
+  # ── JVM 클래스 로딩 ──────────────────────────────────────────────────────
+  - pattern: 'java.lang<type=ClassLoading><>(LoadedClassCount|UnloadedClassCount|TotalLoadedClassCount)'
+    name: jvm_classes_$1
+    type: GAUGE
+    attrNameSnakeCase: true
+
+  # ── JVM CPU ───────────────────────────────────────────────────────────────
+  - pattern: 'java.lang<type=OperatingSystem><>(ProcessCpuLoad|SystemCpuLoad|ProcessCpuTime|OpenFileDescriptorCount|MaxFileDescriptorCount)'
+    name: jvm_os_$1
+    type: GAUGE
+    attrNameSnakeCase: true
+
+  # ── WildFly Undertow 통계 ────────────────────────────────────────────────
+  - pattern: 'jboss.as<subsystem=undertow,server=default-server,http-listener=default><>(requestCount|bytesSent|bytesReceived|errorCount)'
+    name: wildfly_undertow_http_$1_total
+    type: COUNTER
+    attrNameSnakeCase: true
+
+  # ── WildFly Datasource 풀 통계 ───────────────────────────────────────────
+  - pattern: 'jboss.as<subsystem=datasources,data-source=(.*),statistics=pool><>(InUseCount|ActiveCount|AvailableCount|WaitCount|BlockingFailureCount|CreatedCount|DestroyedCount|MaxUsedCount|AverageGetTime|TotalGetTime)'
+    name: wildfly_datasource_pool_$2
+    type: GAUGE
+    labels:
+      datasource: "$1"
+    attrNameSnakeCase: true
+
+  # ── WildFly EJB 통계 ─────────────────────────────────────────────────────
+  - pattern: 'jboss.as<deployment=(.*),subdeployment=(.*),subsystem=ejb3,message-driven-bean=(.*)><>(executionTime|invocations|peakConcurrentInvocations|poolAvailableCount|poolCurrentSize|poolMaxSize|waitTime)'
+    name: wildfly_ejb_$4
+    type: GAUGE
+    labels:
+      deployment: "$1"
+      bean: "$3"
+    attrNameSnakeCase: true
+
+  # ── WildFly Web 세션 수 ──────────────────────────────────────────────────
+  - pattern: 'jboss.as<deployment=(.*),subdeployment=(.*),subsystem=undertow><>(activeSessions|maxActiveSessions|sessionsCreated|expiredSessions|rejectedSessions)'
+    name: wildfly_web_sessions_$3
+    type: GAUGE
+    labels:
+      deployment: "$1"
+    attrNameSnakeCase: true
+
+  # ── JVM Code Cache ────────────────────────────────────────────────────────
+  - pattern: 'java.lang<type=MemoryPool,name=Code Cache><>Usage:\s*(\w+)'
+    name: jvm_code_cache_bytes
+    type: GAUGE
+    labels:
+      measure: "$1"
+
+  # ── JVM Metaspace ─────────────────────────────────────────────────────────
+  - pattern: 'java.lang<type=MemoryPool,name=Metaspace><>Usage:\s*(\w+)'
+    name: jvm_metaspace_bytes
+    type: GAUGE
+    labels:
+      measure: "$1"

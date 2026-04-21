@@ -1,0 +1,57 @@
+global:
+  scrape_interval:     5s   # 5초마다 수집 (성능테스트 중 고해상도)
+  evaluation_interval: 5s
+  external_labels:
+    env: "perf-test"
+    was: "wildfly-26"
+
+# ── 알림 규칙 파일 ────────────────────────────────────────────────────────────
+rule_files:
+  - "rules/*.yml"
+
+scrape_configs:
+
+  # ── Prometheus 자기 자신 ─────────────────────────────────────────────────
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # ── WildFly JVM 메트릭 (JMX Exporter 경유) ──────────────────────────────
+  - job_name: "wildfly-jvm"
+    static_configs:
+      - targets: ["jmx-exporter:9404"]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: "wildfly-26"
+
+  # ── OS 메트릭 (Node Exporter) ─────────────────────────────────────────────
+  - job_name: "node"
+    static_configs:
+      # WildFly가 도커 외부(호스트)에서 실행되는 경우
+      - targets: ["node-exporter:9100"]
+        labels:
+          host: "wildfly-server"
+
+  # ── WildFly MicroProfile Metrics (/metrics 엔드포인트) ──────────────────
+  # WildFly 26은 MicroProfile Metrics 3.x 내장
+  # standalone.xml에서 미리 활성화 필요:
+  #   /extension=org.wildfly.extension.microprofile.metrics-smallrye:add
+  #   /subsystem=microprofile-metrics-smallrye:add
+  - job_name: "wildfly-microprofile"
+    metrics_path: "/metrics"
+    static_configs:
+      - targets: ["wildfly-host:9990"]   # Management 포트
+    basic_auth:
+      username: "admin"
+      password: "admin123"
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: "wildfly-26"
+
+  # ── Gatling 부하 발생기 자체 메트릭 ──────────────────────────────────────
+  # (Gatling Enterprise 사용 시; OSS는 InfluxDB로 대체)
+  # - job_name: "gatling"
+  #   static_configs:
+  #     - targets: ["gatling-host:9901"]

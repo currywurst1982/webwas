@@ -1,0 +1,143 @@
+version: "3.8"
+
+# ============================================================
+# WildFly 26 성능테스트 Web UI 모니터링 스택
+#
+# 포트 요약:
+#   3000  - Grafana         (실시간 대시보드)
+#   9090  - Prometheus      (메트릭 수집)
+#   8086  - InfluxDB        (Gatling 실시간 결과)
+#   8888  - 리포트 서버     (Gatling/JMeter HTML 보고서)
+#   9404  - JMX Exporter    (WildFly JVM 메트릭 → Prometheus)
+#
+# 실행:  docker compose up -d
+# 종료:  docker compose down
+# 로그:  docker compose logs -f grafana
+# ============================================================
+
+networks:
+  perf-net:
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  influxdb-data:
+
+services:
+
+  # ── Prometheus: 메트릭 수집 엔진 ──────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: perf-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules/:/etc/prometheus/rules/:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"     # 7일치 보관
+      - "--web.enable-lifecycle"                # API로 설정 리로드 가능
+      - "--web.enable-admin-api"
+    networks:
+      - perf-net
+
+  # ── Grafana: 시각화 대시보드 ──────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: perf-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/wildfly-overview.json
+      # 익명 접근 허용 (사내 테스트 환경용, 운영에서는 비활성화)
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    networks:
+      - perf-net
+    depends_on:
+      - prometheus
+      - influxdb
+
+  # ── InfluxDB: Gatling 실시간 결과 저장소 ──────────────────────────────────
+  influxdb:
+    image: influxdb:1.8
+    container_name: perf-influxdb
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      INFLUXDB_DB: gatling
+      INFLUXDB_HTTP_AUTH_ENABLED: "false"
+      INFLUXDB_DATA_ENGINE: tsm1
+      INFLUXDB_REPORTING_DISABLED: "true"
+    volumes:
+      - influxdb-data:/var/lib/influxdb
+    networks:
+      - perf-net
+
+  # ── JMX Exporter: WildFly JVM 메트릭 수집 (사이드카 방식) ───────────────
+  # WildFly 서버와 같은 호스트에서 실행하거나,
+  # WildFly JVM 옵션에 javaagent 추가 방식 중 선택
+  # 여기서는 HTTP 방식 (standalone)으로 실행
+  jmx-exporter:
+    image: bitnami/jmx-exporter:0.20.0
+    container_name: perf-jmx-exporter
+    restart: unless-stopped
+    ports:
+      - "9404:9404"
+    volumes:
+      - ./jmx-exporter/jmx-config.yml:/opt/bitnami/jmx-exporter/example_configs/jmx-config.yml:ro
+    command: ["9404", "/opt/bitnami/jmx-exporter/example_configs/jmx-config.yml"]
+    environment:
+      # WildFly JMX 원격 접속 정보 (jvm-options.conf에서 jmxremote 활성화 필요)
+      JVM_OPTS: >-
+        -Dcom.sun.jndi.rmiURLParsing=legacy
+    networks:
+      - perf-net
+    extra_hosts:
+      - "wildfly-host:host-gateway"   # 호스트 WildFly 접근용
+
+  # ── Node Exporter: OS 메트릭 수집 ────────────────────────────────────────
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: perf-node-exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.rootfs=/rootfs"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    networks:
+      - perf-net
+
+  # ── 리포트 서버: Gatling/JMeter HTML 보고서 뷰어 ─────────────────────────
+  report-server:
+    image: nginx:alpine
+    container_name: perf-report-server
+    restart: unless-stopped
+    ports:
+      - "8888:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ../../results:/usr/share/nginx/html/results:ro   # 결과 디렉토리 마운트
+    networks:
+      - perf-net

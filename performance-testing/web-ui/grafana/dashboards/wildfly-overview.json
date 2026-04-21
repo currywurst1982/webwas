@@ -1,0 +1,403 @@
+{
+  "title": "WildFly 26 성능테스트 대시보드",
+  "uid": "wildfly-perf-overview",
+  "tags": ["wildfly", "performance", "jvm"],
+  "timezone": "browser",
+  "refresh": "5s",
+  "time": { "from": "now-30m", "to": "now" },
+  "schemaVersion": 38,
+  "panels": [
+
+    {
+      "id": 1,
+      "title": "🔥 Gatling 실시간 TPS",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "targets": [
+        {
+          "rawQuery": true,
+          "query": "SELECT non_negative_derivative(mean(\"count\"), 1s) as \"TPS\" FROM \"requestsByStatus\" WHERE $timeFilter GROUP BY time(1s), \"status\" fill(0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": { "mode": "palette-classic" },
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "table", "placement": "bottom" }
+      }
+    },
+
+    {
+      "id": 2,
+      "title": "⏱ Gatling 응답시간 (p50/p95/p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "targets": [
+        {
+          "rawQuery": true,
+          "query": "SELECT percentile(\"responseTime\", 50) as \"p50\", percentile(\"responseTime\", 95) as \"p95\", percentile(\"responseTime\", 99) as \"p99\" FROM \"requestsByStatus\" WHERE $timeFilter GROUP BY time(5s) fill(previous)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ms" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "p95" },
+            "properties": [{ "id": "thresholds", "value": { "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 300 },
+              { "color": "red", "value": 500 }
+            ]}}]
+          }
+        ]
+      }
+    },
+
+    {
+      "id": 3,
+      "title": "❌ 에러율 (%)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 8 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "targets": [
+        {
+          "rawQuery": true,
+          "query": "SELECT (sum(\"ko\") / (sum(\"ok\") + sum(\"ko\"))) * 100 as \"error_rate\" FROM \"requestsByStatus\" WHERE $timeFilter"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.1 },
+              { "color": "red", "value": 1 }
+            ]
+          },
+          "mappings": []
+        }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "orientation": "auto", "textMode": "auto", "colorMode": "background" }
+    },
+
+    {
+      "id": 4,
+      "title": "👥 활성 사용자 수",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 8 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "targets": [
+        {
+          "rawQuery": true,
+          "query": "SELECT last(\"active\") as \"users\" FROM \"users\" WHERE $timeFilter"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "blue" } }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "background" }
+    },
+
+    {
+      "id": 5,
+      "title": "📊 누적 요청 수",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 8 },
+      "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
+      "targets": [
+        {
+          "rawQuery": true,
+          "query": "SELECT sum(\"count\") as \"total\" FROM \"requestsByStatus\" WHERE $timeFilter"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      },
+      "options": { "reduceOptions": { "calcs": ["sum"] }, "colorMode": "value" }
+    },
+
+    {
+      "id": 10,
+      "title": "☕ JVM Heap 사용량",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "expr": "jvm_memory_used_bytes{area=\"heap\"} / 1024 / 1024",
+          "legendFormat": "Heap 사용 (MB)"
+        },
+        {
+          "expr": "jvm_memory_max_bytes{area=\"heap\"} / 1024 / 1024",
+          "legendFormat": "Heap 최대 (MB)"
+        },
+        {
+          "expr": "(jvm_memory_used_bytes{area=\"heap\"} / jvm_memory_max_bytes{area=\"heap\"}) * 100",
+          "legendFormat": "Heap 사용률 (%)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Heap 사용률 (%)" },
+            "properties": [
+              { "id": "unit", "value": "percent" },
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "thresholds", "value": { "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 70 },
+                { "color": "red", "value": 85 }
+              ]}}
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "id": 11,
+      "title": "🗑 GC 활동 (Young/Full GC)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "expr": "rate(jvm_gc_collection_seconds_sum{gc=~\"G1 Young.*\"}[1m]) * 1000",
+          "legendFormat": "Young GC 시간 (ms/s)"
+        },
+        {
+          "expr": "rate(jvm_gc_collection_seconds_sum{gc=~\"G1 Old.*\"}[1m]) * 1000",
+          "legendFormat": "Full GC 시간 (ms/s)"
+        },
+        {
+          "expr": "rate(jvm_gc_collection_seconds_count{gc=~\"G1 Young.*\"}[1m])",
+          "legendFormat": "Young GC 횟수/s"
+        },
+        {
+          "expr": "rate(jvm_gc_collection_seconds_count{gc=~\"G1 Old.*\"}[1m])",
+          "legendFormat": "Full GC 횟수/s"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "alert": {
+        "name": "Full GC 발생",
+        "conditions": [
+          {
+            "query": { "params": ["D", "5m", "now"] },
+            "reducer": { "type": "sum" },
+            "evaluator": { "type": "gt", "params": [0] }
+          }
+        ]
+      }
+    },
+
+    {
+      "id": 20,
+      "title": "🖥 CPU 사용률 (%)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[1m])) * 100)",
+          "legendFormat": "CPU 사용률"
+        },
+        {
+          "expr": "avg(rate(node_cpu_seconds_total{mode=\"iowait\"}[1m])) * 100",
+          "legendFormat": "IOWait"
+        },
+        {
+          "expr": "avg(rate(node_cpu_seconds_total{mode=\"user\"}[1m])) * 100",
+          "legendFormat": "User"
+        },
+        {
+          "expr": "avg(rate(node_cpu_seconds_total{mode=\"system\"}[1m])) * 100",
+          "legendFormat": "System"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0, "max": 100,
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 60 },
+              { "color": "red", "value": 80 }
+            ]
+          }
+        }
+      }
+    },
+
+    {
+      "id": 21,
+      "title": "💾 메모리 사용량",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "expr": "(node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / 1024 / 1024 / 1024",
+          "legendFormat": "사용 중 (GB)"
+        },
+        {
+          "expr": "node_memory_MemAvailable_bytes / 1024 / 1024 / 1024",
+          "legendFormat": "가용 (GB)"
+        },
+        {
+          "expr": "(node_memory_SwapTotal_bytes - node_memory_SwapFree_bytes) / 1024 / 1024 / 1024",
+          "legendFormat": "Swap 사용 (GB)"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+
+    {
+      "id": 30,
+      "title": "🔌 WildFly DS 커넥션 풀",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "expr": "wildfly_datasource_pool_InUseCount",
+          "legendFormat": "사용 중 (InUse)"
+        },
+        {
+          "expr": "wildfly_datasource_pool_AvailableCount",
+          "legendFormat": "가용 (Available)"
+        },
+        {
+          "expr": "wildfly_datasource_pool_WaitCount",
+          "legendFormat": "대기 (Wait)"
+        },
+        {
+          "expr": "wildfly_datasource_pool_BlockingFailureCount",
+          "legendFormat": "획득 실패 (BlockingFailure)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "획득 실패 (BlockingFailure)" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          }
+        ]
+      }
+    },
+
+    {
+      "id": 31,
+      "title": "🧵 JVM Thread 상태",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "expr": "jvm_threads_current",
+          "legendFormat": "전체 Thread"
+        },
+        {
+          "expr": "jvm_threads_daemon",
+          "legendFormat": "Daemon Thread"
+        },
+        {
+          "expr": "jvm_threads_peak",
+          "legendFormat": "Peak Thread"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+
+    {
+      "id": 40,
+      "title": "🌐 네트워크 트래픽",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "expr": "rate(node_network_receive_bytes_total{device!~\"lo|docker.*\"}[1m]) / 1024 / 1024",
+          "legendFormat": "수신 (MB/s)"
+        },
+        {
+          "expr": "rate(node_network_transmit_bytes_total{device!~\"lo|docker.*\"}[1m]) / 1024 / 1024",
+          "legendFormat": "송신 (MB/s)"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+
+    {
+      "id": 41,
+      "title": "🔗 TCP 소켓 상태",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "expr": "node_sockstat_TCP_tw",
+          "legendFormat": "TIME_WAIT"
+        },
+        {
+          "expr": "node_sockstat_TCP_inuse",
+          "legendFormat": "ESTABLISHED"
+        },
+        {
+          "expr": "node_sockstat_sockets_used",
+          "legendFormat": "전체 소켓"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "TIME_WAIT" },
+            "properties": [
+              { "id": "thresholds", "value": { "steps": [
+                { "color": "green", "value": null },
+                { "color": "yellow", "value": 1000 },
+                { "color": "red", "value": 3000 }
+              ]}}
+            ]
+          }
+        ]
+      }
+    }
+
+  ],
+
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "label": "Prometheus",
+        "hide": 0
+      },
+      {
+        "name": "DS_INFLUXDB",
+        "type": "datasource",
+        "query": "influxdb",
+        "label": "InfluxDB (Gatling)",
+        "hide": 0
+      }
+    ]
+  }
+}

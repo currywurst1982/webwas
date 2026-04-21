@@ -1,0 +1,21 @@
+# 테스트 결과 (대용량, 민감 데이터 포함 가능)
+results/
+!results/template/
+
+# Gatling 빌드/캐시
+gatling/.gatling/
+gatling/target/
+gatling/*.log
+
+# JMeter 결과 파일 (대용량)
+jmeter/*.jtl
+jmeter/results/
+
+# 피더 파일 (실제 사용자 정보 포함 가능 → 별도 관리)
+gatling/resources/users_with_auth.csv
+gatling/resources/item_ids.csv
+
+# OS 임시 파일
+.DS_Store
+*.swp
+*.bak

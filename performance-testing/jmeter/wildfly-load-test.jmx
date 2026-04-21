@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6">
+  <hashTree>
+    <!-- ====================================================
+         WildFly 26 부하테스트 JMeter 플랜
+         실행: jmeter -n -t wildfly-load-test.jmx
+               -Jhost=localhost -Jport=8080 -Jctx=/myapp
+               -Jusers=100 -Jramp=60 -Jduration=300
+               -l results/result_$(date +%Y%m%d_%H%M%S).jtl
+               -e -o results/report/
+         ==================================================== -->
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="WildFly 26 Performance Test" enabled="true">
+      <stringProp name="TestPlan.comments">WildFly 26 성능테스트 - 읽기/쓰기/복합 시나리오</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments">
+        <collectionProp name="Arguments.arguments">
+          <!-- 커맨드라인 -J 옵션으로 오버라이드 가능 -->
+          <elementProp name="HOST"     elementType="Argument"><stringProp name="Argument.name">HOST</stringProp>     <stringProp name="Argument.value">${__P(host,localhost)}</stringProp></elementProp>
+          <elementProp name="PORT"     elementType="Argument"><stringProp name="Argument.name">PORT</stringProp>     <stringProp name="Argument.value">${__P(port,8080)}</stringProp></elementProp>
+          <elementProp name="CTX"      elementType="Argument"><stringProp name="Argument.name">CTX</stringProp>      <stringProp name="Argument.value">${__P(ctx,/myapp)}</stringProp></elementProp>
+          <elementProp name="USERS"    elementType="Argument"><stringProp name="Argument.name">USERS</stringProp>    <stringProp name="Argument.value">${__P(users,100)}</stringProp></elementProp>
+          <elementProp name="RAMP"     elementType="Argument"><stringProp name="Argument.name">RAMP</stringProp>     <stringProp name="Argument.value">${__P(ramp,60)}</stringProp></elementProp>
+          <elementProp name="DURATION" elementType="Argument"><stringProp name="Argument.name">DURATION</stringProp> <stringProp name="Argument.value">${__P(duration,300)}</stringProp></elementProp>
+        </collectionProp>
+      </elementProp>
+    </TestPlan>
+    <hashTree>
+
+      <!-- ── 공통 HTTP 헤더 매니저 ────────────────────────────────────── -->
+      <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="공통 HTTP 헤더" enabled="true">
+        <collectionProp name="HeaderManager.headers">
+          <elementProp name="" elementType="Header"><stringProp name="Header.name">Accept</stringProp><stringProp name="Header.value">application/json</stringProp></elementProp>
+          <elementProp name="" elementType="Header"><stringProp name="Header.name">Content-Type</stringProp><stringProp name="Header.value">application/json</stringProp></elementProp>
+          <elementProp name="" elementType="Header"><stringProp name="Header.name">Accept-Encoding</stringProp><stringProp name="Header.value">gzip, deflate</stringProp></elementProp>
+        </collectionProp>
+      </HeaderManager>
+      <hashTree/>
+
+      <!-- ── HTTP 요청 기본값 ──────────────────────────────────────────── -->
+      <ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="HTTP 기본값" enabled="true">
+        <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+          <collectionProp name="Arguments.arguments"/>
+        </elementProp>
+        <stringProp name="HTTPSampler.domain">${HOST}</stringProp>
+        <stringProp name="HTTPSampler.port">${PORT}</stringProp>
+        <stringProp name="HTTPSampler.protocol">http</stringProp>
+        <stringProp name="HTTPSampler.connect_timeout">5000</stringProp>
+        <stringProp name="HTTPSampler.response_timeout">10000</stringProp>
+      </ConfigTestElement>
+      <hashTree/>
+
+      <!-- ── 쿠키 매니저 ──────────────────────────────────────────────── -->
+      <CookieManager guiclass="CookiePanel" testclass="CookieManager" testname="HTTP 쿠키" enabled="true">
+        <boolProp name="CookieManager.clearEachIteration">true</boolProp>
+      </CookieManager>
+      <hashTree/>
+
+      <!-- ══════════════════════════════════════════════════════════════ -->
+      <!-- 스레드 그룹 1: 읽기 API (70% 비중)                             -->
+      <!-- ══════════════════════════════════════════════════════════════ -->
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="읽기 API (70%)" enabled="true">
+        <stringProp name="ThreadGroup.num_threads">${__eval(${USERS}*70/100)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${RAMP}</stringProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.duration">${DURATION}</stringProp>
+        <stringProp name="ThreadGroup.delay">0</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">false</boolProp>
+      </ThreadGroup>
+      <hashTree>
+
+        <!-- CSV 피더: item_ids.csv -->
+        <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="아이템ID 피더" enabled="true">
+          <stringProp name="filename">../resources/item_ids.csv</stringProp>
+          <stringProp name="variableNames">itemId</stringProp>
+          <stringProp name="delimiter">,</stringProp>
+          <boolProp name="quotedData">false</boolProp>
+          <boolProp name="recycle">true</boolProp>
+          <boolProp name="stopThread">false</boolProp>
+          <stringProp name="shareMode">shareMode.all</stringProp>
+        </CSVDataSet>
+        <hashTree/>
+
+        <!-- 단건 조회 -->
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET /items/{id}" enabled="true">
+          <stringProp name="HTTPSampler.path">${CTX}/api/items/${itemId}</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="상태코드 200 확인">
+            <collectionProp name="Asserion.test_strings"><stringProp name="49586">200</stringProp></collectionProp>
+            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>
+            <intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion>
+          <hashTree/>
+          <DurationAssertion guiclass="DurationAssertionGui" testclass="DurationAssertion" testname="응답시간 1000ms 이하">
+            <stringProp name="DurationAssertion.duration">1000</stringProp>
+          </DurationAssertion>
+          <hashTree/>
+        </hashTree>
+
+        <!-- 목록 조회 -->
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET /items (목록)" enabled="true">
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="page" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">false</boolProp><stringProp name="Argument.name">page</stringProp><stringProp name="Argument.value">0</stringProp></elementProp>
+              <elementProp name="size" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">false</boolProp><stringProp name="Argument.name">size</stringProp><stringProp name="Argument.value">20</stringProp></elementProp>
+            </collectionProp>
+          </elementProp>
+          <stringProp name="HTTPSampler.path">${CTX}/api/items</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+
+        <!-- Think Time: 2~5초 -->
+        <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer" testname="Think Time (2~5초)" enabled="true">
+          <stringProp name="ConstantTimer.delay">2000</stringProp>
+          <stringProp name="RandomTimer.range">3000</stringProp>
+        </GaussianRandomTimer>
+        <hashTree/>
+      </hashTree>
+
+      <!-- ══════════════════════════════════════════════════════════════ -->
+      <!-- 스레드 그룹 2: 쓰기 API (20% 비중)                             -->
+      <!-- ══════════════════════════════════════════════════════════════ -->
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="쓰기 API (20%)" enabled="true">
+        <stringProp name="ThreadGroup.num_threads">${__eval(${USERS}*20/100)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">${RAMP}</stringProp>
+        <boolProp name="ThreadGroup.scheduler">true</boolProp>
+        <stringProp name="ThreadGroup.duration">${DURATION}</stringProp>
+        <stringProp name="ThreadGroup.delay">10</stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">false</boolProp>
+      </ThreadGroup>
+      <hashTree>
+
+        <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="사용자 피더" enabled="true">
+          <stringProp name="filename">../resources/users_with_auth.csv</stringProp>
+          <stringProp name="variableNames">userId,password</stringProp>
+          <stringProp name="delimiter">,</stringProp>
+          <boolProp name="recycle">true</boolProp>
+          <stringProp name="shareMode">shareMode.thread</stringProp>
+        </CSVDataSet>
+        <hashTree/>
+
+        <!-- 로그인 -->
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /auth/login" enabled="true">
+          <stringProp name="HTTPSampler.path">${CTX}/api/auth/login</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <stringProp name="Argument.value">{"userId":"${userId}","password":"${password}"}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <JSONPathExtractor guiclass="JSONPathExtractorGui" testclass="JSONPathExtractor" testname="토큰 추출">
+            <stringProp name="JSONPathExtractor.refname">authToken</stringProp>
+            <stringProp name="JSONPathExtractor.jsonpath">$.token</stringProp>
+            <stringProp name="JSONPathExtractor.defaultValue">NO_TOKEN</stringProp>
+          </JSONPathExtractor>
+          <hashTree/>
+        </hashTree>
+
+        <!-- 등록 -->
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /items (등록)" enabled="true">
+          <stringProp name="HTTPSampler.path">${CTX}/api/items</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <stringProp name="Argument.value">{"name":"jmeter-item-${__threadNum}","category":"TEST","price":1000}</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Auth 헤더">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="" elementType="Header"><stringProp name="Header.name">Authorization</stringProp><stringProp name="Header.value">Bearer ${authToken}</stringProp></elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree/>
+          <JSONPathExtractor guiclass="JSONPathExtractorGui" testclass="JSONPathExtractor" testname="생성 ID 추출">
+            <stringProp name="JSONPathExtractor.refname">createdId</stringProp>
+            <stringProp name="JSONPathExtractor.jsonpath">$.id</stringProp>
+          </JSONPathExtractor>
+          <hashTree/>
+        </hashTree>
+
+        <!-- 삭제 (테스트 데이터 정리) -->
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="DELETE /items/{id}" enabled="true">
+          <stringProp name="HTTPSampler.path">${CTX}/api/items/${createdId}</stringProp>
+          <stringProp name="HTTPSampler.method">DELETE</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Auth 헤더">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="" elementType="Header"><stringProp name="Header.name">Authorization</stringProp><stringProp name="Header.value">Bearer ${authToken}</stringProp></elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree/>
+        </hashTree>
+
+        <GaussianRandomTimer guiclass="GaussianRandomTimerGui" testclass="GaussianRandomTimer" testname="Think Time (3~7초)" enabled="true">
+          <stringProp name="ConstantTimer.delay">3000</stringProp>
+          <stringProp name="RandomTimer.range">4000</stringProp>
+        </GaussianRandomTimer>
+        <hashTree/>
+      </hashTree>
+
+      <!-- ══════════════════════════════════════════════════════════════ -->
+      <!-- 리스너: 결과 수집                                               -->
+      <!-- ══════════════════════════════════════════════════════════════ -->
+
+      <!-- Summary Report (콘솔 확인용) -->
+      <ResultCollector guiclass="SummaryReport" testclass="ResultCollector" testname="Summary Report" enabled="true">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp><name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time><latency>true</latency><timestamp>true</timestamp>
+            <success>true</success><label>true</label><code>true</code>
+            <message>true</message><threadName>true</threadName>
+            <dataType>true</dataType><encoding>false</encoding>
+            <assertions>true</assertions><subresults>true</subresults>
+            <responseData>false</responseData><samplerData>false</samplerData>
+            <xml>false</xml><fieldNames>true</fieldNames>
+            <responseHeaders>false</responseHeaders><requestHeaders>false</requestHeaders>
+            <responseDataOnError>false</responseDataOnError>
+            <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage>
+            <assertionsResultsToSave>0</assertionsResultsToSave>
+            <bytes>true</bytes><sentBytes>true</sentBytes>
+            <url>true</url><threadCounts>true</threadCounts>
+            <idleTime>true</idleTime><connectTime>true</connectTime>
+          </value>
+        </objProp>
+        <stringProp name="filename">results/summary.jtl</stringProp>
+      </ResultCollector>
+      <hashTree/>
+
+      <!-- Aggregate Report -->
+      <ResultCollector guiclass="StatVisualizer" testclass="ResultCollector" testname="Aggregate Report" enabled="true">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp><name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time><latency>true</latency><timestamp>true</timestamp>
+            <success>true</success><label>true</label>
+          </value>
+        </objProp>
+        <stringProp name="filename">results/aggregate.jtl</stringProp>
+      </ResultCollector>
+      <hashTree/>
+
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

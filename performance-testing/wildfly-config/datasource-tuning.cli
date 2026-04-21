@@ -1,0 +1,109 @@
+# ============================================================
+# WildFly 26 Datasource 커넥션 풀 튜닝 CLI 스크립트
+# 실행: $JBOSS_HOME/bin/jboss-cli.sh --connect --file=datasource-tuning.cli
+#
+# 튜닝 원칙:
+#   max-pool-size = (CPU 코어 수 × 2) + 여유분
+#   단, DB 서버의 max_connections 한도 내에서 설정
+# ============================================================
+
+# 대상 Datasource 이름 (실제 환경에 맞게 변경)
+set DS_NAME=ExampleDS
+
+# ── 현재 통계 확인 (튜닝 전 기준값) ────────────────────────────────────────
+/subsystem=datasources/data-source=$DS_NAME/statistics=pool:read-resource(include-runtime=true)
+/subsystem=datasources/data-source=$DS_NAME/statistics=jdbc:read-resource(include-runtime=true)
+
+# ── 커넥션 풀 크기 설정 ──────────────────────────────────────────────────────
+# min-pool-size: 최소 유지 커넥션 수
+#   → 0으로 두면 유휴 시 커넥션 전부 반환 → 재연결 비용 발생
+#   → 예상 최소 동시 요청 수의 80% 수준 권장
+/subsystem=datasources/data-source=$DS_NAME:\
+  write-attribute(name=min-pool-size,value=10)
+
+# initial-pool-size: 기동 시 초기 커넥션 수
+/subsystem=datasources/data-source=$DS_NAME:\
+  write-attribute(name=initial-pool-size,value=10)
+
+# max-pool-size: 최대 커넥션 수
+#   → Undertow worker thread 수와 연동 (요청당 1 커넥션 가정)
+#   → 너무 크면 DB 부하 증가, 너무 작으면 wait-count 발생
+/subsystem=datasources/data-source=$DS_NAME:\
+  write-attribute(name=max-pool-size,value=50)
+
+# ── 커넥션 타임아웃 설정 ─────────────────────────────────────────────────────
+# blocking-timeout-millis: 풀에서 커넥션 대기 최대 시간 (ms)
+#   → 이 시간 초과 시 blocking-failure-count 증가 + 예외 발생
+#   → 기본값 30000ms (30초) → API 응답 SLA에 맞게 조정
+/subsystem=datasources/data-source=$DS_NAME:\
+  write-attribute(name=blocking-timeout-millis,value=5000)
+
+# idle-timeout-minutes: 유휴 커넥션 유지 시간 (분)
+#   → DB 서버 wait_timeout보다 작게 설정 (커넥션 강제 종료 방지)
+#   → MySQL: wait_timeout=28800(8시간) → idle-timeout=25분 이하 권장
+/subsystem=datasources/data-source=$DS_NAME:\
+  write-attribute(name=idle-timeout-minutes,value=20)
+
+# query-timeout: SQL 쿼리 최대 실행 시간 (초)
+#   → 슬로우 쿼리가 커넥션 점유하는 것 방지
+/subsystem=datasources/data-source=$DS_NAME:\
+  write-attribute(name=query-timeout,value=30)
+
+# ── 커넥션 유효성 검사 설정 ──────────────────────────────────────────────────
+# validate-on-match: 풀에서 가져올 때 유효성 검사 여부
+#   → true: 항상 검사 (안전하지만 오버헤드 있음)
+#   → false: 성능 우선 (background-validation과 함께 사용)
+/subsystem=datasources/data-source=$DS_NAME:\
+  write-attribute(name=validate-on-match,value=false)
+
+# background-validation: 백그라운드에서 주기적 유효성 검사
+/subsystem=datasources/data-source=$DS_NAME:\
+  write-attribute(name=background-validation,value=true)
+
+# background-validation-millis: 검사 주기 (ms)
+#   → idle-timeout × 0.7 수준 권장
+/subsystem=datasources/data-source=$DS_NAME:\
+  write-attribute(name=background-validation-millis,value=900000)
+
+# check-valid-connection-sql: 유효성 검사 쿼리
+#   → MySQL/MariaDB: SELECT 1
+#   → Oracle: SELECT 1 FROM DUAL
+#   → PostgreSQL: SELECT 1
+/subsystem=datasources/data-source=$DS_NAME:\
+  write-attribute(name=check-valid-connection-sql,value="SELECT 1")
+
+# ── 커넥션 풀 성능 옵션 ──────────────────────────────────────────────────────
+# use-fast-fail: 빠른 실패 모드 (풀 고갈 시 즉시 예외)
+/subsystem=datasources/data-source=$DS_NAME:\
+  write-attribute(name=use-fast-fail,value=false)
+
+# pool-prefill: 기동 시 min-pool-size만큼 미리 커넥션 생성
+/subsystem=datasources/data-source=$DS_NAME:\
+  write-attribute(name=pool-prefill,value=true)
+
+# pool-fair: 공평한 스레드 대기열 사용
+/subsystem=datasources/data-source=$DS_NAME:\
+  write-attribute(name=pool-fair,value=true)
+
+# use-ccm: Cached Connection Manager 사용 (트랜잭션 누수 탐지)
+#   → 개발/스테이징에서는 true, 운영에서는 false (오버헤드)
+/subsystem=datasources/data-source=$DS_NAME:\
+  write-attribute(name=use-ccm,value=false)
+
+# ── 통계 활성화 (런타임 모니터링 필수) ──────────────────────────────────────
+/subsystem=datasources/data-source=$DS_NAME:\
+  write-attribute(name=statistics-enabled,value=true)
+
+# ── 변경사항 적용 ────────────────────────────────────────────────────────────
+:reload
+
+# ── 적용 후 통계 재확인 ──────────────────────────────────────────────────────
+/subsystem=datasources/data-source=$DS_NAME/statistics=pool:read-resource(include-runtime=true)
+
+# ── 런타임 중 실시간 모니터링 명령 (별도 실행) ──────────────────────────────
+# 10초마다 풀 통계 조회:
+# watch -n 10 '$JBOSS_HOME/bin/jboss-cli.sh --connect --command=\
+#   "/subsystem=datasources/data-source=ExampleDS/statistics=pool:read-resource(include-runtime=true)"'
+
+# wait-count가 0이 아니면 max-pool-size 증가 검토
+# blocking-failure-count가 증가하면 즉시 조치 필요

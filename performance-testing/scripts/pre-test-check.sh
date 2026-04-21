@@ -7,8 +7,16 @@
 
 set -euo pipefail
 
+# ── config.env 자동 로드 ─────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CONFIG_FILE="${SCRIPT_DIR}/../config.env"
+if [[ -f "${CONFIG_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${CONFIG_FILE}"
+fi
+
 BASE_URL=${BASE_URL:-"http://localhost:8080"}
-APP_CONTEXT=${APP_CONTEXT:-"/myapp"}
+APP_CONTEXT=${APP_CONTEXT:-""}
 JBOSS_HOME=${JBOSS_HOME:-"/opt/wildfly"}
 RESULTS_DIR=${RESULTS_DIR:-"$(dirname "$0")/../results"}
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)

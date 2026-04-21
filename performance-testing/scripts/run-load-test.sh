@@ -21,7 +21,17 @@
 
 set -euo pipefail
 
-# ── 기본값 ───────────────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# ── config.env 자동 로드 ─────────────────────────────────────────────────────
+CONFIG_FILE="${ROOT_DIR}/config.env"
+if [[ -f "${CONFIG_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${CONFIG_FILE}"
+fi
+
+# ── 기본값 (config.env 또는 환경변수로 오버라이드 가능) ─────────────────────
 TEST_TYPE="mixed"
 USERS=100
 DURATION=300
@@ -30,10 +40,8 @@ TOOL="gatling"
 REPEAT=1
 
 BASE_URL=${BASE_URL:-"http://localhost:8080"}
-APP_CONTEXT=${APP_CONTEXT:-"/myapp"}
+APP_CONTEXT=${APP_CONTEXT:-""}
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 RESULTS_DIR="${ROOT_DIR}/results"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 RUN_DIR="${RESULTS_DIR}/run_${TIMESTAMP}"

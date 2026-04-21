@@ -67,21 +67,20 @@ class MixedLoadSimulation extends Simulation {
     }
     .pause(10.seconds, 20.seconds)
 
-  setUp(
-    browseScenario.inject(
-      testType match {
-        case "stress" =>
-          incrementUsersPerSec(5).times(10).eachLevelLasting(30.seconds).startingFrom(5)
-        case "spike" =>
-          atOnceUsers(maxUsers)
-        case _ =>
-          rampUsers((targetUsers * 0.7).toInt).during(rampDuration.seconds)
-      }
-    ).andThen(
-      browseScenario.inject(
+  val browseInjection = testType match {
+    case "stress" =>
+      List(incrementUsersPerSec(5).times(10).eachLevelLasting(30.seconds).startingFrom(5))
+    case "spike" =>
+      List(atOnceUsers(maxUsers))
+    case _ =>
+      List(
+        rampUsers((targetUsers * 0.7).toInt).during(rampDuration.seconds),
         constantUsersPerSec(targetUsers * 0.07).during(holdDuration.seconds)
       )
-    ),
+  }
+
+  setUp(
+    browseScenario.inject(browseInjection: _*),
     repeatBrowseScenario.inject(
       nothingFor(10.seconds),
       rampUsers((targetUsers * 0.2).toInt).during(rampDuration.seconds),

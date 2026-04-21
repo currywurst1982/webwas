@@ -8,6 +8,13 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CONFIG_FILE="${SCRIPT_DIR}/../config.env"
+if [[ -f "${CONFIG_FILE}" ]]; then
+  # shellcheck disable=SC1090
+  source "${CONFIG_FILE}"
+fi
+
 INTERVAL=${1:-10}
 OUTPUT_DIR=${2:-"$(dirname "$0")/../results"}
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -21,7 +28,7 @@ CLI="${JBOSS_HOME}/bin/jboss-cli.sh"
 MGMT_HOST=${WILDFLY_MGMT_HOST:-127.0.0.1}
 MGMT_PORT=${WILDFLY_MGMT_PORT:-9990}
 MGMT_USER=${WILDFLY_MGMT_USER:-admin}
-MGMT_PASS=${WILDFLY_MGMT_PASS:-admin123}
+MGMT_PASS=${WILDFLY_MGMT_PASS:-admin}
 
 # 수집할 Datasource 이름 (쉼표 구분, 복수 지원)
 DS_NAMES=${WILDFLY_DS_NAMES:-"ExampleDS"}
@@ -39,6 +46,12 @@ request_count_total,error_count_total" \
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 
+if [[ ! -x "${CLI}" ]]; then
+  log "⚠ jboss-cli.sh 없음: ${CLI} — JBOSS_HOME 확인 필요"
+  log "  현재 JBOSS_HOME=${JBOSS_HOME}"
+  exit 1
+fi
+
 run_cli() {
   "${CLI}" \
     --connect \
@@ -49,27 +62,32 @@ run_cli() {
     2>/dev/null | tr -d ' \n'
 }
 
+# 단순 숫자 속성 전용: "result" => VALUE 에서 숫자만 추출
+run_cli_val() {
+  run_cli "$1" | grep -oP '"result"\s*=>\s*\K[0-9]+' | head -1
+}
+
 collect_ds_stats() {
   local ds="$1"
   local base="/subsystem=datasources/data-source=${ds}/statistics=pool"
 
   local active     block_fail in_use avail max_used wait total_get avg_get created destroyed
-  active=$(run_cli "read-attribute --node=${base} --name=ActiveCount"          || echo "N/A")
-  in_use=$(run_cli "read-attribute --node=${base} --name=InUseCount"           || echo "N/A")
-  avail=$(run_cli  "read-attribute --node=${base} --name=AvailableCount"       || echo "N/A")
-  max_used=$(run_cli "read-attribute --node=${base} --name=MaxUsedCount"       || echo "N/A")
-  wait=$(run_cli   "read-attribute --node=${base} --name=WaitCount"            || echo "N/A")
-  total_get=$(run_cli "read-attribute --node=${base} --name=TotalGetTime"      || echo "N/A")
-  avg_get=$(run_cli   "read-attribute --node=${base} --name=AverageGetTime"    || echo "N/A")
-  block_fail=$(run_cli "read-attribute --node=${base} --name=BlockingFailureCount" || echo "N/A")
-  created=$(run_cli  "read-attribute --node=${base} --name=CreatedCount"       || echo "N/A")
-  destroyed=$(run_cli "read-attribute --node=${base} --name=DestroyedCount"    || echo "N/A")
+  active=$(run_cli_val "read-attribute --node=${base} --name=ActiveCount"          || echo "N/A")
+  in_use=$(run_cli_val "read-attribute --node=${base} --name=InUseCount"           || echo "N/A")
+  avail=$(run_cli_val  "read-attribute --node=${base} --name=AvailableCount"       || echo "N/A")
+  max_used=$(run_cli_val "read-attribute --node=${base} --name=MaxUsedCount"       || echo "N/A")
+  wait=$(run_cli_val   "read-attribute --node=${base} --name=WaitCount"            || echo "N/A")
+  total_get=$(run_cli_val "read-attribute --node=${base} --name=TotalGetTime"      || echo "N/A")
+  avg_get=$(run_cli_val   "read-attribute --node=${base} --name=AverageGetTime"    || echo "N/A")
+  block_fail=$(run_cli_val "read-attribute --node=${base} --name=BlockingFailureCount" || echo "N/A")
+  created=$(run_cli_val  "read-attribute --node=${base} --name=CreatedCount"       || echo "N/A")
+  destroyed=$(run_cli_val "read-attribute --node=${base} --name=DestroyedCount"    || echo "N/A")
 
   # XA 통계 (일반 DS는 값이 없을 수 있음)
   local xa_commit xa_rollback
   local xa_base="/subsystem=datasources/data-source=${ds}/statistics=jdbc"
-  xa_commit=$(run_cli   "read-attribute --node=${xa_base} --name=XACommitCount"   2>/dev/null || echo "0")
-  xa_rollback=$(run_cli "read-attribute --node=${xa_base} --name=XARollbackCount" 2>/dev/null || echo "0")
+  xa_commit=$(run_cli_val   "read-attribute --node=${xa_base} --name=XACommitCount"   || echo "0")
+  xa_rollback=$(run_cli_val "read-attribute --node=${xa_base} --name=XARollbackCount" || echo "0")
 
   echo "${ds},${active},${in_use},${avail},${max_used},${wait},${total_get},${avg_get},${block_fail},${created},${destroyed},${xa_commit},${xa_rollback}"
 }
@@ -77,9 +95,9 @@ collect_ds_stats() {
 collect_undertow_stats() {
   local base="/subsystem=undertow/server=default-server/http-listener=default"
   local req_count bytes_sent bytes_recv
-  req_count=$(run_cli  "read-attribute --node=${base} --name=requestCount"  || echo "N/A")
-  bytes_sent=$(run_cli "read-attribute --node=${base} --name=bytesSent"     || echo "N/A")
-  bytes_recv=$(run_cli "read-attribute --node=${base} --name=bytesReceived" || echo "N/A")
+  req_count=$(run_cli_val  "read-attribute --node=${base} --name=requestCount"  || echo "N/A")
+  bytes_sent=$(run_cli_val "read-attribute --node=${base} --name=bytesSent"     || echo "N/A")
+  bytes_recv=$(run_cli_val "read-attribute --node=${base} --name=bytesReceived" || echo "N/A")
   echo "${req_count},${bytes_sent},${bytes_recv}"
 }
 
@@ -101,12 +119,20 @@ collect_jvm_stats() {
 
 collect_request_stats() {
   local req_total err_total
-  req_total=$(run_cli "read-attribute --node=/subsystem=undertow --name=requestsCount" || echo "N/A")
-  err_total=$(run_cli "read-attribute --node=/subsystem=undertow --name=errorCount"    || echo "N/A")
+  req_total=$(run_cli_val "read-attribute --node=/subsystem=undertow --name=requestsCount" || echo "N/A")
+  err_total=$(run_cli_val "read-attribute --node=/subsystem=undertow --name=errorCount"    || echo "N/A")
   echo "${req_total},${err_total}"
 }
 
 log "WildFly 통계 수집 시작 (간격: ${INTERVAL}s) → ${OUTPUT_FILE}"
+
+# Datasource 풀 통계 활성화 (비활성화 상태이면 모든 값이 undefined 반환)
+IFS=',' read -ra DS_INIT_ARRAY <<< "${DS_NAMES}"
+for ds_init in "${DS_INIT_ARRAY[@]}"; do
+  run_cli "/subsystem=datasources/data-source=${ds_init}:write-attribute(name=statistics-enabled,value=true)" \
+    > /dev/null 2>&1 && log "  DS 통계 활성화: ${ds_init}" || log "  ⚠ DS 통계 활성화 실패 (권한 또는 DS명 확인): ${ds_init}"
+done
+
 log "Ctrl+C로 종료"
 
 while true; do

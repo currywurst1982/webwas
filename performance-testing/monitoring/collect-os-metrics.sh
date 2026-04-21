@@ -35,7 +35,7 @@ echo "timestamp,tcp_established,tcp_syn_sent,tcp_syn_recv,tcp_fin_wait1,tcp_fin_
 
 collect_cpu() {
   local user sys idle iowait steal load
-  read -r _ user nice sys idle iowait irq softirq steal < /proc/stat
+  read -r _ user nice sys idle iowait irq softirq steal _ _ < /proc/stat
 
   # 누적값 → 델타 계산
   local total=$((user + nice + sys + idle + iowait + irq + softirq + steal))
@@ -160,7 +160,7 @@ collect_tcp() {
 }
 
 # ── 초기값 설정 ──────────────────────────────────────────────────────────────
-read -r _ PREV_CPU_USER _ PREV_CPU_SYS PREV_CPU_IDLE PREV_CPU_IOWAIT _ _ PREV_CPU_STEAL < /proc/stat
+read -r _ PREV_CPU_USER _ PREV_CPU_SYS PREV_CPU_IDLE PREV_CPU_IOWAIT _ _ PREV_CPU_STEAL _ _ < /proc/stat
 PREV_CPU_TOTAL=$(( PREV_CPU_USER + PREV_CPU_SYS + PREV_CPU_IDLE + PREV_CPU_IOWAIT + PREV_CPU_STEAL ))
 PREV_IO_MS=0
 PREV_RX_BYTES=0

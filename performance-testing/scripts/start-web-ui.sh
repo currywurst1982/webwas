@@ -44,7 +44,7 @@ print_urls() {
   echo "═══════════════════════════════════════════════════"
   echo ""
   echo "  📊 Grafana 대시보드 (실시간 모니터링)"
-  echo "     http://${SERVER_IP}:3000"
+  echo "     http://${SERVER_IP}:5000"
   echo "     ID: admin / PW: admin123"
   echo ""
   echo "  📋 테스트 결과 리포트 뷰어"

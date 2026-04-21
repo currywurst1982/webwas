@@ -35,7 +35,7 @@ services:
     container_name: perf-grafana
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "5000:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin123

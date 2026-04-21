@@ -15,7 +15,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WEB_UI_DIR="${SCRIPT_DIR}/../web-ui"
 ACTION=${1:-start}
 
-SERVER_IP=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "localhost")
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+CONFIG_FILE="${SCRIPT_DIR}/../config.env"
+[[ -f "${CONFIG_FILE}" ]] && source "${CONFIG_FILE}"
+# BASE_URL 에서 호스트만 추출, 없으면 hostname -I 폴백
+SERVER_IP=$(echo "${BASE_URL:-}" | grep -oP '(?<=://)[^:/]+' || hostname -I | awk '{print $1}')
 
 log() { echo "[$(date '+%H:%M:%S')] $*"; }
 

@@ -18,10 +18,12 @@ import scala.concurrent.duration._
 class MixedLoadSimulation extends Simulation {
 
   val baseUrl      = System.getProperty("baseUrl",      "http://localhost:8080")
-  val appContext   = System.getProperty("appContext",    "/myapp")
-  val baseUsers    = System.getProperty("baseUsers",    "50").toInt
+  val appContext   = System.getProperty("appContext",    "")
+  val targetUsers  = System.getProperty("targetUsers",  "50").toInt
   val maxUsers     = System.getProperty("maxUsers",     "500").toInt
   val testType     = System.getProperty("testType",     "load")
+  val rampDuration = System.getProperty("rampDuration", "60").toInt
+  val holdDuration = System.getProperty("holdDuration", "300").toInt
 
   val httpProtocol = http
     .baseUrl(baseUrl)
@@ -117,32 +119,32 @@ class MixedLoadSimulation extends Simulation {
     case "spike" =>
       // 기본 부하 → 스파이크 → 기본 복귀
       List(
-        constantUsersPerSec(baseUsers * 0.7)  during (60.seconds),
+        constantUsersPerSec(targetUsers * 0.7)  during (60.seconds),
         atOnceUsers(maxUsers),
-        constantUsersPerSec(baseUsers * 0.7)  during (120.seconds)
+        constantUsersPerSec(targetUsers * 0.7)  during (120.seconds)
       )
     case _ =>
       // 기본 Load Test
       List(
-        rampUsers((baseUsers * 0.7).toInt) over (60.seconds),
-        constantUsersPerSec(baseUsers * 0.07) during (300.seconds)
+        rampUsers((targetUsers * 0.7).toInt) over (rampDuration.seconds),
+        constantUsersPerSec(targetUsers * 0.07) during (holdDuration.seconds)
       )
   }
 
   setUp(
     readScenario.inject(
-      rampUsers((baseUsers * 0.7).toInt) over (60.seconds),
-      constantUsersPerSec(baseUsers * 0.07) during (300.seconds)
+      rampUsers((targetUsers * 0.7).toInt) over (rampDuration.seconds),
+      constantUsersPerSec(targetUsers * 0.07) during (holdDuration.seconds)
     ),
     writeScenario.inject(
       nothingFor(15.seconds),
-      rampUsers((baseUsers * 0.2).toInt) over (60.seconds),
-      constantUsersPerSec(baseUsers * 0.02) during (300.seconds)
+      rampUsers((targetUsers * 0.2).toInt) over (rampDuration.seconds),
+      constantUsersPerSec(targetUsers * 0.02) during (holdDuration.seconds)
     ),
     transactionScenario.inject(
       nothingFor(30.seconds),
-      rampUsers((baseUsers * 0.1).toInt) over (60.seconds),
-      constantUsersPerSec(baseUsers * 0.01) during (300.seconds)
+      rampUsers((targetUsers * 0.1).toInt) over (rampDuration.seconds),
+      constantUsersPerSec(targetUsers * 0.01) during (holdDuration.seconds)
     )
   ).protocols(httpProtocol)
     .assertions(

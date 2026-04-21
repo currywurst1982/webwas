@@ -193,16 +193,26 @@ run_gatling() {
     export JAVA_HOME="${gj}"
   fi
 
+  # 시스템 프로퍼티는 JAVA_OPTS 로 전달 (gatling.sh CLI 인자가 아님)
+  # 시뮬레이션은 baseUsers / rampDuration / holdDuration 프로퍼티 사용
+  export JAVA_OPTS="${JAVA_OPTS:-} \
+    -DbaseUrl=${BASE_URL} \
+    -DappContext=${APP_CONTEXT} \
+    -DtargetUsers=${USERS} \
+    -DrampDuration=${RAMP} \
+    -DholdDuration=${DURATION}"
+
+  local sim_dir="${ROOT_DIR}/gatling/simulations"
+  local res_dir="${ROOT_DIR}/gatling/resources"
+
   log "  Gatling 실행 (${run_num}/${REPEAT}): ${SIM_CLASS} [JAVA_HOME=${JAVA_HOME:-system}]"
   "${GATLING_HOME}/bin/gatling.sh" \
+    --run-mode local \
     -s "${SIM_CLASS}" \
     -rd "WildFly-${TEST_TYPE}-run${run_num}-${TIMESTAMP}" \
     -rf "${result_dir}" \
-    -DbaseUrl="${BASE_URL}" \
-    -DappContext="${APP_CONTEXT}" \
-    -DtargetUsers="${USERS}" \
-    -DrampDuration="${RAMP}" \
-    -DholdDuration="${DURATION}" \
+    -sf "${sim_dir}" \
+    -rsf "${res_dir}" \
     2>&1 | tee "${result_dir}/gatling.log"
 
   log "  결과 저장: ${result_dir}"

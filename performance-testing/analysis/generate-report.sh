@@ -225,8 +225,8 @@ generate_text_report() {
     err_sum=$(echo "${err_sum} ${err_rate}" | awk '{print $1+$2}')
 
     local verdict="PASS"
-    if (( $(echo "${p95} > ${SLA_P95}" | bc -l 2>/dev/null || echo 0) )) || \
-       (( $(echo "${err_rate} > ${SLA_ERROR_RATE}" | bc -l 2>/dev/null || echo 0) )); then
+    if awk -v p="${p95}" -v sp="${SLA_P95}" -v e="${err_rate}" -v se="${SLA_ERROR_RATE}" \
+         'BEGIN{exit !( p > sp || e > se )}'; then
       verdict="FAIL"
       sla_fail=$(( sla_fail + 1 ))
     else

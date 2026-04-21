@@ -109,7 +109,7 @@ analyze_gatling() {
   ' | tee -a "${ANALYSIS_FILE}"
 
   # 에러율 경보
-  if (( $(echo "${error_rate} > 0.1" | bc -l 2>/dev/null || echo 0) )); then
+  if awk -v v="${error_rate}" 'BEGIN{exit !(v > 0.1)}'; then
     hint "에러율 ${error_rate}% > 기준 0.1%"
   fi
 
@@ -251,7 +251,7 @@ analyze_jvm() {
     max_overhead=$(awk -F',' 'NR>1{if($12+0>m)m=$12+0}END{print m+0}' "${gc_file}")
 
     (( max_fgc > 0 )) && hint "Full GC ${max_fgc}회 발생 - Heap 크기 또는 메모리 누수 점검"
-    if (( $(echo "${max_overhead} > 10" | bc -l 2>/dev/null || echo 0) )); then
+    if awk -v v="${max_overhead}" 'BEGIN{exit !(v > 10)}'; then
       hint "GC 오버헤드 최대 ${max_overhead}% - GC 튜닝 또는 Heap 증량 필요"
     fi
   fi

@@ -71,7 +71,7 @@ collect_gc() {
 ${YGC},${YGCT},${FGC},${FGCT},${GCT},${gc_overhead}" >> "${GC_FILE}"
 
   # Full GC 발생 시 경보
-  if (( $(echo "${FGC} > ${PREV_FGC}" | bc -l) )); then
+  if awk -v a="${FGC}" -v b="${PREV_FGC}" 'BEGIN{exit !(a > b)}'; then
     log "⚠️  Full GC 감지! (누적: ${FGC}회, 총 시간: ${FGCT}s)"
   fi
 

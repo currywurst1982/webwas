@@ -141,7 +141,7 @@ check_jvm_memory() {
     log "    Eden: ${E}% | Old: ${O}% | Meta: ${M}%"
     log "    YoungGC: ${YGC}회 (${YGCT}s) | FullGC: ${FGC}회 (${FGCT}s)"
 
-    if (( $(echo "${O} > 80" | bc -l 2>/dev/null || echo 0) )); then
+    if awk -v v="${O}" 'BEGIN{exit !(v > 80)}'; then
       warn "Old Gen 사용률 ${O}% - Heap 부족 또는 누수 의심, 재기동 권장"
     else
       ok "Heap 상태 정상 (Old Gen ${O}%)"
@@ -165,7 +165,7 @@ check_os_resources() {
   load1=$(awk '{print $1}' /proc/loadavg)
   local cpu_cores
   cpu_cores=$(nproc)
-  if (( $(echo "${load1} > ${cpu_cores}" | bc -l 2>/dev/null || echo 0) )); then
+  if awk -v a="${load1}" -v b="${cpu_cores}" 'BEGIN{exit !(a > b)}'; then
     warn "현재 CPU Load (${load1}) > CPU 코어 수 (${cpu_cores}) - 부하 상태 확인"
   else
     ok "CPU Load 정상: ${load1} (코어: ${cpu_cores})"

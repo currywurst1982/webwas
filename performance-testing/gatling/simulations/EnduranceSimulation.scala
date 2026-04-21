@@ -13,7 +13,7 @@ import scala.concurrent.duration._
 class EnduranceSimulation extends Simulation {
 
   val baseUrl    = System.getProperty("baseUrl",    "http://localhost:8080")
-  val appContext = System.getProperty("appContext",  "/myapp")
+  val appContext = System.getProperty("appContext",  "")
   val holdHours  = System.getProperty("holdHours",  "8").toInt
   val users      = System.getProperty("users",      "30").toInt  // 평균 부하 수준
 

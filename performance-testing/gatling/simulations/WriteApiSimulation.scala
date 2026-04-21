@@ -13,7 +13,7 @@ import scala.concurrent.duration._
 class WriteApiSimulation extends Simulation {
 
   val baseUrl      = System.getProperty("baseUrl",      "http://localhost:8080")
-  val appContext   = System.getProperty("appContext",    "/myapp")
+  val appContext   = System.getProperty("appContext",    "")
   val targetUsers  = System.getProperty("targetUsers",  "50").toInt
   val rampDuration = System.getProperty("rampDuration", "60").toInt
   val holdDuration = System.getProperty("holdDuration", "300").toInt

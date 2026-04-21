@@ -14,7 +14,7 @@ class ReadApiSimulation extends Simulation {
 
   // ── 환경 변수로 오버라이드 가능 ──────────────────────────────────────────
   val baseUrl        = System.getProperty("baseUrl",        "http://localhost:8080")
-  val appContext     = System.getProperty("appContext",      "/myapp")
+  val appContext     = System.getProperty("appContext",      "")
   val targetUsers    = System.getProperty("targetUsers",    "100").toInt
   val rampDuration   = System.getProperty("rampDuration",   "60").toInt    // 초
   val holdDuration   = System.getProperty("holdDuration",   "300").toInt   // 초 (5분)

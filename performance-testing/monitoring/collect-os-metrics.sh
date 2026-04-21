@@ -56,7 +56,7 @@ collect_cpu() {
   echo "$(date '+%Y-%m-%d %H:%M:%S'),${cpu_user},${cpu_sys},${cpu_iowait},${cpu_idle},${cpu_steal},${load}" >> "${CPU_FILE}"
 
   # CPU IOWait 과다 경고 (10% 이상)
-  if (( $(echo "${cpu_iowait} > 10" | bc -l) )); then
+  if awk -v v="${cpu_iowait}" 'BEGIN{exit !(v > 10)}'; then
     log "⚠️  IOWait ${cpu_iowait}% - 디스크/네트워크 병목 의심"
   fi
 

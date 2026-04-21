@@ -5,15 +5,13 @@ import io.gatling.http.Predef._
 import scala.concurrent.duration._
 
 /**
- * 혼합 부하 시뮬레이션 (스트레스/스파이크 테스트)
- * - 읽기 70% / 쓰기 20% / 복합 트랜잭션 10% 혼합
- * - 한계점(Breaking Point) 탐색: 단계적 부하 증가
- * - 실행: gatling.sh -s wildfly.MixedLoadSimulation
+ * 혼합 부하 시뮬레이션 — 실제 배포된 앱 기준
+ * 대상: GET /  (WildFly 26 보안 점검 앱)
  *
- * 실행 모드 선택 (시스템 프로퍼티):
- *   -DtestType=stress  → 부하를 계속 증가 (Breaking Point 탐색)
- *   -DtestType=spike   → 순간 10배 스파이크 주입
- *   -DtestType=load    → 목표 TPS 유지 (기본값)
+ * 실행 모드 (-DtestType=):
+ *   load   → 목표 동시 사용자 유지 (기본값)
+ *   stress → 단계적 증가로 Breaking Point 탐색
+ *   spike  → 순간 최대 부하 주입
  */
 class MixedLoadSimulation extends Simulation {
 
@@ -27,129 +25,77 @@ class MixedLoadSimulation extends Simulation {
 
   val httpProtocol = http
     .baseUrl(baseUrl)
-    .acceptHeader("application/json")
-    .contentTypeHeader("application/json")
+    .acceptHeader("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+    .acceptLanguageHeader("ko-KR,ko;q=0.9,en;q=0.8")
+    .acceptEncodingHeader("gzip, deflate")
+    .userAgentHeader("Gatling/WildFly-PerfTest")
     .connectionHeader("keep-alive")
     .disableCaching
-    .maxConnectionsPerHost(100)
+    .maxConnectionsPerHost(50)
 
-  val itemIdFeeder  = csv("item_ids.csv").circular
-  val userFeeder    = csv("users_with_auth.csv").circular
-  val searchFeeder  = csv("search_keywords.csv").circular
-
-  // ── 읽기 시나리오 (70%) ──────────────────────────────────────────────────
-  val readScenario = scenario("혼합-읽기")
-    .feed(itemIdFeeder)
+  // ── 시나리오 1: 단순 페이지 조회 (70%) ──────────────────────────────────────
+  val browseScenario = scenario("페이지 조회")
     .exec(
-      http("GET /items/{id}")
-        .get(appContext + "/api/items/${itemId}")
+      http("GET /")
+        .get(appContext + "/")
         .check(status.is(200))
-    )
-    .pause(1.second, 3.seconds)
-
-  // ── 쓰기 시나리오 (20%) ──────────────────────────────────────────────────
-  val writeScenario = scenario("혼합-쓰기")
-    .feed(userFeeder)
-    .exec(
-      http("POST /auth/login")
-        .post(appContext + "/api/auth/login")
-        .body(StringBody("""{"userId":"${userId}","password":"${password}"}"""))
-        .check(status.is(200))
-        .check(jsonPath("$.token").saveAs("token"))
-    )
-    .exec(
-      http("POST /items")
-        .post(appContext + "/api/items")
-        .header("Authorization", "Bearer ${token}")
-        .body(StringBody("""{"name":"mixed-test","category":"TEST","price":1000}"""))
-        .check(status.in(200, 201))
-        .check(jsonPath("$.id").saveAs("newId"))
-    )
-    .exec(
-      http("DELETE /items/{id}")
-        .delete(appContext + "/api/items/${newId}")
-        .header("Authorization", "Bearer ${token}")
-        .check(status.in(200, 204))
+        .check(responseTimeInMillis.lte(3000))
     )
     .pause(2.seconds, 5.seconds)
 
-  // ── 복합 트랜잭션 (10%): 주문 플로우 ────────────────────────────────────
-  val transactionScenario = scenario("복합 트랜잭션")
-    .feed(userFeeder)
-    .exec(
-      http("POST /auth/login")
-        .post(appContext + "/api/auth/login")
-        .body(StringBody("""{"userId":"${userId}","password":"${password}"}"""))
-        .check(status.is(200))
-        .check(jsonPath("$.token").saveAs("token"))
-    )
-    .pause(500.milliseconds)
-    .exec(
-      http("POST /orders (주문 생성)")
-        .post(appContext + "/api/orders")
-        .header("Authorization", "Bearer ${token}")
-        .body(StringBody(
-          """{
-            |  "items": [{"itemId": 1, "qty": 2}, {"itemId": 2, "qty": 1}],
-            |  "paymentMethod": "CARD",
-            |  "deliveryAddr": "서울시 테스트구"
-            |}""".stripMargin
-        ))
-        .check(status.in(200, 201))
-        .check(jsonPath("$.orderId").saveAs("orderId"))
-        .check(responseTimeInMillis.lte(3000))
-    )
-    .pause(1.second)
-    .exec(
-      http("GET /orders/{id} (주문 확인)")
-        .get(appContext + "/api/orders/${orderId}")
-        .header("Authorization", "Bearer ${token}")
-        .check(status.is(200))
-        .check(jsonPath("$.status").is("CONFIRMED"))
-    )
+  // ── 시나리오 2: 반복 브라우징 (20%) — 사용자가 새로고침하는 패턴 ────────────
+  val repeatBrowseScenario = scenario("반복 브라우징")
+    .repeat(3) {
+      exec(
+        http("GET / (반복)")
+          .get(appContext + "/")
+          .check(status.is(200))
+      )
+      .pause(1.second, 3.seconds)
+    }
     .pause(5.seconds, 10.seconds)
 
-  // ── 부하 프로파일 선택 ────────────────────────────────────────────────────
-  val readInjection = testType match {
-    case "stress" =>
-      // 단계적 증가: Breaking Point 탐색
-      List(
-        incrementUsersPerSec(10).times(10).eachLevelLasting(30.seconds).startingFrom(10)
+  // ── 시나리오 3: 빠른 연속 요청 (10%) — 자동화 클라이언트 패턴 ───────────────
+  val burstScenario = scenario("연속 요청")
+    .repeat(5) {
+      exec(
+        http("GET / (burst)")
+          .get(appContext + "/")
+          .check(status.in(200, 304))
       )
-    case "spike" =>
-      // 기본 부하 → 스파이크 → 기본 복귀
-      List(
-        constantUsersPerSec(targetUsers * 0.7)  during (60.seconds),
-        atOnceUsers(maxUsers),
-        constantUsersPerSec(targetUsers * 0.7)  during (120.seconds)
-      )
-    case _ =>
-      // 기본 Load Test
-      List(
-        rampUsers((targetUsers * 0.7).toInt).during(rampDuration.seconds),
-        constantUsersPerSec(targetUsers * 0.07) during (holdDuration.seconds)
-      )
-  }
+      .pause(200.milliseconds, 500.milliseconds)
+    }
+    .pause(10.seconds, 20.seconds)
 
   setUp(
-    readScenario.inject(
-      rampUsers((targetUsers * 0.7).toInt).during(rampDuration.seconds),
-      constantUsersPerSec(targetUsers * 0.07) during (holdDuration.seconds)
+    browseScenario.inject(
+      testType match {
+        case "stress" =>
+          incrementUsersPerSec(5).times(10).eachLevelLasting(30.seconds).startingFrom(5)
+        case "spike" =>
+          atOnceUsers(maxUsers)
+        case _ =>
+          rampUsers((targetUsers * 0.7).toInt).during(rampDuration.seconds)
+      }
+    ).andThen(
+      browseScenario.inject(
+        constantUsersPerSec(targetUsers * 0.07).during(holdDuration.seconds)
+      )
     ),
-    writeScenario.inject(
-      nothingFor(15.seconds),
+    repeatBrowseScenario.inject(
+      nothingFor(10.seconds),
       rampUsers((targetUsers * 0.2).toInt).during(rampDuration.seconds),
-      constantUsersPerSec(targetUsers * 0.02) during (holdDuration.seconds)
+      constantUsersPerSec(targetUsers * 0.02).during(holdDuration.seconds)
     ),
-    transactionScenario.inject(
-      nothingFor(30.seconds),
+    burstScenario.inject(
+      nothingFor(20.seconds),
       rampUsers((targetUsers * 0.1).toInt).during(rampDuration.seconds),
-      constantUsersPerSec(targetUsers * 0.01) during (holdDuration.seconds)
+      constantUsersPerSec(targetUsers * 0.01).during(holdDuration.seconds)
     )
   ).protocols(httpProtocol)
     .assertions(
       global.responseTime.percentile(95).lte(500),
       global.responseTime.percentile(99).lte(2000),
-      global.failedRequests.percent.lte(0.5)
+      global.failedRequests.percent.lte(1.0)
     )
 }

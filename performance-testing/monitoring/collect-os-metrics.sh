@@ -137,15 +137,15 @@ collect_tcp() {
   if command -v ss &>/dev/null; then
     local ss_out
     ss_out=$(ss -tan 2>/dev/null || echo "")
-    established=$(echo "${ss_out}" | grep -c "^ESTAB"      || echo 0)
-    syn_sent=$(echo    "${ss_out}" | grep -c "SYN-SENT"    || echo 0)
-    syn_recv=$(echo    "${ss_out}" | grep -c "SYN-RECV"    || echo 0)
-    fin_wait1=$(echo   "${ss_out}" | grep -c "FIN-WAIT-1"  || echo 0)
-    fin_wait2=$(echo   "${ss_out}" | grep -c "FIN-WAIT-2"  || echo 0)
-    time_wait=$(echo   "${ss_out}" | grep -c "TIME-WAIT"   || echo 0)
-    close_wait=$(echo  "${ss_out}" | grep -c "CLOSE-WAIT"  || echo 0)
-    last_ack=$(echo    "${ss_out}" | grep -c "LAST-ACK"    || echo 0)
-    listen=$(echo      "${ss_out}" | grep -c "^LISTEN"     || echo 0)
+    established=$(echo "${ss_out}" | grep -c "^ESTAB"      || true)
+    syn_sent=$(echo    "${ss_out}" | grep -c "SYN-SENT"    || true)
+    syn_recv=$(echo    "${ss_out}" | grep -c "SYN-RECV"    || true)
+    fin_wait1=$(echo   "${ss_out}" | grep -c "FIN-WAIT-1"  || true)
+    fin_wait2=$(echo   "${ss_out}" | grep -c "FIN-WAIT-2"  || true)
+    time_wait=$(echo   "${ss_out}" | grep -c "TIME-WAIT"   || true)
+    close_wait=$(echo  "${ss_out}" | grep -c "CLOSE-WAIT"  || true)
+    last_ack=$(echo    "${ss_out}" | grep -c "LAST-ACK"    || true)
+    listen=$(echo      "${ss_out}" | grep -c "^LISTEN"     || true)
   else
     established=0; syn_sent=0; syn_recv=0; fin_wait1=0; fin_wait2=0
     time_wait=0; close_wait=0; last_ack=0; listen=0

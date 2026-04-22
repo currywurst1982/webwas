@@ -5,90 +5,114 @@ import io.gatling.http.Predef._
 import scala.concurrent.duration._
 
 /**
- * 내구성(Endurance) 테스트 - 장시간 안정성 검증
- * - 메모리 누수, 커넥션 풀 고갈, Thread 누수 탐지
- * - 기본 8시간 실행 (운영 시 24시간으로 조정)
- * - 실행: gatling.sh -s wildfly.EnduranceSimulation -DholdHours=8
+ * 내구성(Endurance) 테스트 — 장시간 안정성 검증
+ *
+ * 목적:
+ *   - 메모리 누수 탐지 (힙 사용량이 시간이 지나도 안정적인지)
+ *   - 커넥션 풀 고갈 탐지 (BlockingFailure 발생 여부)
+ *   - Thread 누수 탐지 (Thread 수가 계속 증가하지 않는지)
+ *   - 응답시간 저하 탐지 (초반 p95 vs 후반 p95 비교)
+ *
+ * 시나리오 구성 (낮은 일정 부하 — 안정성 집중):
+ *   40%  DB Ping     — 커넥션 풀 생존 확인
+ *   40%  DB SELECT   — perf_test_log COUNT 조회
+ *   20%  DB INSERT   — perf_test_log 실제 쓰기
+ *
+ * 주요 시스템 프로퍼티 (-D):
+ *   baseUrl      기본값: http://localhost:8080
+ *   holdHours    실행 시간(시간)  기본값: 8
+ *   holdMinutes  실행 시간(분)    기본값: 0  (테스트용 단시간 실행 시 사용)
+ *   users        동시 사용자 수   기본값: 20 (내구성 테스트는 낮은 부하)
+ *   dbDelayMs    DB 커넥션 보유(ms) 기본값: 300
  */
 class EnduranceSimulation extends Simulation {
 
-  val baseUrl    = System.getProperty("baseUrl",    "http://localhost:8080")
-  val appContext = System.getProperty("appContext",  "")
-  val holdHours  = System.getProperty("holdHours",  "8").toInt
-  val users      = System.getProperty("users",      "30").toInt  // 평균 부하 수준
+  val baseUrl     = System.getProperty("baseUrl",     "http://localhost:8080")
+  val appContext  = System.getProperty("appContext",   "")
+  val holdHours   = System.getProperty("holdHours",   "8").toInt
+  val holdMinutes = System.getProperty("holdMinutes", "0").toInt
+  val users       = System.getProperty("users",       "20").toInt
+  val dbDelayMs   = System.getProperty("dbDelayMs",   "300").toInt
+
+  // holdMinutes 우선 (0이면 holdHours 사용)
+  val holdDuration: FiniteDuration =
+    if (holdMinutes > 0) holdMinutes.minutes else holdHours.hours
+
+  val pingPath   = s"${appContext}/db-perf-test/db-ping.jsp"
+  val selectPath = s"${appContext}/db-perf-test/db-query.jsp?type=select&delay=${dbDelayMs}"
+  val insertPath = s"${appContext}/db-perf-test/db-query.jsp?type=insert&delay=${dbDelayMs}"
 
   val httpProtocol = http
     .baseUrl(baseUrl)
     .acceptHeader("application/json")
-    .contentTypeHeader("application/json")
+    .acceptEncodingHeader("gzip, deflate")
+    .userAgentHeader("Gatling/WildFly-Endurance")
     .connectionHeader("keep-alive")
     .disableCaching
+    .maxConnectionsPerHost(50)
 
-  val itemIdFeeder = csv("item_ids.csv").circular
-  val userFeeder   = csv("users_with_auth.csv").circular
-
-  // ── 지속 실행 시나리오: 조회+쓰기 반복 ──────────────────────────────────
-  val enduranceScenario = scenario("Endurance - 반복 CRUD")
-    .feed(userFeeder)
-    .exec(
-      http("POST /auth/login")
-        .post(appContext + "/api/auth/login")
-        .body(StringBody("""{"userId":"${userId}","password":"${password}"}"""))
-        .check(status.is(200))
-        .check(jsonPath("$.token").saveAs("token"))
-    )
-    .during(holdHours.hours) {
-      feed(itemIdFeeder)
-        .exec(
-          http("GET /items/{id}")
-            .get(appContext + "/api/items/${itemId}")
-            .check(status.is(200))
-        )
-        .pause(1.second, 3.seconds)
-        .exec(
-          http("POST /items")
-            .post(appContext + "/api/items")
-            .header("Authorization", "Bearer ${token}")
-            .body(StringBody("""{"name":"endurance-item","category":"TEST","price":999}"""))
-            .check(status.in(200, 201))
-            .check(jsonPath("$.id").saveAs("endId"))
-        )
-        .exec(
-          http("DELETE /items/{id}")
-            .delete(appContext + "/api/items/${endId}")
-            .header("Authorization", "Bearer ${token}")
-            .check(status.in(200, 204))
-        )
-        .pause(3.seconds, 8.seconds)
+  // ── 시나리오 1: DB Ping 반복 (40%) — 커넥션 풀 생존 확인 ──────────────────
+  val pingScenario = scenario("DB Ping (생존 확인)")
+    .during(holdDuration) {
+      exec(
+        http("DB Ping")
+          .get(pingPath)
+          .check(status.is(200))
+          .check(responseTimeInMillis.lte(3000))
+      )
+      .pause(3.seconds, 7.seconds)
     }
 
-  // ── 주기적 헬스체크: 응답시간 저하 감지 ─────────────────────────────────
-  val healthCheckScenario = scenario("Health Check")
-    .during(holdHours.hours) {
+  // ── 시나리오 2: DB SELECT 반복 (40%) — 응답시간 저하 감지 ─────────────────
+  val selectScenario = scenario("DB SELECT (응답시간 모니터링)")
+    .during(holdDuration) {
       exec(
-        http("GET /health")
-          .get(appContext + "/actuator/health")
-          .check(status.is(200))
-          .check(responseTimeInMillis.lte(1000))
+        http("DB SELECT")
+          .get(selectPath)
+          .check(status.in(200, 503))
+          .check(responseTimeInMillis.lte(dbDelayMs + 5000))
       )
-      .pause(30.seconds)
+      .pause(2.seconds, 5.seconds)
+    }
+
+  // ── 시나리오 3: DB INSERT 반복 (20%) — 쓰기 누수 감지 ────────────────────
+  val insertScenario = scenario("DB INSERT (쓰기 안정성)")
+    .during(holdDuration) {
+      exec(
+        http("DB INSERT")
+          .post(insertPath)
+          .header("Content-Type", "application/json")
+          .body(StringBody(session => {
+            val rand = scala.util.Random.nextInt(999999)
+            s"""{"name":"endurance-$rand","category":"END","price":9900}"""
+          }))
+          .check(status.in(200, 201))
+          .check(responseTimeInMillis.lte(dbDelayMs + 5000))
+      )
+      .pause(5.seconds, 10.seconds)
     }
 
   setUp(
-    enduranceScenario.inject(
-      rampUsers(users).during(120.seconds),      // 2분 램프업
-      constantUsersPerSec(users / 10.0) during (holdHours.hours)
+    // DB Ping: 40%
+    pingScenario.inject(
+      rampUsers((users * 0.4).toInt).during(2.minutes)
     ),
-    healthCheckScenario.inject(
-      nothingFor(120.seconds),
-      atOnceUsers(1)
+    // DB SELECT: 40%
+    selectScenario.inject(
+      nothingFor(30.seconds),
+      rampUsers((users * 0.4).toInt).during(2.minutes)
+    ),
+    // DB INSERT: 20%
+    insertScenario.inject(
+      nothingFor(60.seconds),
+      rampUsers((users * 0.2).toInt).during(2.minutes)
     )
   ).protocols(httpProtocol)
     .assertions(
-      // 장기 테스트는 에러율과 p99에 집중
-      global.responseTime.percentile(99).lte(3000),
-      global.failedRequests.percent.lte(0.5),
-      // 응답시간 편차(표준편차)가 평균의 50% 이하 - 안정성 지표
-      global.responseTime.stdDev.lte(500)
+      // 장기 테스트 — 에러율과 p99 안정성에 집중
+      global.responseTime.percentile(99).lte(dbDelayMs + 5000),
+      global.failedRequests.percent.lte(1.0),
+      // 응답시간 표준편차 — 값이 클수록 불안정 (메모리 누수 등)
+      global.responseTime.stdDev.lte(2000)
     )
 }

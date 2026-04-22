@@ -16,10 +16,10 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-  # ── WildFly JVM 메트릭 (JMX Exporter 경유) ──────────────────────────────
+  # ── WildFly JVM 메트릭 (JMX Exporter — 호스트에서 Java agent로 실행) ───
   - job_name: "wildfly-jvm"
     static_configs:
-      - targets: ["jmx-exporter:9404"]
+      - targets: ["172.17.0.1:9404"]   # Docker 기본 게이트웨이 = 호스트
     relabel_configs:
       - source_labels: [__address__]
         target_label: instance

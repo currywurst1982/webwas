@@ -74,16 +74,20 @@ check_health_endpoint() {
   log ""
   log "[ 2. 헬스체크 ]"
 
+  local mgmt_host="${WILDFLY_MGMT_HOST:-127.0.0.1}"
+  local mgmt_port="${WILDFLY_MGMT_PORT:-9990}"
   local endpoints=(
     "${BASE_URL}/health"
     "${BASE_URL}${APP_CONTEXT}/actuator/health"
     "${BASE_URL}${APP_CONTEXT}/api/health"
+    "http://${mgmt_host}:${mgmt_port}/health/live"
+    "http://${mgmt_host}:${mgmt_port}/health"
   )
 
   local checked=false
   for ep in "${endpoints[@]}"; do
     local status_code
-    status_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "${ep}" 2>/dev/null || echo "000")
+    status_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "${ep}" 2>/dev/null || true)
     if [[ "${status_code}" == "200" ]]; then
       ok "헬스체크 정상: ${ep} (${status_code})"
       checked=true
@@ -96,9 +100,9 @@ check_health_endpoint() {
   fi
 
   # WildFly Management API
-  local mgmt_url="http://${WILDFLY_MGMT_HOST:-127.0.0.1}:${WILDFLY_MGMT_PORT:-9990}/management"
+  local mgmt_url="http://${mgmt_host}:${mgmt_port}/management"
   local mgmt_status
-  mgmt_status=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 3 "${mgmt_url}" 2>/dev/null || echo "000")
+  mgmt_status=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 3 "${mgmt_url}" 2>/dev/null || true)
   if [[ "${mgmt_status}" =~ ^[234] ]]; then
     ok "WildFly Management API 접근 가능"
   else
@@ -194,7 +198,7 @@ check_os_resources() {
   # TIME_WAIT 소켓
   if command -v ss &>/dev/null; then
     local time_wait
-    time_wait=$(ss -tan 2>/dev/null | grep -c "TIME-WAIT" || echo 0)
+    time_wait=$(ss -tan 2>/dev/null | grep -c "TIME-WAIT" || true)
     if (( time_wait > 5000 )); then
       warn "TIME_WAIT 소켓 과다: ${time_wait}개 - tcp_tw_reuse=1 설정 권장"
     else

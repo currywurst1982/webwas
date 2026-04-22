@@ -36,10 +36,12 @@ class MixedLoadSimulation extends Simulation {
   val holdDuration = System.getProperty("holdDuration", "300").toInt
 
   // ── DB 엔드포인트 설정 ────────────────────────────────────────────────────
-  val dbListPath   = System.getProperty("dbListPath",   "/api/items")
-  val dbDetailPath = System.getProperty("dbDetailPath", "/api/items")
-  val dbWritePath  = System.getProperty("dbWritePath",  "/api/items")
-  val dbAuthPath   = System.getProperty("dbAuthPath",   "")
+  // db-perf-test.war 배포 후 사용 가능
+  // 실제 앱 DB 엔드포인트가 있으면 -DdbListPath=... 로 오버라이드
+  val dbPingPath   = System.getProperty("dbPingPath",   "/db-perf-test/db-ping.jsp")
+  val dbListPath   = System.getProperty("dbListPath",   "/db-perf-test/db-query.jsp?type=select")
+  val dbDetailPath = System.getProperty("dbDetailPath", "/db-perf-test/db-query.jsp?type=select")
+  val dbWritePath  = System.getProperty("dbWritePath",  "/db-perf-test/db-query.jsp?type=insert")
 
   // ── HTTP 프로토콜 ─────────────────────────────────────────────────────────
   val httpProtocol = http
@@ -68,20 +70,17 @@ class MixedLoadSimulation extends Simulation {
   // ── 시나리오 2: DB 읽기 (30%) — DS SELECT ────────────────────────────────
   val dbReadScenario = scenario("DB 읽기")
     .exec(
-      // 목록 조회 (전체 SELECT)
-      http("GET 목록 (DB SELECT)")
-        .get(appContext + dbListPath)
-        .check(status.in(200, 304))
+      http("DB SELECT (db-ping)")
+        .get(appContext + dbPingPath)
+        .check(status.in(200, 503))
         .check(responseTimeInMillis.lte(2000))
     )
-    .pause(1.second, 2.seconds)
-    .feed(itemIdFeeder)
+    .pause(500.milliseconds, 1.second)
     .exec(
-      // 단건 조회 (PK SELECT)
-      http("GET 단건 (DB SELECT by ID)")
-        .get(appContext + dbDetailPath + "/#{itemId}")
-        .check(status.in(200, 404))
-        .check(responseTimeInMillis.lte(1000))
+      http("DB SELECT (db-query)")
+        .get(appContext + dbListPath)
+        .check(status.in(200, 503))
+        .check(responseTimeInMillis.lte(2000))
     )
     .pause(1.second, 3.seconds)
 

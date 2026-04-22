@@ -292,19 +292,19 @@
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "wildfly_datasource_pool_InUseCount",
+          "expr": "wildfly_datasources_pool_in_use_count{data_source=\"claude\"}",
           "legendFormat": "사용 중 (InUse)"
         },
         {
-          "expr": "wildfly_datasource_pool_AvailableCount",
+          "expr": "wildfly_datasources_pool_available_count{data_source=\"claude\"}",
           "legendFormat": "가용 (Available)"
         },
         {
-          "expr": "wildfly_datasource_pool_WaitCount",
-          "legendFormat": "대기 (Wait)"
+          "expr": "wildfly_datasources_pool_active_count{data_source=\"claude\"}",
+          "legendFormat": "활성 (Active)"
         },
         {
-          "expr": "wildfly_datasource_pool_BlockingFailureCount",
+          "expr": "wildfly_datasources_pool_blocking_failure_count{data_source=\"claude\"}",
           "legendFormat": "획득 실패 (BlockingFailure)"
         }
       ],

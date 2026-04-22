@@ -175,19 +175,19 @@
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "rate(base_gc_G1_Young_Generation_time_seconds_total[1m]) * 1000",
+          "expr": "rate(base_gc_time_total{name=~\".*Young.*\"}[1m])",
           "legendFormat": "Young GC 시간 (ms/s)"
         },
         {
-          "expr": "rate(base_gc_G1_Old_Generation_time_seconds_total[1m]) * 1000",
+          "expr": "rate(base_gc_time_total{name=~\".*Old.*\"}[1m])",
           "legendFormat": "Full GC 시간 (ms/s)"
         },
         {
-          "expr": "rate(base_gc_G1_Young_Generation_count_total[1m])",
+          "expr": "rate(base_gc_total{name=~\".*Young.*\"}[1m])",
           "legendFormat": "Young GC 횟수/s"
         },
         {
-          "expr": "rate(base_gc_G1_Old_Generation_count_total[1m])",
+          "expr": "rate(base_gc_total{name=~\".*Old.*\"}[1m])",
           "legendFormat": "Full GC 횟수/s"
         }
       ],

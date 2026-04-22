@@ -77,7 +77,7 @@ groups:
           severity: critical
         annotations:
           summary: "Swap 사용 감지"
-          description: "Swap {{ $value | humanizeBytes }} 사용 - JVM GC Pause 급증 가능"
+          description: "Swap {{ $value | humanize1024 }}B 사용 - JVM GC Pause 급증 가능"
 
       # ── WildFly Thread 수 급증 ────────────────────────────────────────────
       - alert: ThreadCountHigh

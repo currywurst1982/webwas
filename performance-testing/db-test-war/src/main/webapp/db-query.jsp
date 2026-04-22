@@ -18,17 +18,19 @@
                 }
             }
         } else if ("insert".equals(queryType)) {
-            // DB 쓰기: INSERT 후 DELETE (테스트 데이터 정리)
+            // DB 쓰기: 커넥션 풀 InUse 유도용 SELECT (트랜잭션 포함)
+            // perf_test_log 테이블 의존성 제거 — DUAL SELECT로 InUse 효과 동일
             int rand = ThreadLocalRandom.current().nextInt(1000000);
             try (Connection c = ds.getConnection()) {
                 c.setAutoCommit(false);
                 try (PreparedStatement ps = c.prepareStatement(
-                        "INSERT INTO perf_test_log(name, created_at) VALUES(?, NOW())")) {
-                    ps.setString(1, "perf-" + rand);
-                    ps.executeUpdate();
+                        "SELECT " + rand + " AS rand_val, SYSDATE AS ts FROM DUAL")) {
+                    try (ResultSet r = ps.executeQuery()) {
+                        r.next();
+                    }
                 }
                 c.commit();
-                result = "{\"inserted\":\"perf-" + rand + "\"}";
+                result = "{\"simulated_insert\":\"perf-" + rand + "\"}";
             }
         }
 

@@ -296,12 +296,16 @@
           "legendFormat": "사용 중 (InUse)"
         },
         {
-          "expr": "wildfly_datasources_pool_available_count{data_source=\"claude\"}",
-          "legendFormat": "가용 (Available)"
+          "expr": "wildfly_datasources_pool_max_used_count{data_source=\"claude\"}",
+          "legendFormat": "최대InUse (MaxUsed)"
         },
         {
           "expr": "wildfly_datasources_pool_active_count{data_source=\"claude\"}",
           "legendFormat": "활성 (Active)"
+        },
+        {
+          "expr": "wildfly_datasources_pool_available_count{data_source=\"claude\"}",
+          "legendFormat": "가용 (Available)"
         },
         {
           "expr": "wildfly_datasources_pool_blocking_failure_count{data_source=\"claude\"}",
@@ -311,6 +315,11 @@
       "fieldConfig": {
         "defaults": { "unit": "short" },
         "overrides": [
+          { "matcher": { "id": "byName", "options": "최대InUse (MaxUsed)" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "orange" } }
+            ]
+          },
           { "matcher": { "id": "byName", "options": "획득 실패 (BlockingFailure)" },
             "properties": [
               { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }

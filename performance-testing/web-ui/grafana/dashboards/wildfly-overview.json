@@ -54,17 +54,17 @@
       "targets": [
         {
           "rawQuery": true,
-          "query": "SELECT mean(\"value\") as \"p50\" FROM /gatling\\..+\\.allRequests\\.ok\\.percentiles50/ WHERE $timeFilter GROUP BY time(5s) fill(previous)",
+          "query": "SELECT mean(\"value\") as \"p50\" FROM /gatling\\..+\\.allRequests\\.ok\\.percentiles50/ WHERE $timeFilter GROUP BY time(1s) fill(0)",
           "refId": "A"
         },
         {
           "rawQuery": true,
-          "query": "SELECT mean(\"value\") as \"p95\" FROM /gatling\\..+\\.allRequests\\.ok\\.percentiles95/ WHERE $timeFilter GROUP BY time(5s) fill(previous)",
+          "query": "SELECT mean(\"value\") as \"p95\" FROM /gatling\\..+\\.allRequests\\.ok\\.percentiles95/ WHERE $timeFilter GROUP BY time(1s) fill(0)",
           "refId": "B"
         },
         {
           "rawQuery": true,
-          "query": "SELECT mean(\"value\") as \"p99\" FROM /gatling\\..+\\.allRequests\\.ok\\.percentiles99/ WHERE $timeFilter GROUP BY time(5s) fill(previous)",
+          "query": "SELECT mean(\"value\") as \"p99\" FROM /gatling\\..+\\.allRequests\\.ok\\.percentiles99/ WHERE $timeFilter GROUP BY time(1s) fill(0)",
           "refId": "C"
         }
       ],

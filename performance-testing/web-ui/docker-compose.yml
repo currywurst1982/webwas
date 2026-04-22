@@ -126,6 +126,6 @@ services:
       - "8888:80"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ../../results:/usr/share/nginx/html/results:ro
+      - ../results:/usr/share/nginx/html/results:ro
     networks:
       - perf-net

@@ -95,24 +95,27 @@ collect_ds_stats() {
 collect_undertow_stats() {
   local base="/subsystem=undertow/server=default-server/http-listener=default"
   local req_count bytes_sent bytes_recv
-  req_count=$(run_cli_val  "read-attribute --node=${base} --name=requestCount"  || echo "N/A")
-  bytes_sent=$(run_cli_val "read-attribute --node=${base} --name=bytesSent"     || echo "N/A")
-  bytes_recv=$(run_cli_val "read-attribute --node=${base} --name=bytesReceived" || echo "N/A")
+  req_count=$(run_cli_val  "${base}:read-attribute(name=request-count)"    || echo "N/A")
+  bytes_sent=$(run_cli_val "${base}:read-attribute(name=bytes-sent)"       || echo "N/A")
+  bytes_recv=$(run_cli_val "${base}:read-attribute(name=bytes-received)"   || echo "N/A")
   echo "${req_count},${bytes_sent},${bytes_recv}"
 }
 
 collect_jvm_stats() {
-  local heap_used heap_max thread_count thread_peak
-  heap_used=$(run_cli  "read-attribute --node=/core-service=platform-mbean/type=memory --name=heap-memory-usage" \
-    | grep -oP '"used"\s*=>\s*\K[0-9]+' | head -1 || echo "N/A")
-  heap_max=$(run_cli   "read-attribute --node=/core-service=platform-mbean/type=memory --name=heap-memory-usage" \
-    | grep -oP '"max"\s*=>\s*\K[0-9]+' | head -1 || echo "N/A")
-  thread_count=$(run_cli "read-attribute --node=/core-service=platform-mbean/type=threading --name=thread-count" || echo "N/A")
-  thread_peak=$(run_cli  "read-attribute --node=/core-service=platform-mbean/type=threading --name=peak-thread-count" || echo "N/A")
+  local heap_used="N/A" heap_max="N/A" thread_count="N/A" thread_peak="N/A"
 
-  # MB 변환 (정수 나눗셈)
-  [[ "$heap_used" =~ ^[0-9]+$ ]] && heap_used=$(( heap_used / 1024 / 1024 ))
-  [[ "$heap_max"  =~ ^[0-9]+$ ]] && heap_max=$(( heap_max  / 1024 / 1024 ))
+  # heap-memory-usage는 composite 타입 — 한 번 조회 후 used/max 개별 파싱
+  local raw_heap
+  raw_heap=$(run_cli "/core-service=platform-mbean/type=memory:read-attribute(name=heap-memory-usage)" 2>/dev/null) || true
+  if [[ -n "$raw_heap" ]]; then
+    heap_used=$(echo "$raw_heap" | grep -oP '"used"\s*=>\s*\K[0-9]+' | head -1) || heap_used="N/A"
+    heap_max=$(echo  "$raw_heap" | grep -oP '"max"\s*=>\s*\K[0-9]+'  | head -1) || heap_max="N/A"
+    [[ "$heap_used" =~ ^[0-9]+$ ]] && heap_used=$(( heap_used / 1024 / 1024 ))
+    [[ "$heap_max"  =~ ^[0-9]+$ ]] && heap_max=$(( heap_max  / 1024 / 1024 ))
+  fi
+
+  thread_count=$(run_cli_val "/core-service=platform-mbean/type=threading:read-attribute(name=thread-count)"      || echo "N/A")
+  thread_peak=$(run_cli_val  "/core-service=platform-mbean/type=threading:read-attribute(name=peak-thread-count)" || echo "N/A")
 
   echo "${heap_used},${heap_max},${thread_count},${thread_peak}"
 }
@@ -126,12 +129,16 @@ collect_request_stats() {
 
 log "WildFly 통계 수집 시작 (간격: ${INTERVAL}s) → ${OUTPUT_FILE}"
 
-# Datasource 풀 통계 활성화 (비활성화 상태이면 모든 값이 undefined 반환)
+# Datasource 풀 통계 활성화
 IFS=',' read -ra DS_INIT_ARRAY <<< "${DS_NAMES}"
 for ds_init in "${DS_INIT_ARRAY[@]}"; do
   run_cli "/subsystem=datasources/data-source=${ds_init}:write-attribute(name=statistics-enabled,value=true)" \
     > /dev/null 2>&1 && log "  DS 통계 활성화: ${ds_init}" || log "  ⚠ DS 통계 활성화 실패 (권한 또는 DS명 확인): ${ds_init}"
 done
+
+# Undertow HTTP 리스너 통계 활성화 (request-count, bytes-sent, bytes-received)
+run_cli "/subsystem=undertow/server=default-server/http-listener=default:write-attribute(name=statistics-enabled,value=true)" \
+  > /dev/null 2>&1 && log "  Undertow 통계 활성화" || log "  ⚠ Undertow 통계 활성화 실패"
 
 log "Ctrl+C로 종료"
 

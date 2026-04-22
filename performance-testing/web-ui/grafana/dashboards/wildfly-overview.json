@@ -17,7 +17,13 @@
       "targets": [
         {
           "rawQuery": true,
-          "query": "SELECT non_negative_derivative(mean(\"count\"), 1s) as \"TPS\" FROM \"requestsByStatus\" WHERE $timeFilter GROUP BY time(1s), \"status\" fill(0)"
+          "query": "SELECT non_negative_derivative(mean(\"value\"), 1s) as \"성공 TPS\" FROM /gatling\\..+\\.allRequests\\.ok\\.count/ WHERE $timeFilter GROUP BY time(1s) fill(0)",
+          "refId": "A"
+        },
+        {
+          "rawQuery": true,
+          "query": "SELECT non_negative_derivative(mean(\"value\"), 1s) as \"실패 TPS\" FROM /gatling\\..+\\.allRequests\\.ko\\.count/ WHERE $timeFilter GROUP BY time(1s) fill(0)",
+          "refId": "B"
         }
       ],
       "fieldConfig": {
@@ -48,7 +54,18 @@
       "targets": [
         {
           "rawQuery": true,
-          "query": "SELECT percentile(\"responseTime\", 50) as \"p50\", percentile(\"responseTime\", 95) as \"p95\", percentile(\"responseTime\", 99) as \"p99\" FROM \"requestsByStatus\" WHERE $timeFilter GROUP BY time(5s) fill(previous)"
+          "query": "SELECT mean(\"value\") as \"p50\" FROM /gatling\\..+\\.allRequests\\.ok\\.percentiles50/ WHERE $timeFilter GROUP BY time(5s) fill(previous)",
+          "refId": "A"
+        },
+        {
+          "rawQuery": true,
+          "query": "SELECT mean(\"value\") as \"p95\" FROM /gatling\\..+\\.allRequests\\.ok\\.percentiles95/ WHERE $timeFilter GROUP BY time(5s) fill(previous)",
+          "refId": "B"
+        },
+        {
+          "rawQuery": true,
+          "query": "SELECT mean(\"value\") as \"p99\" FROM /gatling\\..+\\.allRequests\\.ok\\.percentiles99/ WHERE $timeFilter GROUP BY time(5s) fill(previous)",
+          "refId": "C"
         }
       ],
       "fieldConfig": {
@@ -74,8 +91,27 @@
       "targets": [
         {
           "rawQuery": true,
-          "query": "SELECT (sum(\"ko\") / (sum(\"ok\") + sum(\"ko\"))) * 100 as \"error_rate\" FROM \"requestsByStatus\" WHERE $timeFilter"
+          "query": "SELECT last(\"value\") as \"ko\" FROM /gatling\\..+\\.allRequests\\.ko\\.count/ WHERE $timeFilter",
+          "refId": "A"
+        },
+        {
+          "rawQuery": true,
+          "query": "SELECT last(\"value\") as \"all\" FROM /gatling\\..+\\.allRequests\\.all\\.count/ WHERE $timeFilter",
+          "refId": "B"
         }
+      ],
+      "transformations": [
+        { "id": "merge", "options": {} },
+        {
+          "id": "calculateField",
+          "options": {
+            "alias": "에러율",
+            "mode": "binary",
+            "binary": { "left": "ko", "operator": "/", "right": "all", "reducer": "lastNotNull" },
+            "reduce": { "reducer": "lastNotNull" }
+          }
+        },
+        { "id": "filterFieldsByName", "options": { "include": { "names": ["에러율"] } } }
       ],
       "fieldConfig": {
         "defaults": {
@@ -102,7 +138,7 @@
       "targets": [
         {
           "rawQuery": true,
-          "query": "SELECT last(\"active\") as \"users\" FROM \"users\" WHERE $timeFilter"
+          "query": "SELECT last(\"value\") as \"users\" FROM /gatling\\..+\\.users\\.allUsers\\.active/ WHERE $timeFilter"
         }
       ],
       "fieldConfig": {
@@ -120,7 +156,7 @@
       "targets": [
         {
           "rawQuery": true,
-          "query": "SELECT sum(\"count\") as \"total\" FROM \"requestsByStatus\" WHERE $timeFilter"
+          "query": "SELECT last(\"value\") as \"total\" FROM /gatling\\..+\\.allRequests\\.all\\.count/ WHERE $timeFilter"
         }
       ],
       "fieldConfig": {

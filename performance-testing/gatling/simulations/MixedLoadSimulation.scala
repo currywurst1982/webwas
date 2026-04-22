@@ -79,7 +79,7 @@ class MixedLoadSimulation extends Simulation {
     .exec(
       // 단건 조회 (PK SELECT)
       http("GET 단건 (DB SELECT by ID)")
-        .get(appContext + dbDetailPath + "/${itemId}")
+        .get(appContext + dbDetailPath + "/#{itemId}")
         .check(status.in(200, 404))
         .check(responseTimeInMillis.lte(1000))
     )
@@ -91,14 +91,15 @@ class MixedLoadSimulation extends Simulation {
       http("POST 등록 (DB INSERT)")
         .post(appContext + dbWritePath)
         .header("Content-Type", "application/json")
-        .body(StringBody(
+        .body(StringBody(session => {
+          val rand = scala.util.Random.nextInt(999999)
           s"""{
-             |  "name"       : "perf-test-$${__random()}",
+             |  "name"       : "perf-test-$rand",
              |  "category"   : "PERF",
              |  "price"      : 9900,
              |  "description": "Gatling 성능테스트 데이터"
              |}""".stripMargin
-        ))
+        }))
         .check(status.in(200, 201, 400, 404))
         .check(responseTimeInMillis.lte(3000))
     )

@@ -175,19 +175,19 @@
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "rate(base_gc_time_total{name=~\".*Young.*\"}[1m])",
+          "expr": "rate(base_gc_time_total{name=~\"PS Scavenge|G1 Young Generation|Copy\"}[1m])",
           "legendFormat": "Young GC 시간 (ms/s)"
         },
         {
-          "expr": "rate(base_gc_time_total{name=~\".*Old.*\"}[1m])",
+          "expr": "rate(base_gc_time_total{name=~\"PS MarkSweep|G1 Old Generation|MarkSweepCompact\"}[1m])",
           "legendFormat": "Full GC 시간 (ms/s)"
         },
         {
-          "expr": "rate(base_gc_total{name=~\".*Young.*\"}[1m])",
+          "expr": "rate(base_gc_total{name=~\"PS Scavenge|G1 Young Generation|Copy\"}[1m])",
           "legendFormat": "Young GC 횟수/s"
         },
         {
-          "expr": "rate(base_gc_total{name=~\".*Old.*\"}[1m])",
+          "expr": "rate(base_gc_total{name=~\"PS MarkSweep|G1 Old Generation|MarkSweepCompact\"}[1m])",
           "legendFormat": "Full GC 횟수/s"
         }
       ],

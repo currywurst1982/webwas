@@ -16,7 +16,7 @@ groups:
 
       # ── Full GC 발생 감지 ─────────────────────────────────────────────────
       - alert: FullGCDetected
-        expr: increase(base_gc_total{name=~".*Old.*"}[1m]) > 0
+        expr: increase(base_gc_total{name=~"PS MarkSweep|G1 Old Generation|MarkSweepCompact"}[1m]) > 0
         for: 0m
         labels:
           severity: critical

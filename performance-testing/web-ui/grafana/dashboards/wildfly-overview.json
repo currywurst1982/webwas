@@ -137,15 +137,15 @@
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "jvm_memory_used_bytes{area=\"heap\"} / 1024 / 1024",
+          "expr": "base_memory_usedHeap_bytes / 1024 / 1024",
           "legendFormat": "Heap 사용 (MB)"
         },
         {
-          "expr": "jvm_memory_max_bytes{area=\"heap\"} / 1024 / 1024",
+          "expr": "base_memory_maxHeap_bytes / 1024 / 1024",
           "legendFormat": "Heap 최대 (MB)"
         },
         {
-          "expr": "(jvm_memory_used_bytes{area=\"heap\"} / jvm_memory_max_bytes{area=\"heap\"}) * 100",
+          "expr": "(base_memory_usedHeap_bytes / base_memory_maxHeap_bytes) * 100",
           "legendFormat": "Heap 사용률 (%)"
         }
       ],
@@ -175,19 +175,19 @@
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "rate(jvm_gc_collection_seconds_sum{gc=~\"G1 Young.*\"}[1m]) * 1000",
+          "expr": "rate(base_gc_G1_Young_Generation_time_seconds_total[1m]) * 1000",
           "legendFormat": "Young GC 시간 (ms/s)"
         },
         {
-          "expr": "rate(jvm_gc_collection_seconds_sum{gc=~\"G1 Old.*\"}[1m]) * 1000",
+          "expr": "rate(base_gc_G1_Old_Generation_time_seconds_total[1m]) * 1000",
           "legendFormat": "Full GC 시간 (ms/s)"
         },
         {
-          "expr": "rate(jvm_gc_collection_seconds_count{gc=~\"G1 Young.*\"}[1m])",
+          "expr": "rate(base_gc_G1_Young_Generation_count_total[1m])",
           "legendFormat": "Young GC 횟수/s"
         },
         {
-          "expr": "rate(jvm_gc_collection_seconds_count{gc=~\"G1 Old.*\"}[1m])",
+          "expr": "rate(base_gc_G1_Old_Generation_count_total[1m])",
           "legendFormat": "Full GC 횟수/s"
         }
       ],
@@ -310,15 +310,15 @@
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [
         {
-          "expr": "jvm_threads_current",
+          "expr": "base_thread_count",
           "legendFormat": "전체 Thread"
         },
         {
-          "expr": "jvm_threads_daemon",
+          "expr": "base_thread_daemon_count",
           "legendFormat": "Daemon Thread"
         },
         {
-          "expr": "jvm_threads_peak",
+          "expr": "base_thread_max_count",
           "legendFormat": "Peak Thread"
         }
       ],

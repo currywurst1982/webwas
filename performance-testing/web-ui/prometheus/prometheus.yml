@@ -16,10 +16,11 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-  # ── WildFly JVM 메트릭 (JMX Exporter — 호스트에서 Java agent로 실행) ───
+  # ── WildFly JVM 메트릭 (MicroProfile Metrics /metrics 엔드포인트) ──────
   - job_name: "wildfly-jvm"
+    metrics_path: "/metrics"
     static_configs:
-      - targets: ["172.17.0.1:9404"]   # Docker 기본 게이트웨이 = 호스트
+      - targets: ["172.17.0.1:9990"]
     relabel_configs:
       - source_labels: [__address__]
         target_label: instance
@@ -33,22 +34,8 @@ scrape_configs:
         labels:
           host: "wildfly-server"
 
-  # ── WildFly MicroProfile Metrics (/metrics 엔드포인트) ──────────────────
-  # WildFly 26은 MicroProfile Metrics 3.x 내장
-  # standalone.xml에서 미리 활성화 필요:
-  #   /extension=org.wildfly.extension.microprofile.metrics-smallrye:add
-  #   /subsystem=microprofile-metrics-smallrye:add
-  - job_name: "wildfly-microprofile"
-    metrics_path: "/metrics"
-    static_configs:
-      - targets: ["wildfly-host:9990"]   # Management 포트
-    basic_auth:
-      username: "admin"
-      password: "admin123"
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: instance
-        replacement: "wildfly-26"
+  # ── WildFly MicroProfile Metrics — 중복 job 비활성화 (wildfly-jvm으로 통합)
+  # - job_name: "wildfly-microprofile"
 
   # ── Gatling 부하 발생기 자체 메트릭 ──────────────────────────────────────
   # (Gatling Enterprise 사용 시; OSS는 InfluxDB로 대체)

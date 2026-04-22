@@ -6,7 +6,7 @@ groups:
       # ── JVM Heap 사용률 80% 초과 ─────────────────────────────────────────
       - alert: HeapUsageHigh
         expr: |
-          (jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"}) * 100 > 80
+          (base_memory_usedHeap_bytes / base_memory_maxHeap_bytes) * 100 > 80
         for: 1m
         labels:
           severity: warning
@@ -16,7 +16,7 @@ groups:
 
       # ── Full GC 발생 감지 ─────────────────────────────────────────────────
       - alert: FullGCDetected
-        expr: increase(jvm_gc_collection_seconds_count{gc="G1 Old Generation"}[1m]) > 0
+        expr: increase(base_gc_G1_Old_Generation_count_total[1m]) > 0
         for: 0m
         labels:
           severity: critical
@@ -27,7 +27,7 @@ groups:
       # ── GC 오버헤드 10% 초과 ─────────────────────────────────────────────
       - alert: GCOverheadHigh
         expr: |
-          rate(jvm_gc_collection_seconds_sum[1m]) / rate(jvm_gc_collection_seconds_count[1m]) * 100 > 10
+          rate(base_gc_G1_Young_Generation_time_seconds_total[1m]) / (rate(base_gc_G1_Young_Generation_count_total[1m]) + 1) * 100 > 10
         for: 2m
         labels:
           severity: warning

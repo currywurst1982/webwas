@@ -31,7 +31,7 @@ MGMT_USER=${WILDFLY_MGMT_USER:-admin}
 MGMT_PASS=${WILDFLY_MGMT_PASS:-admin}
 
 # 수집할 Datasource 이름 (쉼표 구분, 복수 지원)
-DS_NAMES=${WILDFLY_DS_NAMES:-"ExampleDS"}
+DS_NAMES=${WILDFLY_DS_NAMES:-"claude"}
 
 mkdir -p "${OUTPUT_DIR}"
 

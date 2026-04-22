@@ -12,11 +12,14 @@
 #   -r  램프업 시간(초): 정수 (기본: 60)
 #   -s  테스트 도구   : gatling | jmeter (기본: gatling)
 #   -n  반복 횟수     : 정수 (기본: 1, 최소 3회 권장)
+#   -J  Gatling JVM 프로퍼티 추가 (key=value, 여러 번 사용 가능)
+#       예) -J dbDelayMs=1000 -J testType=stress
 #   -h  도움말
 #
 # 예시:
 #   ./run-load-test.sh -t mixed -u 200 -d 600 -r 60 -n 3
 #   ./run-load-test.sh -t read  -u 100 -d 300 -s jmeter
+#   ./run-load-test.sh -t mixed -u 50  -J dbDelayMs=1000
 # ============================================================
 
 set -euo pipefail
@@ -38,6 +41,7 @@ DURATION=300
 RAMP=60
 TOOL="gatling"
 REPEAT=1
+EXTRA_JVM_PROPS=""
 
 BASE_URL=${BASE_URL:-"http://localhost:8080"}
 APP_CONTEXT=${APP_CONTEXT:-""}
@@ -59,7 +63,7 @@ usage() {
 }
 
 # ── 인자 파싱 ────────────────────────────────────────────────────────────────
-while getopts "t:u:d:r:s:n:h" opt; do
+while getopts "t:u:d:r:s:n:J:h" opt; do
   case "${opt}" in
     t) TEST_TYPE="${OPTARG}" ;;
     u) USERS="${OPTARG}"     ;;
@@ -67,6 +71,7 @@ while getopts "t:u:d:r:s:n:h" opt; do
     r) RAMP="${OPTARG}"      ;;
     s) TOOL="${OPTARG}"      ;;
     n) REPEAT="${OPTARG}"    ;;
+    J) EXTRA_JVM_PROPS="${EXTRA_JVM_PROPS} -D${OPTARG}" ;;
     h) usage                 ;;
     *) die "알 수 없는 옵션. -h로 도움말 확인" ;;
   esac
@@ -194,7 +199,7 @@ run_gatling() {
   fi
 
   # 시스템 프로퍼티는 JAVA_OPTS 로 전달 (반드시 한 줄 — 멀티라인 시 \ 가 리터럴로 처리됨)
-  export JAVA_OPTS="-DbaseUrl=${BASE_URL} -DappContext=${APP_CONTEXT} -DtargetUsers=${USERS} -DrampDuration=${RAMP} -DholdDuration=${DURATION}"
+  export JAVA_OPTS="-DbaseUrl=${BASE_URL} -DappContext=${APP_CONTEXT} -DtargetUsers=${USERS} -DrampDuration=${RAMP} -DholdDuration=${DURATION}${EXTRA_JVM_PROPS}"
 
   local sim_dir="${ROOT_DIR}/gatling/simulations"
   local res_dir="${ROOT_DIR}/gatling/resources"

@@ -1,7 +1,7 @@
 <%@ page import="javax.naming.*,javax.sql.*,java.sql.*" contentType="application/json" pageEncoding="UTF-8" trimDirectiveWhitespaces="true" %><%
     String dsJndi = request.getParameter("ds");
     if (dsJndi == null || dsJndi.isEmpty()) {
-        dsJndi = "java:jboss/datasources/claude";
+        dsJndi = "java:/claude";
     }
     long start = System.currentTimeMillis();
     try {

@@ -1,5 +1,5 @@
 <%@ page import="javax.naming.*,javax.sql.*,java.sql.*,java.util.concurrent.ThreadLocalRandom" contentType="application/json" pageEncoding="UTF-8" trimDirectiveWhitespaces="true" %><%
-    String dsJndi = "java:jboss/datasources/claude";
+    String dsJndi = "java:/claude";
     String queryType = request.getParameter("type");
     if (queryType == null) queryType = "select";
 
@@ -11,7 +11,7 @@
         if ("select".equals(queryType)) {
             // DB 읽기: SELECT 1 row (DS InUse 발생)
             try (Connection c = ds.getConnection();
-                 PreparedStatement ps = c.prepareStatement("SELECT 1 AS id, 'perf-test' AS name FROM DUAL");
+                 PreparedStatement ps = c.prepareStatement("SELECT 1 AS id, 'perf-test' AS name");
                  ResultSet r = ps.executeQuery()) {
                 if (r.next()) {
                     result = "{\"id\":" + r.getInt(1) + ",\"name\":\"" + r.getString(2) + "\"}";
@@ -24,7 +24,7 @@
             try (Connection c = ds.getConnection()) {
                 c.setAutoCommit(false);
                 try (PreparedStatement ps = c.prepareStatement(
-                        "SELECT " + rand + " AS rand_val, SYSDATE AS ts FROM DUAL")) {
+                        "SELECT " + rand + " AS rand_val, NOW() AS ts")) {
                     try (ResultSet r = ps.executeQuery()) {
                         r.next();
                     }

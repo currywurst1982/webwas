@@ -3,8 +3,6 @@
     String queryType = request.getParameter("type");
     if (queryType == null) queryType = "select";
 
-    // delay(ms): 커넥션 보유 시간 시뮬레이션 — pg_sleep 사용
-    // 기본값 500ms: Prometheus 5초 주기에 InUse가 포착되도록
     int delayMs = 500;
     try { delayMs = Integer.parseInt(request.getParameter("delay")); } catch (Exception ignored) {}
     double delaySec = delayMs / 1000.0;
@@ -15,34 +13,52 @@
         String result = "{}";
 
         if ("select".equals(queryType)) {
+            // perf_test_log 실제 SELECT + pg_sleep으로 커넥션 점유
             try (Connection c = ds.getConnection();
                  PreparedStatement ps = c.prepareStatement(
-                     "SELECT pg_sleep(?), 1 AS id, 'perf-test' AS name")) {
+                     "SELECT pg_sleep(?), COUNT(*) AS total, MAX(created_at) AS latest FROM perf_test_log")) {
                 ps.setDouble(1, delaySec);
                 try (ResultSet r = ps.executeQuery()) {
                     if (r.next()) {
-                        result = "{\"id\":" + r.getInt(2) + ",\"name\":\"" + r.getString(3) + "\"}";
+                        result = "{\"total\":" + r.getLong(2)
+                               + ",\"latest\":\"" + r.getString(3) + "\"}";
                     }
                 }
             }
+
         } else if ("insert".equals(queryType)) {
             int rand = ThreadLocalRandom.current().nextInt(1000000);
             try (Connection c = ds.getConnection()) {
                 c.setAutoCommit(false);
-                try (PreparedStatement ps = c.prepareStatement(
-                        "SELECT pg_sleep(?), ? AS rand_val, NOW() AS ts")) {
-                    ps.setDouble(1, delaySec);
-                    ps.setInt(2, rand);
-                    try (ResultSet r = ps.executeQuery()) { r.next(); }
+
+                // pg_sleep으로 실제 DB 처리 시간 시뮬레이션 (커넥션 점유)
+                try (PreparedStatement sleep = c.prepareStatement("SELECT pg_sleep(?)")) {
+                    sleep.setDouble(1, delaySec);
+                    sleep.execute();
                 }
+
+                // 실제 INSERT
+                try (PreparedStatement ins = c.prepareStatement(
+                        "INSERT INTO perf_test_log(name) VALUES(?)")) {
+                    ins.setString(1, "perf-" + rand);
+                    ins.executeUpdate();
+                }
+
+                // 10분 이상 된 테스트 데이터 정리 (테이블 무한 증가 방지)
+                try (PreparedStatement del = c.prepareStatement(
+                        "DELETE FROM perf_test_log WHERE created_at < NOW() - INTERVAL '10 minutes'")) {
+                    del.executeUpdate();
+                }
+
                 c.commit();
-                result = "{\"simulated_insert\":\"perf-" + rand + "\"}";
+                result = "{\"inserted\":\"perf-" + rand + "\"}";
             }
         }
 
         long elapsed = System.currentTimeMillis() - start;
         response.setStatus(200);
-        out.print("{\"status\":\"ok\",\"type\":\"" + queryType + "\",\"delay_ms\":" + delayMs + ",\"ms\":" + elapsed + ",\"data\":" + result + "}");
+        out.print("{\"status\":\"ok\",\"type\":\"" + queryType + "\",\"delay_ms\":" + delayMs
+                + ",\"ms\":" + elapsed + ",\"data\":" + result + "}");
     } catch (Exception e) {
         response.setStatus(503);
         out.print("{\"status\":\"error\",\"reason\":\"" + e.getMessage().replace("\"","'") + "\"}");

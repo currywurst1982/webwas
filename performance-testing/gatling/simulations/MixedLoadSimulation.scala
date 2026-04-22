@@ -8,9 +8,9 @@ import scala.concurrent.duration._
  * 혼합 부하 시뮬레이션 — DB 연동 포함
  *
  * 시나리오 구성:
- *   50%  페이지 조회      — GET /            (정적 응답, DS 미사용)
- *   30%  DB 읽기          — GET /api/items   (DS SELECT)
- *   20%  DB 쓰기          — POST/DELETE      (DS INSERT/DELETE)
+ *   20%  페이지 조회  — GET /                           (DS 미사용)
+ *   50%  DB 읽기      — GET /db-perf-test/db-query.jsp  (DS SELECT + pg_sleep)
+ *   30%  DB 쓰기      — POST db-query.jsp?type=insert   (DS INSERT + pg_sleep)
  *
  * 주요 시스템 프로퍼티 (-D):
  *   baseUrl      기본값: http://localhost:8080
@@ -19,10 +19,8 @@ import scala.concurrent.duration._
  *   rampDuration 기본값: 60  (초)
  *   holdDuration 기본값: 300 (초)
  *   testType     load(기본) | stress | spike
- *   dbListPath   DB 목록 조회 경로  기본값: /api/items
- *   dbDetailPath DB 단건 조회 경로  기본값: /api/items/{id}
- *   dbWritePath  DB 등록 경로       기본값: /api/items
- *   dbAuthPath   로그인 경로        기본값: (없음 — 인증 불필요 시 빈값)
+ *   dbDelayMs    DB 커넥션 보유 시간(ms)  기본값: 500
+ *                InUse 가시화 목적 — 값이 클수록 InUse↑, 처리량↓
  */
 class MixedLoadSimulation extends Simulation {
 
@@ -35,13 +33,15 @@ class MixedLoadSimulation extends Simulation {
   val rampDuration = System.getProperty("rampDuration", "60").toInt
   val holdDuration = System.getProperty("holdDuration", "300").toInt
 
+  // ── DB 지연 설정 ──────────────────────────────────────────────────────────
+  // pg_sleep(N)으로 커넥션을 N ms 동안 점유 → Prometheus 스크래핑(5s)에 InUse 포착
+  // 예상 InUse = (동시 DB 사용자) × (dbDelayMs / 1000) / (think_time 평균)
+  val dbDelayMs = System.getProperty("dbDelayMs", "500").toInt
+
   // ── DB 엔드포인트 설정 ────────────────────────────────────────────────────
-  // db-perf-test.war 배포 후 사용 가능
-  // 실제 앱 DB 엔드포인트가 있으면 -DdbListPath=... 로 오버라이드
-  val dbPingPath   = System.getProperty("dbPingPath",   "/db-perf-test/db-ping.jsp")
-  val dbListPath   = System.getProperty("dbListPath",   "/db-perf-test/db-query.jsp?type=select")
-  val dbDetailPath = System.getProperty("dbDetailPath", "/db-perf-test/db-query.jsp?type=select")
-  val dbWritePath  = System.getProperty("dbWritePath",  "/db-perf-test/db-query.jsp?type=insert")
+  val dbPingPath  = System.getProperty("dbPingPath",  "/db-perf-test/db-ping.jsp")
+  val dbReadPath  = System.getProperty("dbReadPath",  s"/db-perf-test/db-query.jsp?type=select&delay=$dbDelayMs")
+  val dbWritePath = System.getProperty("dbWritePath", s"/db-perf-test/db-query.jsp?type=insert&delay=$dbDelayMs")
 
   // ── HTTP 프로토콜 ─────────────────────────────────────────────────────────
   val httpProtocol = http
@@ -54,10 +54,7 @@ class MixedLoadSimulation extends Simulation {
     .disableCaching
     .maxConnectionsPerHost(50)
 
-  // ── 피더: item_ids.csv 없으면 인라인 기본값 사용 ─────────────────────────
-  val itemIdFeeder = Iterator.continually(Map("itemId" -> (1 + scala.util.Random.nextInt(100)).toString))
-
-  // ── 시나리오 1: 정적 페이지 조회 (50%) — DS 미사용 ───────────────────────
+  // ── 시나리오 1: 정적 페이지 조회 (20%) — DS 미사용 ───────────────────────
   val browseScenario = scenario("페이지 조회")
     .exec(
       http("GET /")
@@ -67,24 +64,25 @@ class MixedLoadSimulation extends Simulation {
     )
     .pause(2.seconds, 5.seconds)
 
-  // ── 시나리오 2: DB 읽기 (30%) — DS SELECT ────────────────────────────────
+  // ── 시나리오 2: DB 읽기 (50%) — DS SELECT + pg_sleep ─────────────────────
   val dbReadScenario = scenario("DB 읽기")
     .exec(
       http("DB SELECT (db-ping)")
         .get(appContext + dbPingPath)
         .check(status.in(200, 503))
-        .check(responseTimeInMillis.lte(2000))
+        .check(responseTimeInMillis.lte(5000))
     )
-    .pause(500.milliseconds, 1.second)
+    .pause(200.milliseconds, 500.milliseconds)
     .exec(
       http("DB SELECT (db-query)")
-        .get(appContext + dbListPath)
+        .get(appContext + dbReadPath)
         .check(status.in(200, 503))
-        .check(responseTimeInMillis.lte(2000))
+        // dbDelayMs + 네트워크 여유분
+        .check(responseTimeInMillis.lte(dbDelayMs + 3000))
     )
-    .pause(1.second, 3.seconds)
+    .pause(500.milliseconds, 1.second)
 
-  // ── 시나리오 3: DB 쓰기 (20%) — DS INSERT + DELETE ───────────────────────
+  // ── 시나리오 3: DB 쓰기 (30%) — DS INSERT + pg_sleep ─────────────────────
   val dbWriteScenario = scenario("DB 쓰기")
     .exec(
       http("POST 등록 (DB INSERT)")
@@ -92,30 +90,25 @@ class MixedLoadSimulation extends Simulation {
         .header("Content-Type", "application/json")
         .body(StringBody(session => {
           val rand = scala.util.Random.nextInt(999999)
-          s"""{
-             |  "name"       : "perf-test-$rand",
-             |  "category"   : "PERF",
-             |  "price"      : 9900,
-             |  "description": "Gatling 성능테스트 데이터"
-             |}""".stripMargin
+          s"""{"name":"perf-test-$rand","category":"PERF","price":9900}"""
         }))
-        .check(status.in(200, 201, 400, 404))
-        .check(responseTimeInMillis.lte(3000))
+        .check(status.in(200, 201, 400, 404, 503))
+        .check(responseTimeInMillis.lte(dbDelayMs + 3000))
     )
-    .pause(2.seconds, 4.seconds)
+    .pause(1.second, 2.seconds)
 
   // ── 부하 주입 패턴 ────────────────────────────────────────────────────────
   private def browseInject = testType match {
     case "stress" =>
       browseScenario.inject(
-        incrementUsersPerSec(5).times(10).eachLevelLasting(30.seconds).startingFrom(5)
+        incrementUsersPerSec(2).times(10).eachLevelLasting(30.seconds).startingFrom(2)
       )
     case "spike" =>
-      browseScenario.inject(atOnceUsers(maxUsers))
+      browseScenario.inject(atOnceUsers((maxUsers * 0.2).toInt))
     case _ =>
       browseScenario.inject(
-        rampUsers((targetUsers * 0.5).toInt).during(rampDuration.seconds),
-        constantUsersPerSec(targetUsers * 0.05).during(holdDuration.seconds)
+        rampUsers((targetUsers * 0.2).toInt).during(rampDuration.seconds),
+        constantUsersPerSec(targetUsers * 0.02).during(holdDuration.seconds)
       )
   }
 
@@ -123,15 +116,15 @@ class MixedLoadSimulation extends Simulation {
     case "stress" =>
       dbReadScenario.inject(
         nothingFor(5.seconds),
-        incrementUsersPerSec(3).times(10).eachLevelLasting(30.seconds).startingFrom(3)
+        incrementUsersPerSec(5).times(10).eachLevelLasting(30.seconds).startingFrom(5)
       )
     case "spike" =>
-      dbReadScenario.inject(atOnceUsers((maxUsers * 0.3).toInt))
+      dbReadScenario.inject(atOnceUsers((maxUsers * 0.5).toInt))
     case _ =>
       dbReadScenario.inject(
         nothingFor(5.seconds),
-        rampUsers((targetUsers * 0.3).toInt).during(rampDuration.seconds),
-        constantUsersPerSec(targetUsers * 0.03).during(holdDuration.seconds)
+        rampUsers((targetUsers * 0.5).toInt).during(rampDuration.seconds),
+        constantUsersPerSec(targetUsers * 0.05).during(holdDuration.seconds)
       )
   }
 
@@ -139,15 +132,15 @@ class MixedLoadSimulation extends Simulation {
     case "stress" =>
       dbWriteScenario.inject(
         nothingFor(10.seconds),
-        incrementUsersPerSec(2).times(8).eachLevelLasting(30.seconds).startingFrom(2)
+        incrementUsersPerSec(3).times(8).eachLevelLasting(30.seconds).startingFrom(3)
       )
     case "spike" =>
-      dbWriteScenario.inject(atOnceUsers((maxUsers * 0.2).toInt))
+      dbWriteScenario.inject(atOnceUsers((maxUsers * 0.3).toInt))
     case _ =>
       dbWriteScenario.inject(
         nothingFor(10.seconds),
-        rampUsers((targetUsers * 0.2).toInt).during(rampDuration.seconds),
-        constantUsersPerSec(targetUsers * 0.02).during(holdDuration.seconds)
+        rampUsers((targetUsers * 0.3).toInt).during(rampDuration.seconds),
+        constantUsersPerSec(targetUsers * 0.03).during(holdDuration.seconds)
       )
   }
 
@@ -157,8 +150,8 @@ class MixedLoadSimulation extends Simulation {
     dbWriteInject
   ).protocols(httpProtocol)
     .assertions(
-      global.responseTime.percentile(95).lte(500),
-      global.responseTime.percentile(99).lte(2000),
+      global.responseTime.percentile(95).lte(dbDelayMs + 2000),
+      global.responseTime.percentile(99).lte(dbDelayMs + 5000),
       global.failedRequests.percent.lte(5.0)
     )
 }

@@ -84,38 +84,20 @@
 
     {
       "id": 3,
-      "title": "❌ 에러율 (%)",
+      "title": "❌ 에러 수 (ko)",
       "type": "stat",
       "gridPos": { "h": 4, "w": 4, "x": 0, "y": 8 },
       "datasource": { "type": "influxdb", "uid": "${DS_INFLUXDB}" },
       "targets": [
         {
           "rawQuery": true,
-          "query": "SELECT last(\"value\") as \"ko\" FROM /gatling\\..+\\.allRequests\\.ko\\.count/ WHERE $timeFilter",
+          "query": "SELECT last(\"value\") as \"에러 수\" FROM /gatling\\..+\\.allRequests\\.ko\\.count/ WHERE $timeFilter",
           "refId": "A"
-        },
-        {
-          "rawQuery": true,
-          "query": "SELECT last(\"value\") as \"all\" FROM /gatling\\..+\\.allRequests\\.all\\.count/ WHERE $timeFilter",
-          "refId": "B"
         }
-      ],
-      "transformations": [
-        { "id": "merge", "options": {} },
-        {
-          "id": "calculateField",
-          "options": {
-            "alias": "에러율",
-            "mode": "binary",
-            "binary": { "left": "ko", "operator": "/", "right": "all", "reducer": "lastNotNull" },
-            "reduce": { "reducer": "lastNotNull" }
-          }
-        },
-        { "id": "filterFieldsByName", "options": { "include": { "names": ["에러율"] } } }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "percent",
+          "unit": "short",
           "thresholds": {
             "steps": [
               { "color": "green", "value": null },

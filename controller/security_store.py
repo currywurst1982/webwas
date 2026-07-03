@@ -116,6 +116,16 @@ def upsert_notice(*, ntt_id: str, product: str, title: str, posted_date: Optiona
         conn.close()
 
 
+def delete_notice(ntt_id: str) -> bool:
+    conn = _conn()
+    try:
+        cur = conn.execute("DELETE FROM security_notice WHERE ntt_id = ?", (ntt_id,))
+        conn.commit()
+        return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
 def get_meta(key: str) -> Optional[str]:
     conn = _conn()
     try:

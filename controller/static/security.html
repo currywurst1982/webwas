@@ -226,7 +226,8 @@ async function checkNow() {
   btn.textContent = '확인 중...';
   try {
     const summary = await api('POST', '/check');
-    toast('확인 완료: ' + summary.scanned + '건 조회, 신규 ' + summary.new + '건');
+    toast('확인 완료: ' + summary.scanned + '건 조회, 신규 ' + summary.new + '건'
+      + (summary.removed ? ', 재검증으로 제외 ' + summary.removed + '건' : ''));
     await Promise.all([loadStatus(), loadNotices()]);
   } catch (e) {
     toast('확인 실패: ' + e.message, 'error');

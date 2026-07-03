@@ -192,14 +192,38 @@ def _extract_recommendation(text: str, product: str) -> Tuple[Optional[str], Opt
     return best_sentence, best_version
 
 
+def _revalidate_existing(errors: List[str]) -> int:
+    """분류 규칙(CONTENT_CONFIRM 등)이 바뀔 때마다, 이미 저장되어 있는
+    글들도 새 규칙으로 다시 검증해서 더 이상 조건을 만족하지 못하면
+    지운다. 이게 없으면 예전 규칙으로 잘못 저장된 글이 검색 재방문
+    순서에 따라 우연히 다시 걸릴 때까지 화면에 계속 남아 있게 된다."""
+    removed = 0
+    for n in security_store.list_notices():
+        confirm = CONTENT_CONFIRM.get(n["product"])
+        if not confirm:
+            continue
+        try:
+            detail_text = _detail_text(_fetch(n["url"]))
+        except (urllib.error.URLError, TimeoutError) as e:
+            errors.append(f"nttId={n['ntt_id']} 재검증 조회 실패: {e}")
+            continue
+        if not confirm.search(detail_text):
+            security_store.delete_notice(n["ntt_id"])
+            removed += 1
+    return removed
+
+
 def run_check() -> Dict:
     """전체 확인 사이클을 한 번 실행한다. 결과 요약 dict를 반환한다."""
     security_store.init_db()
+
+    errors: List[str] = []
+    removed = _revalidate_existing(errors)
+
     known_ntt_ids = {n["ntt_id"] for n in security_store.list_notices()}
     seen_this_run = set()
     found = 0
     new_count = 0
-    errors: List[str] = []
 
     for keyword in SEARCH_KEYWORDS:
         empty_streak = 0
@@ -271,8 +295,9 @@ def run_check() -> Dict:
     security_store.set_meta("last_error", "; ".join(errors) if errors else "")
     security_store.set_meta("last_scanned_count", str(found))
 
-    summary = {"scanned": found, "new": new_count, "errors": errors}
-    logger.info("security_scan: scanned=%d new=%d errors=%d", found, new_count, len(errors))
+    summary = {"scanned": found, "new": new_count, "removed": removed, "errors": errors}
+    logger.info("security_scan: scanned=%d new=%d removed=%d errors=%d",
+                found, new_count, removed, len(errors))
     return summary
 
 

@@ -118,6 +118,17 @@ def get_week(week_id: int) -> Optional[Dict]:
         conn.close()
 
 
+def find_week_by_dates(start_date: str, end_date: str) -> Optional[Dict]:
+    conn = _conn()
+    try:
+        return _row(conn.execute(
+            "SELECT * FROM report_week WHERE start_date = ? AND end_date = ?",
+            (start_date, end_date),
+        ).fetchone())
+    finally:
+        conn.close()
+
+
 def create_week(start_date: str, end_date: str,
                  next_start_date: Optional[str] = None,
                  next_end_date: Optional[str] = None) -> Dict:

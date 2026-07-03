@@ -60,6 +60,12 @@ def seed(path: str) -> int:
         print("[ERROR] 금주 진행 내역 제목에서 날짜를 찾을 수 없습니다 (A9 셀 확인).")
         return 1
 
+    existing = report_store.find_week_by_dates(start_date, end_date)
+    if existing:
+        print(f"[INFO] {start_date} ~ {end_date} 주차가 이미 존재합니다 (#{existing['id']}). "
+              f"기존 데이터를 지우고 다시 가져옵니다.")
+        report_store.delete_week(existing["id"])
+
     week = report_store.create_week(start_date, end_date, next_start, next_end)
     week_id = week["id"]
     print(f"[OK] report_week #{week_id}: {start_date} ~ {end_date} "

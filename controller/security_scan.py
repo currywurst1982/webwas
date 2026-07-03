@@ -82,6 +82,18 @@ PRODUCT_LABELS = {
     "nginx":   "NGINX Open Source",
 }
 
+# KISA는 여러 제품을 한 번에 묶어 다루는 "번들형" 공지(예: OOO 리눅스
+# 배포판 보안 업데이트 권고)도 올리는데, 게시판 검색이 제목뿐 아니라
+# 본문까지 대상으로 해서 이런 글도 검색 결과에 걸려 나온다. 제목만으로는
+# 걸러지지 않으므로, 상세 본문에 실제로 이 정확한 제품명이 있는지
+# 확인한 뒤에만 저장한다 (제목이 아니라 "내용"을 기준으로 확정).
+CONTENT_CONFIRM = {
+    "apache":  re.compile(r"apache\s*http\s*server", re.I),
+    "tomcat":  re.compile(r"tomcat", re.I),
+    "wildfly": re.compile(r"wildfly|jboss", re.I),
+    "nginx":   re.compile(r"nginx\s*open\s*source", re.I),
+}
+
 VERSION_RE = re.compile(
     r"(\d+(?:\.\d+){1,3})\s*(?:버전)?\s*(?:\s*이상|\s*이후|\s*또는\s*상위)")
 
@@ -218,6 +230,12 @@ def run_check() -> Dict:
                     detail_text = _detail_text(_fetch(VIEW_URL.format(ntt_id=c["ntt_id"])))
                 except (urllib.error.URLError, TimeoutError) as e:
                     errors.append(f"nttId={c['ntt_id']} 상세 조회 실패: {e}")
+                    continue
+
+                confirm = CONTENT_CONFIRM.get(c["product"])
+                if confirm and not confirm.search(detail_text):
+                    # 본문에서 정확한 제품명을 확인하지 못함 -> 여러 제품을
+                    # 묶어 다루는 번들형 공지 등으로 보고 저장하지 않는다.
                     continue
 
                 found += 1

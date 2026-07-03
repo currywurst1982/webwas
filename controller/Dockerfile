@@ -11,6 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY controller.py .
 COPY report_store.py .
 COPY report_export.py .
+COPY security_store.py .
+COPY security_scan.py .
 COPY config.yaml .
 COPY static/ static/
 

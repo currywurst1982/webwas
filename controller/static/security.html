@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>보안 업데이트 현황</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0d1117;
+    --surface:   #161b22;
+    --surface2:  #21262d;
+    --border:    #30363d;
+    --text:      #c9d1d9;
+    --dim:       #8b949e;
+    --bright:    #f0f6fc;
+    --critical:  #f85149;
+    --high:      #d29922;
+    --medium:    #388bfd;
+    --low:       #3fb950;
+    --accent:    #1f6feb;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+  }
+
+  header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .logo { font-size: 20px; font-weight: 700; color: var(--bright); letter-spacing: -.5px; }
+  .logo em { color: var(--accent); font-style: normal; }
+  .nav-links { display: flex; align-items: center; gap: 10px; }
+  .nav-link {
+    color: var(--dim); text-decoration: none; font-size: 13px;
+    border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px;
+  }
+  .nav-link:hover { color: var(--bright); border-color: var(--accent); }
+
+  main { max-width: 1200px; margin: 0 auto; padding: 20px 24px 60px; }
+
+  .status-bar {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; margin-bottom: 20px;
+  }
+  .status-bar .dim { color: var(--dim); font-size: 12px; }
+  .status-bar .sep { color: var(--border); }
+
+  button {
+    cursor: pointer; border: 1px solid var(--border); background: var(--surface2);
+    color: var(--text); border-radius: 6px; padding: 6px 12px; font-size: 13px;
+    font-family: inherit; transition: background .15s, border-color .15s;
+  }
+  button:hover { border-color: var(--accent); color: var(--bright); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #388bfd; }
+  button:disabled { opacity: .5; cursor: default; }
+
+  .product-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(560px, 1fr)); gap: 16px;
+  }
+
+  section.card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 18px 20px;
+  }
+  section.card h2 {
+    font-size: 15px; color: var(--bright); display: flex; align-items: center;
+    justify-content: space-between; margin-bottom: 14px;
+  }
+  section.card h2 .title { display: flex; align-items: center; gap: 8px; }
+  section.card h2 .count { color: var(--dim); font-size: 12px; font-weight: 400; }
+
+  .notice { border-top: 1px solid var(--border); padding: 10px 0; }
+  .notice:first-of-type { border-top: none; padding-top: 0; }
+  .notice a.title-link {
+    color: var(--bright); text-decoration: none; font-size: 13.5px; font-weight: 600;
+    display: block; margin-bottom: 4px;
+  }
+  .notice a.title-link:hover { color: var(--medium); text-decoration: underline; }
+  .notice .meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .notice .date { color: var(--dim); font-size: 12px; }
+  .badge {
+    display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px;
+    border-radius: 10px; letter-spacing: .3px;
+  }
+  .badge.version { background: rgba(63,185,80,.12); color: var(--low); border: 1px solid rgba(63,185,80,.3); }
+  .badge.new { background: rgba(210,153,34,.12); color: var(--high); border: 1px solid rgba(210,153,34,.3); }
+  .notice .excerpt { color: var(--dim); font-size: 12.5px; line-height: 1.5; }
+  .empty { color: var(--dim); padding: 16px 0; font-size: 13px; text-align: center; }
+
+  .banner {
+    padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-bottom: 14px;
+  }
+  .banner.error { background: rgba(248,81,73,.1); border: 1px solid rgba(248,81,73,.3); color: var(--critical); }
+  .banner.ok { background: rgba(63,185,80,.1); border: 1px solid rgba(63,185,80,.3); color: var(--low); }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">보안 업데이트 <em>현황</em></div>
+  <div class="nav-links">
+    <a class="nav-link" href="/report">📋 주간 운영 보고서</a>
+    <a class="nav-link" href="/">← 모니터링 대시보드</a>
+  </div>
+</header>
+
+<main>
+  <div id="toast"></div>
+
+  <div class="status-bar">
+    <strong id="last-checked">마지막 확인: 불러오는 중...</strong>
+    <span class="sep">|</span>
+    <span class="dim" id="scanned-count"></span>
+    <button class="primary" id="check-btn" onclick="checkNow()" style="margin-left:auto">🔍 지금 확인하기</button>
+  </div>
+
+  <div id="content" class="product-grid"></div>
+</main>
+
+<script>
+const API = "/api/security";
+const PRODUCTS = [
+  { key: "apache",  label: "Apache HTTP Server" },
+  { key: "tomcat",  label: "Apache Tomcat" },
+  { key: "wildfly", label: "WildFly / JBoss" },
+  { key: "nginx",   label: "Nginx" },
+];
+
+function toast(msg, type) {
+  const el = document.getElementById('toast');
+  el.innerHTML = '<div class="banner ' + (type || 'ok') + '">' + esc(msg) + '</div>';
+  setTimeout(() => { el.innerHTML = ''; }, 4000);
+}
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function api(method, path) {
+  const r = await fetch(API + path, { method });
+  if (!r.ok) {
+    let detail = 'HTTP ' + r.status;
+    try { const j = await r.json(); detail = j.detail || detail; } catch (e) {}
+    throw new Error(detail);
+  }
+  return r.json();
+}
+
+function fmtDateTime(iso) {
+  if (!iso) return "아직 확인한 적 없음";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0')
+    + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+
+function isRecent(iso) {
+  if (!iso) return false;
+  const ageMs = Date.now() - new Date(iso.replace(' ', 'T')).getTime();
+  return ageMs >= 0 && ageMs < 24 * 3600 * 1000;
+}
+
+async function loadStatus() {
+  const s = await api('GET', '/status');
+  document.getElementById('last-checked').textContent = '마지막 확인: ' + fmtDateTime(s.last_checked_at);
+  document.getElementById('scanned-count').textContent =
+    s.last_scanned_count ? ('최근 확인에서 ' + s.last_scanned_count + '건 조회') : '';
+  document.getElementById('check-btn').disabled = !!s.checking;
+  if (s.last_error) {
+    document.getElementById('toast').innerHTML =
+      '<div class="banner error">일부 페이지 확인 중 오류: ' + esc(s.last_error) + '</div>';
+  }
+}
+
+function renderNotices(notices) {
+  const grid = document.getElementById('content');
+  grid.innerHTML = PRODUCTS.map(p => {
+    const rows = notices.filter(n => n.product === p.key);
+    const body = rows.length
+      ? rows.map(n => (
+          '<div class="notice">' +
+            '<a class="title-link" href="' + esc(n.url) + '" target="_blank" rel="noopener">' + esc(n.title) + '</a>' +
+            '<div class="meta">' +
+              '<span class="date">게시일 ' + esc(n.posted_date || '-') + '</span>' +
+              (n.min_version ? '<span class="badge version">권장 버전 ' + esc(n.min_version) + ' 이상</span>' : '') +
+              (isRecent(n.checked_at) ? '<span class="badge new">NEW</span>' : '') +
+            '</div>' +
+            (n.recommendation ? '<div class="excerpt">' + esc(n.recommendation) + '</div>' : '') +
+          '</div>'
+        )).join('')
+      : '<div class="empty">아직 확인된 보안공지가 없습니다.</div>';
+    return (
+      '<section class="card">' +
+        '<h2><span class="title">' + esc(p.label) + '</span><span class="count">' + rows.length + '건</span></h2>' +
+        body +
+      '</section>'
+    );
+  }).join('');
+}
+
+async function loadNotices() {
+  const notices = await api('GET', '/notices');
+  renderNotices(notices);
+}
+
+async function checkNow() {
+  const btn = document.getElementById('check-btn');
+  btn.disabled = true;
+  btn.textContent = '확인 중...';
+  try {
+    const summary = await api('POST', '/check');
+    toast('확인 완료: ' + summary.scanned + '건 조회, 신규 ' + summary.new + '건');
+    await Promise.all([loadStatus(), loadNotices()]);
+  } catch (e) {
+    toast('확인 실패: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔍 지금 확인하기';
+  }
+}
+
+(async function init() {
+  await Promise.all([loadStatus(), loadNotices()]);
+})();
+</script>
+</body>
+</html>

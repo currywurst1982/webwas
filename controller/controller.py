@@ -36,6 +36,8 @@ except ImportError:
 
 import report_export
 import report_store
+import security_scan
+import security_store
 
 # Optional: Anthropic Claude AI
 try:
@@ -207,6 +209,7 @@ if _static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 report_store.init_db()
+security_store.init_db()
 
 
 def _check_key(request: Request) -> bool:
@@ -288,6 +291,7 @@ async def _auto_analyze(anomaly: dict):
 @app.on_event("startup")
 async def _startup():
     asyncio.ensure_future(_offline_checker())
+    asyncio.ensure_future(_security_watch_loop())
     logger.info("Controller listening on %s:%d", HOST, PORT)
 
 
@@ -310,6 +314,28 @@ async def _offline_checker():
                         },
                     )
                 last_offline[agent.server_id] = is_offline
+
+
+# ─── Background: KISA 보안공지 감시 ─────────────────────────────────────────────
+SECURITY_CHECK_INTERVAL_SEC = 24 * 3600
+_security_check_lock = asyncio.Lock()
+
+
+async def run_security_check() -> Dict:
+    """수동/자동 확인이 겹치지 않도록 잠금을 건 뒤 블로킹 스크래핑을
+    스레드에서 실행한다."""
+    async with _security_check_lock:
+        return await asyncio.to_thread(security_scan.run_check)
+
+
+async def _security_watch_loop():
+    # 컨트롤러 시작 직후 한 번 확인하고, 이후 24시간마다 반복한다.
+    while True:
+        try:
+            await run_security_check()
+        except Exception:
+            logger.exception("보안공지 확인 중 오류가 발생했습니다")
+        await asyncio.sleep(SECURITY_CHECK_INTERVAL_SEC)
 
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
@@ -854,6 +880,38 @@ async def export_report_week(week_id: int):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers=headers,
     )
+
+
+# ─── KISA 보안공지 감시 ────────────────────────────────────────────────────────
+@app.get("/security", response_class=HTMLResponse)
+async def security_page():
+    html = _static_dir / "security.html"
+    if html.exists():
+        return HTMLResponse(html.read_text(encoding="utf-8"))
+    return HTMLResponse("<h2>Security page not found</h2><p>static/security.html이 없습니다.</p>", status_code=404)
+
+
+@app.get("/api/security/notices")
+async def list_security_notices(product: Optional[str] = None):
+    return JSONResponse(security_store.list_notices(product))
+
+
+@app.get("/api/security/status")
+async def security_status():
+    return JSONResponse({
+        "last_checked_at": security_store.get_meta("last_checked_at"),
+        "last_error": security_store.get_meta("last_error") or "",
+        "last_scanned_count": security_store.get_meta("last_scanned_count"),
+        "checking": _security_check_lock.locked(),
+    })
+
+
+@app.post("/api/security/check")
+async def trigger_security_check():
+    if _security_check_lock.locked():
+        raise HTTPException(409, "이미 확인이 진행 중입니다")
+    summary = await run_security_check()
+    return JSONResponse(summary)
 
 
 # ─── Entry point ───────────────────────────────────────────────────────────────

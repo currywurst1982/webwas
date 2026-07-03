@@ -45,9 +45,12 @@ LIST_SEARCH_URL = (
 )
 VIEW_URL = f"{BASE}/kr/bbs/view.do?bbsId={BBS_ID}&menuNo={MENU_NO}&nttId={{ntt_id}}"
 
-# 게시판 검색창에 넣을 키워드. 제품 분류 자체는 classify_product()가 제목
-# 전체를 보고 다시 판단하므로, 여기서는 "후보를 넓게 걸러내는 용도"일 뿐이다.
-SEARCH_KEYWORDS = ["Apache", "Tomcat", "WildFly", "JBoss", "Nginx"]
+# 게시판 검색창에 넣을 키워드. KISA는 제품별 정확한 이름으로 공지를
+# 올리기 때문에("Apache HTTP Server 보안 업데이트 권고", "NGINX Open
+# Source 보안 업데이트 권고" 등), 짧은 "Apache"/"Nginx"보다 이 정확한
+# 이름으로 검색해야 관련 없는 다른 Apache/Nginx 계열 프로젝트 공지가
+# 섞이지 않는다.
+SEARCH_KEYWORDS = ["Apache HTTP Server", "Tomcat", "WildFly", "JBoss", "NGINX Open Source"]
 
 MAX_PAGES_PER_KEYWORD = 30   # 안전판: 검색 결과가 끝없이 나올 경우의 상한
 STOP_AFTER_EMPTY_PAGES = 2   # 이미 다 아는 글만 연속 이 페이지 수만큼 나오면 중단
@@ -66,24 +69,17 @@ PRODUCT_RULES = [
     ("apache",  re.compile(r"apache|아파치", re.I)),
 ]
 # "Apache Struts", "Apache Log4j" 처럼 httpd가 아닌 다른 Apache 프로젝트를
-# 다루는 글은 apache(웹서버) 항목으로 잡히지 않도록 제외한다. 제목 단계와
-# (더 엄격하게) 상세 본문 확인 단계 양쪽에서 사용한다.
+# 다루는 글은 apache(웹서버) 항목으로 잡히지 않도록 제외한다 (제목 기준).
 APACHE_EXCLUDE = re.compile(
     r"struts|log4j|commons|kafka|solr|activemq|camel|airflow|superset|"
     r"james|ivy|maven|ant|cxf|karaf|shiro|ofbiz|nifi|"
     r"스트럿츠|커먼즈|카프카", re.I)
 
-# "apache" 검색 결과 중 실제로 Apache 웹서버(httpd)에 대한 공지인지
-# 상세 본문으로 재확인할 때 쓰는 긍정 신호: "HTTP Server"/"httpd"/"웹 서버"
-# 문구, 또는 Apache httpd의 실제 버전 체계인 2.4.x 버전 표기.
-APACHE_HTTPD_CONFIRM = re.compile(r"http\s*server|httpd|웹\s*서버|web\s*server", re.I)
-APACHE_HTTPD_VERSION = re.compile(r"\b2\.4\.\d{1,3}\b")
-
 PRODUCT_LABELS = {
-    "apache":  "Apache 웹서버 (HTTP Server)",
+    "apache":  "Apache HTTP Server",
     "tomcat":  "Apache Tomcat",
     "wildfly": "WildFly / JBoss",
-    "nginx":   "Nginx",
+    "nginx":   "NGINX Open Source",
 }
 
 VERSION_RE = re.compile(
@@ -160,17 +156,6 @@ def _detail_text(detail_html: str) -> str:
     return re.sub(r"\s+", " ", text)
 
 
-def confirm_apache_httpd(title: str, detail_text: str) -> bool:
-    """제목에 'Apache'/'아파치'만 있고 다른 제품명이 없어서 일단 apache
-    후보로 분류된 글이, 실제로 Apache 웹서버(httpd)에 대한 공지인지
-    상세 본문까지 보고 재확인한다. 단순히 "apache"라는 단어가 들어갔다는
-    이유만으로 웹서버로 분류하지 않기 위한 검증 단계다."""
-    combined = title + " " + detail_text
-    if APACHE_EXCLUDE.search(combined):
-        return False
-    return bool(APACHE_HTTPD_CONFIRM.search(combined) or APACHE_HTTPD_VERSION.search(combined))
-
-
 def _extract_recommendation(text: str, product: str) -> Tuple[Optional[str], Optional[str]]:
     """detail 페이지 본문 텍스트에서 product 키워드 주변 문장과, 그 문장에서
     'X.Y.Z 이상' 형태의 최소 권장 버전을 뽑아낸다. 못 찾으면 (None, None)."""
@@ -233,11 +218,6 @@ def run_check() -> Dict:
                     detail_text = _detail_text(_fetch(VIEW_URL.format(ntt_id=c["ntt_id"])))
                 except (urllib.error.URLError, TimeoutError) as e:
                     errors.append(f"nttId={c['ntt_id']} 상세 조회 실패: {e}")
-                    continue
-
-                if c["product"] == "apache" and not confirm_apache_httpd(c["title"], detail_text):
-                    # 제목만 보고는 apache 후보였지만, 본문에서 실제 Apache
-                    # 웹서버(httpd)에 대한 공지임을 확인하지 못했다 -> 건너뜀
                     continue
 
                 found += 1

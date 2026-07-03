@@ -20,19 +20,21 @@ from collections import deque, defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Literal, Optional, Set
+from urllib.parse import quote
 
 try:
     import uvicorn
     import yaml
     from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import HTMLResponse, JSONResponse
+    from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
     from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel
 except ImportError:
     print("[ERROR] Missing dependencies. Run: pip install fastapi 'uvicorn[standard]' pyyaml")
     sys.exit(1)
 
+import report_export
 import report_store
 
 # Optional: Anthropic Claude AI
@@ -827,6 +829,31 @@ async def delete_special_note_row(row_id: int):
     if not report_store.delete_special_note(row_id):
         raise HTTPException(404, "해당 항목을 찾을 수 없습니다")
     return JSONResponse({"status": "ok"})
+
+
+@app.get("/api/report/weeks/{week_id}/export")
+async def export_report_week(week_id: int):
+    """Render the current state of one week's report back into an .xlsx file
+    laid out like the original weekly-report template."""
+    bundle = report_store.get_report_bundle(week_id)
+    if not bundle:
+        raise HTTPException(404, "해당 주간 보고서를 찾을 수 없습니다")
+
+    buf = report_export.build_workbook(bundle)
+    week = bundle["week"]
+    display_name = f"운영보고서_{week['start_date']}_{week['end_date']}.xlsx"
+    ascii_fallback = f"report_{week['start_date']}_{week['end_date']}.xlsx"
+    headers = {
+        "Content-Disposition": (
+            f'attachment; filename="{ascii_fallback}"; '
+            f"filename*=UTF-8''{quote(display_name)}"
+        )
+    }
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
 
 
 # ─── Entry point ───────────────────────────────────────────────────────────────

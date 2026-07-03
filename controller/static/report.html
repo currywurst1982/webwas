@@ -144,6 +144,7 @@
     <button onclick="openWeekModal('create')">+ 새 주차 추가</button>
     <button onclick="openWeekModal('edit')">주차 기간 수정</button>
     <button class="danger" onclick="deleteCurrentWeek()">주차 삭제</button>
+    <button class="primary" onclick="exportToExcel()" style="margin-left:auto">📥 엑셀로 변환하기</button>
   </div>
 
   <div id="content"></div>
@@ -360,6 +361,17 @@ async function deleteCurrentWeek() {
   } catch (e) {
     toast('삭제 실패: ' + e.message, 'error');
   }
+}
+
+function exportToExcel() {
+  if (!currentWeekId) { toast('먼저 조회할 주차를 선택하세요.', 'error'); return; }
+  const a = document.createElement('a');
+  a.href = API + '/weeks/' + currentWeekId + '/export';
+  a.download = '';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  toast('엑셀 파일 다운로드를 시작합니다.');
 }
 
 // ── Modal: generic open/close ────────────────────────────────────────────────

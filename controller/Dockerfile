@@ -9,6 +9,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY controller.py .
+COPY report_store.py .
 COPY config.yaml .
 COPY static/ static/
 

@@ -13,12 +13,13 @@ import asyncio
 import json
 import logging
 import os
+import sqlite3
 import sys
 import uuid
 from collections import deque, defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Literal, Optional, Set
 
 try:
     import uvicorn
@@ -27,9 +28,12 @@ try:
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import HTMLResponse, JSONResponse
     from fastapi.staticfiles import StaticFiles
+    from pydantic import BaseModel
 except ImportError:
     print("[ERROR] Missing dependencies. Run: pip install fastapi 'uvicorn[standard]' pyyaml")
     sys.exit(1)
+
+import report_store
 
 # Optional: Anthropic Claude AI
 try:
@@ -199,6 +203,8 @@ app.add_middleware(
 _static_dir = Path(__file__).parent / "static"
 if _static_dir.exists():
     app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
+report_store.init_db()
 
 
 def _check_key(request: Request) -> bool:
@@ -637,6 +643,190 @@ async def list_tasks(server_id: Optional[str] = None, limit: int = 50):
         tasks = [t for t in tasks if t.server_id == server_id]
     tasks.sort(key=lambda t: t.created_at, reverse=True)
     return JSONResponse([t.to_dict() for t in tasks[:limit]])
+
+
+# ─── Weekly WEB/WAS Operations Report ─────────────────────────────────────────
+class ReportWeekIn(BaseModel):
+    start_date: str
+    end_date: str
+    next_start_date: Optional[str] = None
+    next_end_date: Optional[str] = None
+
+
+class OperationStatusIn(BaseModel):
+    client_name: str
+    sort_order: int = 0
+    last_web: int = 0
+    last_was: int = 0
+    last_dev: int = 0
+    this_web: int = 0
+    this_was: int = 0
+    this_dev: int = 0
+
+
+class WorkLogIn(BaseModel):
+    section: Literal["current", "next"]
+    sort_order: int = 0
+    category: str = ""
+    request_date: str = ""
+    requester: str = ""
+    work_date: str = ""
+    work_content: str = ""
+    web_count: int = 0
+    was_count: int = 0
+    etc_count: int = 0
+
+
+class SpecialNoteIn(BaseModel):
+    sort_order: int = 0
+    category: str = ""
+    note_date: str = ""
+    title: str = ""
+    service_name: str = ""
+    detail: str = ""
+
+
+@app.get("/report", response_class=HTMLResponse)
+async def report_page():
+    html = _static_dir / "report.html"
+    if html.exists():
+        return HTMLResponse(html.read_text(encoding="utf-8"))
+    return HTMLResponse("<h2>Report page not found</h2><p>static/report.html이 없습니다.</p>", status_code=404)
+
+
+@app.get("/api/report/weeks")
+async def list_report_weeks():
+    return JSONResponse(report_store.list_weeks())
+
+
+@app.post("/api/report/weeks")
+async def create_report_week(body: ReportWeekIn):
+    try:
+        week = report_store.create_week(
+            body.start_date, body.end_date, body.next_start_date, body.next_end_date
+        )
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "이미 동일한 기간의 주간 보고서가 존재합니다")
+    return JSONResponse(week)
+
+
+@app.get("/api/report/weeks/{week_id}")
+async def get_report_week(week_id: int):
+    bundle = report_store.get_report_bundle(week_id)
+    if not bundle:
+        raise HTTPException(404, "해당 주간 보고서를 찾을 수 없습니다")
+    return JSONResponse(bundle)
+
+
+@app.put("/api/report/weeks/{week_id}")
+async def update_report_week(week_id: int, body: ReportWeekIn):
+    if not report_store.get_week(week_id):
+        raise HTTPException(404, "해당 주간 보고서를 찾을 수 없습니다")
+    try:
+        week = report_store.update_week(
+            week_id, body.start_date, body.end_date, body.next_start_date, body.next_end_date
+        )
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "이미 동일한 기간의 주간 보고서가 존재합니다")
+    return JSONResponse(week)
+
+
+@app.delete("/api/report/weeks/{week_id}")
+async def delete_report_week(week_id: int):
+    if not report_store.delete_week(week_id):
+        raise HTTPException(404, "해당 주간 보고서를 찾을 수 없습니다")
+    return JSONResponse({"status": "ok"})
+
+
+@app.post("/api/report/weeks/{week_id}/operation-status")
+async def add_operation_status_row(week_id: int, body: OperationStatusIn):
+    if not report_store.get_week(week_id):
+        raise HTTPException(404, "해당 주간 보고서를 찾을 수 없습니다")
+    row = report_store.add_operation_status(
+        week_id, body.client_name, body.sort_order,
+        body.last_web, body.last_was, body.last_dev,
+        body.this_web, body.this_was, body.this_dev,
+    )
+    return JSONResponse(row)
+
+
+@app.put("/api/report/operation-status/{row_id}")
+async def update_operation_status_row(row_id: int, body: OperationStatusIn):
+    row = report_store.update_operation_status(
+        row_id, body.client_name, body.sort_order,
+        body.last_web, body.last_was, body.last_dev,
+        body.this_web, body.this_was, body.this_dev,
+    )
+    if not row:
+        raise HTTPException(404, "해당 항목을 찾을 수 없습니다")
+    return JSONResponse(row)
+
+
+@app.delete("/api/report/operation-status/{row_id}")
+async def delete_operation_status_row(row_id: int):
+    if not report_store.delete_operation_status(row_id):
+        raise HTTPException(404, "해당 항목을 찾을 수 없습니다")
+    return JSONResponse({"status": "ok"})
+
+
+@app.post("/api/report/weeks/{week_id}/work-logs")
+async def add_work_log_row(week_id: int, body: WorkLogIn):
+    if not report_store.get_week(week_id):
+        raise HTTPException(404, "해당 주간 보고서를 찾을 수 없습니다")
+    row = report_store.add_work_log(
+        week_id, body.section, body.sort_order, body.category,
+        body.request_date, body.requester, body.work_date, body.work_content,
+        body.web_count, body.was_count, body.etc_count,
+    )
+    return JSONResponse(row)
+
+
+@app.put("/api/report/work-logs/{row_id}")
+async def update_work_log_row(row_id: int, body: WorkLogIn):
+    row = report_store.update_work_log(
+        row_id, body.section, body.sort_order, body.category,
+        body.request_date, body.requester, body.work_date, body.work_content,
+        body.web_count, body.was_count, body.etc_count,
+    )
+    if not row:
+        raise HTTPException(404, "해당 항목을 찾을 수 없습니다")
+    return JSONResponse(row)
+
+
+@app.delete("/api/report/work-logs/{row_id}")
+async def delete_work_log_row(row_id: int):
+    if not report_store.delete_work_log(row_id):
+        raise HTTPException(404, "해당 항목을 찾을 수 없습니다")
+    return JSONResponse({"status": "ok"})
+
+
+@app.post("/api/report/weeks/{week_id}/special-notes")
+async def add_special_note_row(week_id: int, body: SpecialNoteIn):
+    if not report_store.get_week(week_id):
+        raise HTTPException(404, "해당 주간 보고서를 찾을 수 없습니다")
+    row = report_store.add_special_note(
+        week_id, body.sort_order, body.category, body.note_date,
+        body.title, body.service_name, body.detail,
+    )
+    return JSONResponse(row)
+
+
+@app.put("/api/report/special-notes/{row_id}")
+async def update_special_note_row(row_id: int, body: SpecialNoteIn):
+    row = report_store.update_special_note(
+        row_id, body.sort_order, body.category, body.note_date,
+        body.title, body.service_name, body.detail,
+    )
+    if not row:
+        raise HTTPException(404, "해당 항목을 찾을 수 없습니다")
+    return JSONResponse(row)
+
+
+@app.delete("/api/report/special-notes/{row_id}")
+async def delete_special_note_row(row_id: int):
+    if not report_store.delete_special_note(row_id):
+        raise HTTPException(404, "해당 항목을 찾을 수 없습니다")
+    return JSONResponse({"status": "ok"})
 
 
 # ─── Entry point ───────────────────────────────────────────────────────────────

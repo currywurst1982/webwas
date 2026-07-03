@@ -103,6 +103,7 @@ def seed(path: str) -> int:
     print(f"[OK] work_log (금주): {cur_count}건")
 
     # ── 차주 진행 내역 (header row 28, data starts row 29) ──────────────────
+    # 차주 표는 WEB/WAS 열이 없고 "기타" 하나만 있으며, 그 열이 K(11)에 위치한다.
     next_count = 0
     row = 29
     while _s(ws.cell(row=row, column=2).value):
@@ -113,9 +114,9 @@ def seed(path: str) -> int:
             requester=_s(ws.cell(row=row, column=5).value),
             work_date=_s_date(ws.cell(row=row, column=6).value),
             work_content=_s(ws.cell(row=row, column=7).value),
-            web_count=_n(ws.cell(row=row, column=11).value),
-            was_count=_n(ws.cell(row=row, column=12).value),
-            etc_count=_n(ws.cell(row=row, column=13).value),
+            web_count=0,
+            was_count=0,
+            etc_count=_n(ws.cell(row=row, column=11).value),
         )
         next_count += 1
         row += 1

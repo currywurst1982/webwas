@@ -134,30 +134,34 @@ def _write_operation_status(ws, row: int, ops: List[Dict]) -> int:
     return row + 1
 
 
-def _write_work_log(ws, row: int, title: str, start_date: Optional[str],
-                     end_date: Optional[str], rows: List[Dict]) -> int:
-    label = title + (f" ({start_date}~{end_date})" if start_date and end_date else "")
+def _write_section_title(ws, row: int, label: str, prior_summary: Optional[Dict] = None) -> int:
+    """Title row for a section. When prior_summary is given (the previous
+    work-log section's WEB/WAS/기타 totals), it rides along on this same row,
+    exactly like the original template (차주 진행 내역's title row also carries
+    금주 진행 내역's 전체 작업 수량 totals)."""
     _cell(ws, row, 1, label, bold=True, border=False, align=TITLE_ALIGN)
-    row += 1
+    if prior_summary is not None:
+        _merged(ws, row, 9, 10, "전체 작업 수량", bold=True, fill=TOTAL_FILL, align=CENTER)
+        _cell(ws, row, 11, prior_summary["web"], bold=True, fill=TOTAL_FILL)
+        _cell(ws, row, 12, prior_summary["was"], bold=True, fill=TOTAL_FILL)
+        _cell(ws, row, 13, prior_summary["etc"], bold=True, fill=TOTAL_FILL)
+    return row + 1
 
-    web_sum = sum(r["web_count"] for r in rows)
-    was_sum = sum(r["was_count"] for r in rows)
-    etc_sum = sum(r["etc_count"] for r in rows)
-    _merged(ws, row, 9, 10, "전체 작업 수량", bold=True, fill=TOTAL_FILL, align=CENTER)
-    _cell(ws, row, 11, web_sum, bold=True, fill=TOTAL_FILL)
-    _cell(ws, row, 12, was_sum, bold=True, fill=TOTAL_FILL)
-    _cell(ws, row, 13, etc_sum, bold=True, fill=TOTAL_FILL)
-    row += 1
 
+def _write_work_log_table(ws, row: int, rows: List[Dict], *, show_web_was: bool) -> int:
     _cell(ws, row, 2, "번호", bold=True, align=CENTER_NOWRAP)
     _cell(ws, row, 3, "분류", bold=True, align=CENTER_NOWRAP)
     _cell(ws, row, 4, "요청 일자", bold=True, align=CENTER_NOWRAP)
     _cell(ws, row, 5, "요청자", bold=True, align=CENTER_NOWRAP)
     _cell(ws, row, 6, "작업 일자", bold=True, align=CENTER_NOWRAP)
     _merged(ws, row, 7, 10, "작업 내용", bold=True, align=CENTER_NOWRAP)
-    _cell(ws, row, 11, "WEB", bold=True, align=CENTER_NOWRAP)
-    _cell(ws, row, 12, "WAS", bold=True, align=CENTER_NOWRAP)
-    _cell(ws, row, 13, "기타", bold=True, align=CENTER_NOWRAP)
+    etc_col = 13
+    if show_web_was:
+        _cell(ws, row, 11, "WEB", bold=True, align=CENTER_NOWRAP)
+        _cell(ws, row, 12, "WAS", bold=True, align=CENTER_NOWRAP)
+    else:
+        etc_col = 11
+    _cell(ws, row, etc_col, "기타", bold=True, align=CENTER_NOWRAP)
     row += 1
 
     for i, r in enumerate(rows, start=1):
@@ -167,9 +171,13 @@ def _write_work_log(ws, row: int, title: str, start_date: Optional[str],
         _cell(ws, row, 5, r["requester"], align=CENTER)
         _cell(ws, row, 6, r["work_date"], align=CENTER)
         _merged(ws, row, 7, 10, r["work_content"], align=LEFT)
-        _cell(ws, row, 11, r["web_count"], align=CENTER)
-        _cell(ws, row, 12, r["was_count"], align=CENTER)
-        _cell(ws, row, 13, r["etc_count"], align=CENTER)
+        etc_col = 13
+        if show_web_was:
+            _cell(ws, row, 11, r["web_count"], align=CENTER)
+            _cell(ws, row, 12, r["was_count"], align=CENTER)
+        else:
+            etc_col = 11
+        _cell(ws, row, etc_col, r["etc_count"], align=CENTER)
         ws.row_dimensions[row].height = _row_height_for(r["work_content"])
         row += 1
 
@@ -177,13 +185,10 @@ def _write_work_log(ws, row: int, title: str, start_date: Optional[str],
         _merged(ws, row, 2, LAST_COL, "등록된 작업 이력이 없습니다.", align=CENTER)
         row += 1
 
-    return row + 1
+    return row
 
 
 def _write_special_notes(ws, row: int, rows: List[Dict]) -> int:
-    _cell(ws, row, 1, "특이 사항", bold=True, border=False, align=TITLE_ALIGN)
-    row += 1
-
     _cell(ws, row, 2, "번호", bold=True, align=CENTER_NOWRAP)
     _cell(ws, row, 3, "분류", bold=True, align=CENTER_NOWRAP)
     _cell(ws, row, 4, "일자", bold=True, align=CENTER_NOWRAP)
@@ -217,11 +222,31 @@ def build_workbook(bundle: Dict) -> BytesIO:
     ws.sheet_format.defaultRowHeight = 16.5
     _set_column_widths(ws)
 
+    current_rows = bundle["work_log_current"]
+    next_rows = bundle["work_log_next"]
+    current_summary = {
+        "web": sum(r["web_count"] for r in current_rows),
+        "was": sum(r["was_count"] for r in current_rows),
+        "etc": sum(r["etc_count"] for r in current_rows),
+    }
+
     row = _write_operation_status(ws, 1, bundle["operation_status"])
-    row = _write_work_log(ws, row, "금주 진행 내역", week["start_date"], week["end_date"],
-                           bundle["work_log_current"])
-    row = _write_work_log(ws, row, "차주 진행 내역", week.get("next_start_date"),
-                           week.get("next_end_date"), bundle["work_log_next"])
+
+    current_label = "금주 진행 내역" + (
+        f" ({week['start_date']}~{week['end_date']})" if week["start_date"] and week["end_date"] else "")
+    row = _write_section_title(ws, row, current_label)
+    row = _write_work_log_table(ws, row, current_rows, show_web_was=True)
+
+    # 차주 진행 내역's title row carries 금주 진행 내역's 전체 작업 수량 totals,
+    # exactly like the original template, followed by a breathing blank row.
+    next_start, next_end = week.get("next_start_date"), week.get("next_end_date")
+    next_label = "차주 진행 내역" + (f" ({next_start}~{next_end})" if next_start and next_end else "")
+    row = _write_section_title(ws, row, next_label, prior_summary=current_summary)
+    row += 1
+    row = _write_work_log_table(ws, row, next_rows, show_web_was=False)
+
+    row += 1
+    row = _write_section_title(ws, row, "특이 사항")
     _write_special_notes(ws, row, bundle["special_notes"])
 
     buf = BytesIO()

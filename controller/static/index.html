@@ -1652,11 +1652,15 @@
             style="margin-bottom:8px;background:rgba(248,81,73,.08);border-color:rgba(248,81,73,.4);color:var(--critical);">
             ⚠️ 힙 덤프 파일 생성
           </button>
+          <button class="analysis-run-btn" id="run-hprof_analyze-btn" onclick="runAnalysis('hprof_analyze')" style="margin-bottom:8px">
+            🔬 힙 덤프 파일 분석
+          </button>
         </div>
         <div id="analysis-heap-result">
           <div class="analysis-banner idle">힙 스냅샷, 클래스 히스토그램 또는 힙 덤프 버튼을 눌러 메모리 현황을 수집합니다.</div>
         </div>
         <div id="analysis-histogram-result" style="margin-top:12px"></div>
+        <div id="analysis-hprof_analyze-result" style="margin-top:12px"></div>
       </div>
 
       <!-- 스레드 덤프 탭 -->
@@ -3773,6 +3777,182 @@ const ANALYSIS_CMDS = {
       'echo "ERROR: $(id -un) ALL=(${JAVA_USER:-wildfly}) NOPASSWD: $JCMD"; exit 1; fi',
     ],
   },
+  hprof_analyze: {
+    // 이미 생성된 .hprof 파일 자체를 자체 경량 파서(mmap 기반)로 읽어 클래스별 shallow size /
+    // GC 루트 개수를 집계. JVM에 attach하지 않으므로 sudo/유저 불일치 문제와 무관하며,
+    // 에이전트의 os_command 120초 타임아웃 안에 끝나도록 자체 시간 예산(90초)으로 조기 종료함.
+    os_commands: [
+      'DUMP=/tmp/wildfly_heap.hprof; ' +
+      'if [ ! -f "$DUMP" ]; then echo "ERROR: 힙 덤프 파일이 없습니다 ($DUMP). 먼저 \\"힙 덤프 파일 생성\\" 버튼을 실행하세요."; exit 1; fi; ' +
+      'python3 - "$DUMP" <<\'PYEOF\'\n' +
+      "import sys, struct, json, mmap, time\n" +
+      "\n" +
+      "PRIM_ELEM_SIZE = {4: 1, 5: 2, 6: 4, 7: 8, 8: 1, 9: 2, 10: 4, 11: 8}\n" +
+      "PRIM_TYPE_NAMES = {4: 'boolean[]', 5: 'char[]', 6: 'float[]', 7: 'double[]',\n" +
+      "                   8: 'byte[]', 9: 'short[]', 10: 'int[]', 11: 'long[]'}\n" +
+      "\n" +
+      "# tag -> (bytes after the leading id to skip, root-name)\n" +
+      "ROOT_TAGS = {\n" +
+      "    0xff: ('UNKNOWN', 0), 0x01: ('JNI_GLOBAL', 8), 0x02: ('JNI_LOCAL', 8),\n" +
+      "    0x03: ('JAVA_FRAME', 8), 0x04: ('NATIVE_STACK', 4), 0x05: ('STICKY_CLASS', 0),\n" +
+      "    0x06: ('THREAD_BLOCK', 4), 0x07: ('MONITOR_USED', 0), 0x08: ('THREAD_OBJECT', 8),\n" +
+      "}\n" +
+      "\n" +
+      "\n" +
+      "def parse_hprof(path, top_n=30, time_budget_sec=90):\n" +
+      "    # A production heap dump can be several GB; the agent's os_command executor\n" +
+      "    # enforces a hard 120s subprocess timeout, so we self-limit well under that\n" +
+      "    # and report a partial result instead of letting the whole task time out.\n" +
+      "    hist = {}\n" +
+      "    roots = {}\n" +
+      "    class_names = {}\n" +
+      "    strings = {}\n" +
+      "    errors = 0\n" +
+      "    truncated = False\n" +
+      "    deadline = time.monotonic() + time_budget_sec\n" +
+      "    sub_record_count = 0\n" +
+      "\n" +
+      "    with open(path, 'rb') as fh:\n" +
+      "        mm = mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ)\n" +
+      "    try:\n" +
+      "        size = len(mm)\n" +
+      "        pos = mm.find(b'\\x00')\n" +
+      "        if pos < 0:\n" +
+      "            raise ValueError('invalid hprof header')\n" +
+      "        header = mm[0:pos].decode('ascii', 'replace')\n" +
+      "        pos += 1\n" +
+      "        id_size, = struct.unpack_from('>I', mm, pos); pos += 4\n" +
+      "        pos += 8  # timestamp hi/lo\n" +
+      "\n" +
+      "        u32 = struct.Struct('>I').unpack_from\n" +
+      "        u16 = struct.Struct('>H').unpack_from\n" +
+      "\n" +
+      "        def read_id(p):\n" +
+      "            if id_size == 8:\n" +
+      "                return int.from_bytes(mm[p:p + 8], 'big'), p + 8\n" +
+      "            return int.from_bytes(mm[p:p + id_size], 'big'), p + id_size\n" +
+      "\n" +
+      "        while pos < size:\n" +
+      "            if truncated:\n" +
+      "                break\n" +
+      "            tag = mm[pos]; pos += 1\n" +
+      "            if pos + 8 > size:\n" +
+      "                break\n" +
+      "            length, = u32(mm, pos + 4)\n" +
+      "            pos += 8\n" +
+      "            body_end = pos + length\n" +
+      "\n" +
+      "            if tag == 0x01:  # STRING\n" +
+      "                sid, pos = read_id(pos)\n" +
+      "                strings[sid] = mm[pos:body_end].decode('utf-8', 'replace')\n" +
+      "                pos = body_end\n" +
+      "            elif tag == 0x02:  # LOAD_CLASS\n" +
+      "                pos += 4\n" +
+      "                cid, pos = read_id(pos)\n" +
+      "                pos += 4\n" +
+      "                nid, pos = read_id(pos)\n" +
+      "                class_names[cid] = strings.get(nid, '0x%x' % (nid or 0)).replace('/', '.')\n" +
+      "                pos = body_end\n" +
+      "            elif tag in (0x0c, 0x1c):  # HEAP_DUMP / HEAP_DUMP_SEGMENT\n" +
+      "                while pos < body_end:\n" +
+      "                    sub_record_count += 1\n" +
+      "                    if sub_record_count % 200000 == 0 and time.monotonic() > deadline:\n" +
+      "                        truncated = True\n" +
+      "                        break\n" +
+      "                    sub = mm[pos]; pos += 1\n" +
+      "                    if sub in ROOT_TAGS:\n" +
+      "                        name, extra = ROOT_TAGS[sub]\n" +
+      "                        pos += id_size + extra\n" +
+      "                        roots[name] = roots.get(name, 0) + 1\n" +
+      "                    elif sub == 0x20:  # CLASS_DUMP\n" +
+      "                        cid, pos = read_id(pos)\n" +
+      "                        pos += 4                       # stack trace serial\n" +
+      "                        pos += id_size * 6              # super/loader/signers/domain/reserved x2\n" +
+      "                        pos += 4                        # instance size (unused)\n" +
+      "                        cp_count, = u16(mm, pos); pos += 2\n" +
+      "                        for _ in range(cp_count):\n" +
+      "                            pos += 2\n" +
+      "                            ftype = mm[pos]; pos += 1\n" +
+      "                            pos += id_size if ftype == 2 else PRIM_ELEM_SIZE.get(ftype, 1)\n" +
+      "                        sf_count, = u16(mm, pos); pos += 2\n" +
+      "                        for _ in range(sf_count):\n" +
+      "                            pos += id_size  # name string id\n" +
+      "                            ftype = mm[pos]; pos += 1\n" +
+      "                            pos += id_size if ftype == 2 else PRIM_ELEM_SIZE.get(ftype, 1)\n" +
+      "                        if_count, = u16(mm, pos); pos += 2\n" +
+      "                        pos += if_count * (id_size + 1)\n" +
+      "                    elif sub == 0x21:  # INSTANCE_DUMP\n" +
+      "                        pos += id_size + 4              # obj id + stack trace serial\n" +
+      "                        cid, pos = read_id(pos)\n" +
+      "                        nbytes, = u32(mm, pos); pos += 4\n" +
+      "                        pos += nbytes                    # field bytes — never inspected\n" +
+      "                        cname = class_names.get(cid, '0x%x' % (cid or 0))\n" +
+      "                        e = hist.get(cname)\n" +
+      "                        if e is None:\n" +
+      "                            hist[cname] = [1, nbytes]\n" +
+      "                        else:\n" +
+      "                            e[0] += 1; e[1] += nbytes\n" +
+      "                    elif sub == 0x22:  # OBJECT_ARRAY_DUMP\n" +
+      "                        pos += id_size + 4\n" +
+      "                        num_elems, = u32(mm, pos); pos += 4\n" +
+      "                        acid, pos = read_id(pos)\n" +
+      "                        pos += num_elems * id_size\n" +
+      "                        cname = class_names.get(acid, '0x%x' % (acid or 0))\n" +
+      "                        nbytes = num_elems * id_size\n" +
+      "                        e = hist.get(cname)\n" +
+      "                        if e is None:\n" +
+      "                            hist[cname] = [1, nbytes]\n" +
+      "                        else:\n" +
+      "                            e[0] += 1; e[1] += nbytes\n" +
+      "                    elif sub == 0x23:  # PRIMITIVE_ARRAY_DUMP\n" +
+      "                        pos += id_size + 4\n" +
+      "                        num_elems, = u32(mm, pos); pos += 4\n" +
+      "                        etype = mm[pos]; pos += 1\n" +
+      "                        esize = PRIM_ELEM_SIZE.get(etype, 1)\n" +
+      "                        pos += num_elems * esize\n" +
+      "                        cname = PRIM_TYPE_NAMES.get(etype, 'primitive[]')\n" +
+      "                        nbytes = num_elems * esize\n" +
+      "                        e = hist.get(cname)\n" +
+      "                        if e is None:\n" +
+      "                            hist[cname] = [1, nbytes]\n" +
+      "                        else:\n" +
+      "                            e[0] += 1; e[1] += nbytes\n" +
+      "                    else:\n" +
+      "                        # Unrecognized sub-record — resync to the segment end.\n" +
+      "                        errors += 1\n" +
+      "                        pos = body_end\n" +
+      "                        break\n" +
+      "            else:\n" +
+      "                pos = body_end\n" +
+      "    finally:\n" +
+      "        mm.close()\n" +
+      "\n" +
+      "    total_instances = sum(c for c, _ in hist.values())\n" +
+      "    total_bytes = sum(b for _, b in hist.values())\n" +
+      "    top = sorted(hist.items(), key=lambda kv: kv[1][1], reverse=True)[:top_n]\n" +
+      "    return {\n" +
+      "        'hprof_header': header,\n" +
+      "        'identifier_size': id_size,\n" +
+      "        'total_classes_seen': len(hist),\n" +
+      "        'total_instances': total_instances,\n" +
+      "        'total_bytes': total_bytes,\n" +
+      "        'gc_roots': roots,\n" +
+      "        'top_classes': [{'class_name': n, 'instances': c, 'bytes': b} for n, (c, b) in top],\n" +
+      "        'parse_incomplete': errors > 0 or truncated,\n" +
+      "        'time_limited': truncated,\n" +
+      "    }\n" +
+      "\n" +
+      "\n" +
+      "if __name__ == '__main__':\n" +
+      "    try:\n" +
+      "        result = parse_hprof(sys.argv[1], top_n=25, time_budget_sec=90)\n" +
+      "    except Exception as exc:\n" +
+      "        result = {'error': str(exc)}\n" +
+      "    print(json.dumps(result))\n" +
+      'PYEOF'
+,
+    ],
+  },
   threads: [
     '/core-service=platform-mbean/type=threading:read-attribute(name=thread-count)',
     '/core-service=platform-mbean/type=threading:read-attribute(name=peak-thread-count)',
@@ -3853,7 +4033,8 @@ async function runAnalysis(type) {
   const btn      = document.getElementById(btnId);
   const result   = document.getElementById(resultId);
   const labels = {
-    gc:'📊 GC 분석 실행', heap:'💾 힙 스냅샷 수집', histogram:'🧮 클래스별 메모리 히스토그램', heapdump:'⚠️ 힙 덤프 파일 생성', threads:'🧵 스레드 덤프 수집',
+    gc:'📊 GC 분석 실행', heap:'💾 힙 스냅샷 수집', histogram:'🧮 클래스별 메모리 히스토그램', heapdump:'⚠️ 힙 덤프 파일 생성',
+    hprof_analyze:'🔬 힙 덤프 파일 분석', threads:'🧵 스레드 덤프 수집',
     apache_status:'📡 서버 상태 수집', apache_access:'📋 접속 로그 분석', apache_errors:'⚠️ 에러 로그 수집',
   };
   if (btn) { btn.disabled = true; btn.className = 'analysis-run-btn running'; btn.textContent = '⏳ 수집 중…'; }
@@ -3893,6 +4074,7 @@ function _handleAnalysisResult(td) {
   const hasData = td.result?.success || hasDmr ||
                   (info.type === 'heapdump' && output.length > 0) ||
                   (info.type === 'histogram' && output.length > 0) ||
+                  (info.type === 'hprof_analyze' && output.length > 0) ||
                   (isApacheType && output.length > 0);
   if (!td.result || !hasData) {
     result.innerHTML = '<div class="analysis-banner warn">❌ 분석 실패: ' + esc(error || '알 수 없는 오류') + '</div>';
@@ -3902,6 +4084,7 @@ function _handleAnalysisResult(td) {
   else if (info.type === 'heap')           result.innerHTML = _renderHeapAnalysis(output);
   else if (info.type === 'histogram')      result.innerHTML = _renderClassHistogram(output);
   else if (info.type === 'heapdump')       result.innerHTML = _renderHeapDump(output);
+  else if (info.type === 'hprof_analyze')  result.innerHTML = _renderHprofAnalysis(output);
   else if (info.type === 'threads')        result.innerHTML = _renderThreadDump(output);
   else if (info.type === 'apache_status')  result.innerHTML = _renderApacheStatus(output);
   else if (info.type === 'apache_access')  result.innerHTML = _renderApacheAccess(output);
@@ -4451,6 +4634,100 @@ function _renderClassHistogram(output) {
       '<tbody>' + tableRows + '</tbody>' +
     '</table>' +
     _rawBlock(output, 'histogram-raw');
+}
+// ── .hprof File Analysis Render (custom lightweight mmap-based parser) ───────
+var GC_ROOT_LABELS = {
+  JNI_GLOBAL: 'JNI 전역 참조', JNI_LOCAL: 'JNI 지역 참조', JAVA_FRAME: 'Java 스택 프레임',
+  NATIVE_STACK: '네이티브 스택', STICKY_CLASS: '클래스 (항상 유지)', THREAD_BLOCK: '스레드 블록',
+  MONITOR_USED: '모니터 락', THREAD_OBJECT: '스레드 객체', UNKNOWN: '알 수 없음',
+};
+
+function _renderHprofAnalysis(output) {
+  var trimmed = (output || '').trim();
+  if (!trimmed) {
+    return '<div class="analysis-banner warn">❌ 분석 결과가 비어 있습니다</div>';
+  }
+  if (trimmed.indexOf('ERROR:') >= 0 && trimmed.indexOf('{') !== 0) {
+    // Shell-level failure before Python even ran (e.g. dump file not found yet)
+    var errLine = (trimmed.match(/ERROR:\s*(.+)/) || [])[1] || trimmed;
+    return '<div class="analysis-banner warn">❌ ' + esc(errLine.trim()) + '</div>';
+  }
+
+  var data;
+  try { data = JSON.parse(trimmed); }
+  catch (e) {
+    return '<div class="analysis-banner warn">❌ 분석 결과를 해석할 수 없습니다</div>' + _rawBlock(output, 'hprof-raw');
+  }
+  if (data.error) {
+    return '<div class="analysis-banner warn">❌ 힙 덤프 파일 분석 실패: ' + esc(data.error) + '</div>' + _rawBlock(output, 'hprof-raw');
+  }
+
+  var top          = data.top_classes || [];
+  var maxBytes      = top.length ? top[0].bytes : 1;
+  var totalBytes    = data.total_bytes || 0;
+  var totalInstances = data.total_instances || 0;
+
+  var recs = [];
+  if (data.time_limited) {
+    recs.push({icon:'⏱️', text: '파일이 커서 90초 시간 예산 내에 분석을 다 마치지 못했습니다 — 위 수치는 <strong>일부(부분) 결과</strong>입니다.'});
+  }
+  if (top[0] && totalBytes) {
+    var top1Pct = Math.round(top[0].bytes / totalBytes * 100);
+    if (top1Pct >= 40) {
+      recs.push({icon:'🚨', text: '<code>' + esc(top[0].class_name) + '</code> 클래스가 분석된 힙의 ' + top1Pct + '%를 차지합니다 — 해당 타입의 생성/보관 경로를 우선 점검하세요.'});
+    }
+  }
+  var suspects = [
+    {re:/^byte\[\]$/,                label:'byte[] 배열'},
+    {re:/^char\[\]$/,                label:'char[] 배열'},
+    {re:/^java\.lang\.String$/,      label:'String'},
+    {re:/HashMap\$Node/,             label:'HashMap 엔트리'},
+    {re:/^java\.util\.LinkedList/,   label:'LinkedList 노드'},
+  ];
+  top.slice(0, 5).forEach(function(r){
+    suspects.forEach(function(p){
+      if (p.re.test(r.class_name) && r.instances > 100000) {
+        recs.push({icon:'⚠️', text: p.label + '(<code>' + esc(r.class_name) + '</code>) 인스턴스가 ' + r.instances.toLocaleString() + '개 — 문자열/컬렉션 누수 여부를 점검하세요.'});
+      }
+    });
+  });
+
+  var tableRows = top.map(function(r){
+    var pct = maxBytes ? Math.min(100, Math.round(r.bytes / maxBytes * 100)) : 0;
+    return '<tr><td style="word-break:break-all">' + esc(r.class_name) + '</td>' +
+      '<td>' + r.instances.toLocaleString() + '</td>' +
+      '<td>' + esc(_fmtBytes(r.bytes)) +
+        '<div class="analysis-bar-wrap" style="width:80px"><div class="analysis-bar-fill ' + _barCls(pct) + '" style="width:' + pct + '%"></div></div>' +
+      '</td></tr>';
+  }).join('');
+
+  var rootsEntries = Object.keys(data.gc_roots || {}).sort(function(a,b){ return data.gc_roots[b]-data.gc_roots[a]; });
+  var rootsRows = rootsEntries.map(function(k){
+    return '<tr><td>' + esc(GC_ROOT_LABELS[k] || k) + '</td><td>' + (data.gc_roots[k]||0).toLocaleString() + '</td></tr>';
+  }).join('');
+
+  return '<div class="analysis-banner ' + (data.time_limited ? 'warn' : 'ok') + '">' +
+      (data.time_limited ? '⏱️ 힙 덤프 파일 분석 완료(일부)' : '✅ 힙 덤프 파일 분석 완료') +
+      ' — 총 ' + (data.total_classes_seen||0).toLocaleString() + '개 클래스, ' +
+      _fmtBytes(totalBytes) + ' / ' + totalInstances.toLocaleString() + '개 인스턴스' +
+    '</div>' +
+    _recsBlock(recs) +
+    '<div class="analysis-recs-title" style="margin:0 0 6px">클래스별 메모리 사용량 (상위 ' + top.length + '개)</div>' +
+    '<table class="analysis-table" style="margin-bottom:14px">' +
+      '<thead><tr><th>클래스</th><th>인스턴스 수</th><th>메모리</th></tr></thead>' +
+      '<tbody>' + tableRows + '</tbody>' +
+    '</table>' +
+    (rootsRows ? '<div class="analysis-recs-title" style="margin:0 0 6px">GC 루트 개수</div>' +
+      '<table class="analysis-table" style="margin-bottom:14px">' +
+        '<thead><tr><th>루트 종류</th><th>개수</th></tr></thead>' +
+        '<tbody>' + rootsRows + '</tbody>' +
+      '</table>' : '') +
+    '<div style="background:rgba(255,166,87,.05);border:1px solid rgba(255,166,87,.2);border-radius:6px;padding:10px 14px;font-size:12px;color:var(--dim);margin-bottom:12px">' +
+      '💡 이 값은 파일에 저장된 필드 데이터만 합산한 <strong>근사치</strong>입니다 — 객체 헤더 오버헤드나 ' +
+      '<code style="color:var(--medium)">java.lang.Class</code> 자체 인스턴스는 실제보다 적게 집계될 수 있습니다. ' +
+      '정확한 리크 원인(누가 이 객체를 참조하는지)까지 추적하려면 Eclipse MAT 등 전용 도구로 분석하세요.' +
+    '</div>' +
+    _rawBlock(output, 'hprof-raw');
 }
 
 function _renderHeapDump(output) {

@@ -1641,9 +1641,12 @@
 
       <!-- 힙 분석 탭 -->
       <div class="analysis-tab-content" id="analysis-tab-heap">
-        <div style="display:flex;gap:8px;margin-bottom:0">
+        <div style="display:flex;gap:8px;margin-bottom:0;flex-wrap:wrap">
           <button class="analysis-run-btn" id="run-heap-btn" onclick="runAnalysis('heap')" style="margin-bottom:8px">
             💾 힙 스냅샷 수집
+          </button>
+          <button class="analysis-run-btn" id="run-histogram-btn" onclick="runAnalysis('histogram')" style="margin-bottom:8px">
+            🧮 클래스별 메모리 히스토그램
           </button>
           <button class="analysis-run-btn" id="run-heapdump-btn" onclick="runAnalysis('heapdump')"
             style="margin-bottom:8px;background:rgba(248,81,73,.08);border-color:rgba(248,81,73,.4);color:var(--critical);">
@@ -1651,8 +1654,9 @@
           </button>
         </div>
         <div id="analysis-heap-result">
-          <div class="analysis-banner idle">힙 스냅샷 또는 힙 덤프 버튼을 눌러 메모리 현황을 수집합니다.</div>
+          <div class="analysis-banner idle">힙 스냅샷, 클래스 히스토그램 또는 힙 덤프 버튼을 눌러 메모리 현황을 수집합니다.</div>
         </div>
+        <div id="analysis-histogram-result" style="margin-top:12px"></div>
       </div>
 
       <!-- 스레드 덤프 탭 -->
@@ -3701,6 +3705,37 @@ const ANALYSIS_CMDS = {
     // GC 유형에 무관하게 전체 메모리 풀을 한 번에 조회
     '/core-service=platform-mbean/type=memory-pool:read-children-resources(child-type=name,include-runtime=true)',
   ],
+  histogram: {
+    // jcmd GC.class_histogram / jmap -histo:live 로 클래스별 인스턴스·메모리 사용량 조회
+    // (.hprof 파일을 만들지 않고 텍스트로 바로 받아오므로 파일 전송/파싱이 필요 없음)
+    os_commands: [
+      'JAVA_PID=$(pgrep -f "jboss-modules.jar" 2>/dev/null | head -1); ' +
+      'if [ -z "$JAVA_PID" ]; then JAVA_PID=$(pgrep -af "java" 2>/dev/null | grep -i "standalone\\|wildfly\\|jboss" | awk \'{print $1}\' | head -1); fi; ' +
+      'if [ -z "$JAVA_PID" ]; then echo "ERROR: WildFly JVM process not found"; exit 1; fi; ' +
+      'echo "WildFly PID: $JAVA_PID"; ' +
+      'JAVA_USER=$(stat -c "%U" /proc/"$JAVA_PID" 2>/dev/null); ' +
+      'JCMD=$(command -v jcmd 2>/dev/null); JMAP=$(command -v jmap 2>/dev/null); ' +
+      'RUN_AS=""; if [ -n "$JAVA_USER" ] && [ "$JAVA_USER" != "$(id -un)" ]; then RUN_AS="sudo -n -u $JAVA_USER"; fi; ' +
+      'OUT=""; ' +
+      // 1) jcmd GC.class_histogram (동일 유저면 바로, 다르면 sudo 경유)
+      'if [ -n "$JCMD" ]; then ' +
+      '  echo "Trying: ${RUN_AS:+sudo -u $JAVA_USER }jcmd GC.class_histogram..."; ' +
+      '  OUT=$($RUN_AS "$JCMD" "$JAVA_PID" GC.class_histogram 2>&1); ' +
+      'fi; ' +
+      // 2) jmap -histo:live 폴백
+      'if ! echo "$OUT" | grep -q "#instances" && [ -n "$JMAP" ]; then ' +
+      '  echo "Trying: ${RUN_AS:+sudo -u $JAVA_USER }jmap -histo:live..."; ' +
+      '  OUT=$($RUN_AS "$JMAP" -histo:live "$JAVA_PID" 2>&1); ' +
+      'fi; ' +
+      'if echo "$OUT" | grep -q "#instances"; then echo "$OUT"; ' +
+      'else ' +
+      '  echo "HISTOGRAM_FAILED"; echo "$OUT"; ' +
+      '  echo "ERROR: jcmd/jmap 실행 실패 — 유저 불일치라면 /etc/sudoers에 다음을 추가하세요:"; ' +
+      '  echo "ERROR: $(id -un) ALL=(${JAVA_USER:-wildfly}) NOPASSWD: $JCMD"; ' +
+      '  exit 1; ' +
+      'fi',
+    ],
+  },
   heapdump: {
     // jcmd / jmap 을 통한 힙 덤프 생성 (유저 불일치 시 sudo + jmap -F 폴백)
     os_commands: [
@@ -3818,7 +3853,7 @@ async function runAnalysis(type) {
   const btn      = document.getElementById(btnId);
   const result   = document.getElementById(resultId);
   const labels = {
-    gc:'📊 GC 분석 실행', heap:'💾 힙 스냅샷 수집', heapdump:'⚠️ 힙 덤프 파일 생성', threads:'🧵 스레드 덤프 수집',
+    gc:'📊 GC 분석 실행', heap:'💾 힙 스냅샷 수집', histogram:'🧮 클래스별 메모리 히스토그램', heapdump:'⚠️ 힙 덤프 파일 생성', threads:'🧵 스레드 덤프 수집',
     apache_status:'📡 서버 상태 수집', apache_access:'📋 접속 로그 분석', apache_errors:'⚠️ 에러 로그 수집',
   };
   if (btn) { btn.disabled = true; btn.className = 'analysis-run-btn running'; btn.textContent = '⏳ 수집 중…'; }
@@ -3857,6 +3892,7 @@ function _handleAnalysisResult(td) {
   const isApacheType  = info.type.startsWith('apache_');
   const hasData = td.result?.success || hasDmr ||
                   (info.type === 'heapdump' && output.length > 0) ||
+                  (info.type === 'histogram' && output.length > 0) ||
                   (isApacheType && output.length > 0);
   if (!td.result || !hasData) {
     result.innerHTML = '<div class="analysis-banner warn">❌ 분석 실패: ' + esc(error || '알 수 없는 오류') + '</div>';
@@ -3864,6 +3900,7 @@ function _handleAnalysisResult(td) {
   }
   if      (info.type === 'gc')             result.innerHTML = _renderGcAnalysis(output);
   else if (info.type === 'heap')           result.innerHTML = _renderHeapAnalysis(output);
+  else if (info.type === 'histogram')      result.innerHTML = _renderClassHistogram(output);
   else if (info.type === 'heapdump')       result.innerHTML = _renderHeapDump(output);
   else if (info.type === 'threads')        result.innerHTML = _renderThreadDump(output);
   else if (info.type === 'apache_status')  result.innerHTML = _renderApacheStatus(output);
@@ -4343,6 +4380,77 @@ function _renderHeapAnalysis(output) {
     '💡 힙 덤프 파일 생성은 <strong>"⚠️ 힙 덤프 파일 생성"</strong> 버튼을 사용하세요.<br>' +
     '생성된 파일은 에이전트 서버의 <code style="color:var(--medium)">/tmp/wildfly_heap.hprof</code>에 저장됩니다.' +
     '</div>' + _rawBlock(output, 'heap-raw');
+}
+// ── Class Histogram Render (jcmd GC.class_histogram / jmap -histo:live) ───────
+function _parseHistogramRows(output) {
+  var rows = [], total = null;
+  var lines = output.split('\n');
+  for (var i = 0; i < lines.length; i++) {
+    var m = lines[i].match(/^\s*(\d+):\s+(\d+)\s+(\d+)\s+(\S.*?)\s*$/);
+    if (m) {
+      rows.push({num: parseInt(m[1],10), instances: parseInt(m[2],10), bytes: parseInt(m[3],10), className: m[4]});
+      continue;
+    }
+    var tm = lines[i].match(/^Total\s+(\d+)\s+(\d+)/);
+    if (tm) total = {instances: parseInt(tm[1],10), bytes: parseInt(tm[2],10)};
+  }
+  return {rows: rows, total: total};
+}
+
+function _renderClassHistogram(output) {
+  var parsed = _parseHistogramRows(output);
+  var rows = parsed.rows, total = parsed.total;
+  if (!rows.length) {
+    return '<div class="analysis-banner warn">❌ 히스토그램 조회 실패: 클래스 데이터를 찾을 수 없습니다</div>' +
+      _rawBlock(output, 'histogram-raw');
+  }
+  rows.sort(function(a,b){ return b.bytes - a.bytes; });
+  var top          = rows.slice(0, 20);
+  var maxBytes      = top.length ? top[0].bytes : 1;
+  var totalBytes    = total ? total.bytes     : rows.reduce(function(s,r){ return s+r.bytes; }, 0);
+  var totalInstances = total ? total.instances : rows.reduce(function(s,r){ return s+r.instances; }, 0);
+
+  var recs = [];
+  if (top[0] && totalBytes) {
+    var top1Pct = Math.round(top[0].bytes / totalBytes * 100);
+    if (top1Pct >= 40) {
+      recs.push({icon:'🚨', text: '<code>' + esc(top[0].className) + '</code> 클래스가 전체 힙의 ' + top1Pct + '%를 차지합니다 — 해당 타입의 생성/보관 경로를 우선 점검하세요.'});
+    }
+  }
+  var suspects = [
+    {re:/^\[B\b/,                    label:'byte[] 배열'},
+    {re:/^\[C\b/,                    label:'char[] 배열'},
+    {re:/^java\.lang\.String\b/,     label:'String'},
+    {re:/^java\.util\.HashMap\$Node/,label:'HashMap 엔트리'},
+    {re:/^java\.util\.LinkedList/,   label:'LinkedList 노드'},
+  ];
+  top.slice(0, 5).forEach(function(r){
+    suspects.forEach(function(p){
+      if (p.re.test(r.className) && r.instances > 100000) {
+        recs.push({icon:'⚠️', text: p.label + '(<code>' + esc(r.className) + '</code>) 인스턴스가 ' + r.instances.toLocaleString() + '개 — 문자열/컬렉션 누수 여부를 점검하세요.'});
+      }
+    });
+  });
+
+  var tableRows = top.map(function(r){
+    var pct = maxBytes ? Math.min(100, Math.round(r.bytes / maxBytes * 100)) : 0;
+    return '<tr><td>' + r.num + '</td>' +
+      '<td style="word-break:break-all">' + esc(r.className) + '</td>' +
+      '<td>' + r.instances.toLocaleString() + '</td>' +
+      '<td>' + esc(_fmtBytes(r.bytes)) +
+        '<div class="analysis-bar-wrap" style="width:80px"><div class="analysis-bar-fill ' + _barCls(pct) + '" style="width:' + pct + '%"></div></div>' +
+      '</td></tr>';
+  }).join('');
+
+  return '<div class="analysis-banner ok">✅ 클래스 히스토그램 조회 완료 — 총 ' + rows.length.toLocaleString() + '개 클래스' +
+      (total ? (', ' + _fmtBytes(totalBytes) + ' / ' + totalInstances.toLocaleString() + '개 인스턴스') : '') +
+    '</div>' +
+    _recsBlock(recs) +
+    '<table class="analysis-table" style="margin-bottom:14px">' +
+      '<thead><tr><th>#</th><th>클래스</th><th>인스턴스 수</th><th>메모리</th></tr></thead>' +
+      '<tbody>' + tableRows + '</tbody>' +
+    '</table>' +
+    _rawBlock(output, 'histogram-raw');
 }
 
 function _renderHeapDump(output) {

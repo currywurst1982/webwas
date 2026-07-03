@@ -61,19 +61,25 @@ def _rows(rs: List[sqlite3.Row]) -> List[Dict]:
     return [dict(r) for r in rs]
 
 
-def list_notices(product: Optional[str] = None) -> List[Dict]:
+def list_notices(product: Optional[str] = None, since: Optional[str] = None) -> List[Dict]:
+    """since가 주어지면 posted_date가 그보다 오래된 글은 제외한다
+    (posted_date를 못 읽은 글은 날짜를 알 수 없으므로 계속 보여준다)."""
+    conditions = []
+    params: List[str] = []
+    if product:
+        conditions.append("product = ?")
+        params.append(product)
+    if since:
+        conditions.append("(posted_date IS NULL OR posted_date >= ?)")
+        params.append(since)
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
     conn = _conn()
     try:
-        if product:
-            rows = conn.execute(
-                "SELECT * FROM security_notice WHERE product = ? "
-                "ORDER BY posted_date DESC, id DESC",
-                (product,),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM security_notice ORDER BY posted_date DESC, id DESC"
-            ).fetchall()
+        rows = conn.execute(
+            f"SELECT * FROM security_notice {where} ORDER BY posted_date DESC, id DESC",
+            params,
+        ).fetchall()
         return _rows(rows)
     finally:
         conn.close()

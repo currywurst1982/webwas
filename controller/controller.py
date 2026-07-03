@@ -893,7 +893,7 @@ async def security_page():
 
 @app.get("/api/security/notices")
 async def list_security_notices(product: Optional[str] = None):
-    return JSONResponse(security_store.list_notices(product))
+    return JSONResponse(security_store.list_notices(product, since=security_scan.SCAN_SINCE_DATE))
 
 
 @app.get("/api/security/status")

@@ -1,0 +1,45 @@
+# ScouterAPM 모니터링 프로그램 설정
+# 사용 전 config.yaml 로 복사한 뒤 환경에 맞게 값을 수정하세요.
+#   cp config.example.yaml config.yaml
+
+scouter:
+  host: 183.111.151.101
+  # ScouterAPM의 6100 포트는 에이전트/구 TCP 클라이언트용 collector 포트입니다.
+  # 이 도구는 Scouter의 공식 HTTP Web API(v1)를 사용하므로, 별도의 http_port(기본 6180 내장형 / 6188 standalone)로 접속합니다.
+  # 서버 관리자에게 net_http_port 값과 net_http_api_allow_ips 허용 여부를 확인하세요.
+  http_port: 6188
+  use_https: false
+  timeout_sec: 5
+
+  auth:
+    # mode: ip      -> 서버의 net_http_api_allow_ips 에 이 도구가 실행되는 IP를 등록 (별도 로그인 불필요, 권장)
+    # mode: session -> id/password 로 로그인 후 세션 쿠키 사용
+    # mode: bearer  -> 미리 발급받은 토큰을 token 에 직접 입력
+    mode: ip
+    id: ""
+    password: ""
+    token: ""
+
+  # 모니터링 대상 오브젝트 타입 (Scouter 기준: was, host, mysql, php ... 등). 보통 WAS 인스턴스는 "was".
+  object_types:
+    - was
+
+  poll_interval_sec: 30
+
+# 이상 감지 임계값 (환경에 맞게 조정하세요)
+thresholds:
+  heap_usage_pct: 85        # HeapTotUsage(%) 이 이 값을 넘으면 OOM 위험으로 판단
+  perm_usage_pct: 85        # PermPercent(%)
+  gc_time_ms: 3000          # 최근 수집 주기 동안 GcTime(ms) 누적이 이 값을 넘으면 GC 스래싱 의심
+  elapsed_avg_ms: 3000      # ElapsedTime 평균 응답시간(ms)
+  elapsed_90pct_ms: 5000    # Elapsed90%(ms)
+  error_rate_pct: 5         # ErrorRate(%)
+  active_service_count: 100 # 동시 실행중인 서비스 수(ActiveService)
+  hang_elapsed_ms: 10000    # 개별 실행중 트랜잭션이 이 시간(ms) 이상 실행중이면 "행(hang)" 의심
+
+notify:
+  console: true
+  # Slack Incoming Webhook URL (비워두면 콘솔 출력만 사용)
+  slack_webhook_url: ""
+  # 동일 (오브젝트, 카테고리) 조합에 대해 재알림을 억제하는 시간(초)
+  cooldown_sec: 300

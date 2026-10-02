@@ -1,0 +1,23 @@
+{
+  "name": "wildfly-dashboard",
+  "version": "1.0.0",
+  "description": "WildFly monitoring dashboard: server info, heap/metaspace, datasources, thread dump and heap dump analysis",
+  "main": "server.js",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "mock": "DASHBOARD_MOCK=true node server.js",
+    "add-user": "node scripts/add-user.js",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "chart.js": "^4.5.1",
+    "express": "^4.22.3",
+    "express-session": "^1.19.0",
+    "multer": "^2.4.0"
+  }
+}

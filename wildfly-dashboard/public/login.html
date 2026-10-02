@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WildFly Dashboard 로그인</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <main class="login-wrap">
+    <form class="login-card" id="login-form" autocomplete="on">
+      <div class="brand-mark">WF</div>
+      <h1>WildFly Dashboard</h1>
+      <p class="muted" style="margin:0">계속하려면 로그인하세요.</p>
+      <label for="username">아이디</label>
+      <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+      <label for="password">비밀번호</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+      <button class="btn primary" type="submit" id="submit">로그인</button>
+      <div class="form-error" id="error" role="alert"></div>
+    </form>
+  </main>
+  <script src="/static/js/login.js"></script>
+</body>
+</html>

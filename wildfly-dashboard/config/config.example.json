@@ -1,0 +1,32 @@
+{
+  "port": 9080,
+  "host": "0.0.0.0",
+  "dataDir": "./data",
+  "mock": false,
+  "secureCookie": false,
+  "sessionTimeoutMinutes": 30,
+  "requestTimeoutMs": 15000,
+  "heapDump": {
+    "maxUploadMB": 8192,
+    "jcmd": "/usr/lib/jvm/java-21/bin/jcmd"
+  },
+  "servers": [
+    {
+      "id": "prod-01",
+      "name": "운영 WildFly #1",
+      "url": "http://127.0.0.1:9990/management",
+      "username": "monitor",
+      "password": "change-me",
+      "allowLocalHeapDump": true
+    },
+    {
+      "id": "prod-02",
+      "name": "운영 WildFly #2 (원격)",
+      "url": "https://10.0.12.35:9993/management",
+      "username": "monitor",
+      "password": "change-me",
+      "allowLocalHeapDump": false,
+      "rejectUnauthorized": false
+    }
+  ]
+}

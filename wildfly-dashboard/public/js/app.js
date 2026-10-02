@@ -14,6 +14,7 @@ const state = {
   view: 'overview',
   timer: null,
   history: [], // memory samples for the charts
+  dsHistory: {}, // datasource name -> in-use connection samples
   charts: {},
   threads: null,
   heapPoll: null,
@@ -106,7 +107,7 @@ const isAdmin = () => state.user && state.user.role === 'admin';
 
 // ---------------------------------------------------------------- navigation
 const TITLES = {
-  overview: '서버 정보', memory: '메모리 (Heap / Metaspace)', datasources: 'DB 데이터소스',
+  overview: '대시보드', memory: '메모리 (Heap / Metaspace)', datasources: 'DB 데이터소스',
   threads: '쓰레드 덤프', heap: '힙 덤프 분석', users: '사용자 관리',
 };
 function setView(view) {
@@ -114,6 +115,7 @@ function setView(view) {
   $$('.nav-item[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
   $$('[data-view-panel]').forEach((p) => { p.hidden = p.dataset.viewPanel !== view; });
   $('#view-title').textContent = TITLES[view];
+  $('#view-crumb').textContent = TITLES[view];
   try { sessionStorage.setItem('wfdash.view', view); } catch (_) { /* storage unavailable */ }
   refresh();
   schedule();
@@ -145,47 +147,158 @@ async function refresh(auto = false) {
 }
 
 // ---------------------------------------------------------------- overview
+const ICONS = {
+  server: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/></svg>',
+  heap: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="6" width="16" height="12" rx="1.5"/><path d="M8 2v4M12 2v4M16 2v4M8 18v4M12 18v4M16 18v4"/></svg>',
+  meta: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>',
+  threads: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h13"/></svg>',
+};
+
+function kpi(icon, color, label, value, sub, extra = '') {
+  return `<div class="card kpi"><div class="kpi-icon ${color}">${ICONS[icon]}</div>
+    <div class="body"><div class="label">${label} ${extra}</div><div class="value">${value}</div><div class="sub">${sub}</div></div></div>`;
+}
+
+/** Circular gauge; colour follows status thresholds, the value is always printed inside. */
+function ring(pct, label, sub) {
+  const r = 34; const c = 2 * Math.PI * r;
+  const has = pct !== null && pct !== undefined && !Number.isNaN(pct);
+  const v = has ? Math.max(0, Math.min(100, pct)) : 0;
+  const color = !has ? 'var(--axis)' : v >= 90 ? 'var(--critical)' : v >= 75 ? 'var(--warning)' : 'var(--series-1)';
+  return `<div><div class="ring" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${has ? v.toFixed(0) : ''}" aria-label="${esc(label)}">
+      <svg viewBox="0 0 80 80"><circle cx="40" cy="40" r="${r}" fill="none" stroke="var(--track)" stroke-width="7"/>
+      <circle cx="40" cy="40" r="${r}" fill="none" stroke="${color}" stroke-width="7" stroke-linecap="round"
+        stroke-dasharray="${(c * v) / 100} ${c}"/></svg>
+      <div class="val">${has ? `${v.toFixed(0)}%` : '-'}</div></div>
+    <div class="ring-label">${esc(label)}</div><div class="ring-sub">${esc(sub)}</div></div>`;
+}
+
+/** Tiny area sparkline (single series, no axes) with a native tooltip. */
+function sparkline(values, color = 'var(--series-1)', title = '') {
+  const pts = values.filter((v) => v !== null && v !== undefined);
+  if (pts.length < 2) return '<span class="muted" style="font-size:11.5px">수집 중…</span>';
+  const w = 120; const h = 30; const max = Math.max(...pts); const min = Math.min(...pts);
+  const span = max - min || 1;
+  const xy = pts.map((v, i) => [((i / (pts.length - 1)) * w).toFixed(1), (h - 2 - ((v - min) / span) * (h - 6)).toFixed(1)]);
+  const line = xy.map(([x, y], i) => `${i ? 'L' : 'M'}${x},${y}`).join('');
+  const id = `sg${Math.random().toString(36).slice(2, 8)}`;
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="${esc(title)}">
+    <title>${esc(title)}</title>
+    <defs><linearGradient id="${id}" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="${color}" stop-opacity=".45"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs>
+    <path d="${line}L${w},${h}L0,${h}Z" fill="url(#${id})"/><path d="${line}" fill="none" stroke="${color}" stroke-width="1.5"/></svg>`;
+}
+
+const SKYLINE = '<svg class="skyline" viewBox="0 0 600 70" preserveAspectRatio="none" fill="currentColor"><path d="M0 70V48h18V36h14v12h10V22h20v26h12V40h16v30h8V30h12V14h6v16h10v40h14V44h22v26h10V34h18v36h8V20h4V8h4v12h6v50h16V42h12v28h20V30h24v40h8V50h16v20h10V26h14v44h12V38h18v32h10V18h6v52h18V46h14v24h22V34h16v36h12V44h20v26h16V28h12v42h26V40h12v30h18V50h20v20z"/></svg>';
+
 async function loadOverview() {
-  const [info, mem] = await Promise.all([
+  const [info, mem, ds] = await Promise.all([
     api(`/servers/${state.server.id}/info`),
     sampleMemory(),
+    api(`/servers/${state.server.id}/datasources`).catch(() => null),
   ]);
+  if (ds) recordDatasources(ds.datasources);
   const s = info.server; const j = info.jvm || {}; const os = info.os || {};
   const running = s.serverState === 'running';
-  const heapPct = mem.heap.percent;
+  const stateCls = running ? 'good' : /required/.test(s.serverState) ? 'warning' : 'critical';
   const meta = mem.metaspace;
-  $('#ov-tiles').innerHTML = [
-    tile('서버 상태', `<span class="dot ${running ? 'good' : /required/.test(s.serverState) ? 'warning' : 'critical'}"></span> ${esc(s.serverState || '-')}`,
-      `${esc(s.runningMode || '')} · ${esc(s.suspendState || '')}`),
-    tile('가동 시간', esc(fmtDuration(j.uptime)), `시작: ${esc(fmtTime(j.startTime))}`),
-    tile('Heap 사용률', `${heapPct ?? '-'}%`, `${fmtBytes(mem.heap.used)} / ${fmtBytes(mem.heap.max)}`, levelLabel(heapPct)),
-    tile('Metaspace', meta ? fmtBytes(meta.usage.used) : '-',
-      meta ? `committed ${fmtBytes(meta.usage.committed)}${meta.usage.max ? ` / max ${fmtBytes(meta.usage.max)}` : ' / max 무제한'}` : '', meta ? levelLabel(meta.usage.max ? meta.usage.percent : null) : ''),
+  const th = info.threads || {};
+
+  $('#ov-kpis').innerHTML = [
+    kpi('server', 'blue', '서버 상태', esc(s.serverState || '-'), `${esc(s.runningMode || '')} · ${esc(s.suspendState || '')}`, `<span class="dot ${stateCls}"></span>`),
+    kpi('heap', 'violet', 'Heap 사용량', fmtBytes(mem.heap.used), `최대 ${fmtBytes(mem.heap.max)} · ${mem.heap.percent ?? '-'}%`, levelLabel(mem.heap.percent)),
+    kpi('meta', 'pink', 'Metaspace', meta ? fmtBytes(meta.usage.used) : '-',
+      meta ? (meta.usage.max ? `최대 ${fmtBytes(meta.usage.max)} · ${meta.usage.percent}%` : `committed ${fmtBytes(meta.usage.committed)} · 최대 무제한`) : '',
+      meta && meta.usage.max ? levelLabel(meta.usage.percent) : ''),
+    kpi('threads', 'orange', '쓰레드', fmtNum(th.count), `피크 ${fmtNum(th.peak)} · 데몬 ${fmtNum(th.daemon)}`),
   ].join('');
-  $('#ov-server').innerHTML = kv([
-    ['서버 이름', s.name], ['제품', `${s.productName || ''} ${s.productVersion || ''}`.trim()],
-    ['Core 버전', s.releaseVersion], ['실행 형태', `${s.launchType || ''} ${s.processType ? `(${s.processType})` : ''}`],
-    ['호스트', s.hostName], ['설정 파일', s.configFile], ['Base 디렉터리', s.baseDir], ['로그 디렉터리', s.logDir], ['관리 API 버전', s.managementVersion], ['UUID', s.uuid],
-  ]);
+
+  // Hero: server identity with a strip of key numbers (the design's weather card).
+  const version = (s.productVersion || '').replace(/\.Final$/, '');
+  $('#ov-hero').innerHTML = `<div class="sky">${SKYLINE}
+      <h3>${esc(s.productName || 'WildFly')} 서버</h3>
+      <div class="tag" title="${esc(s.configFile || '')}">${esc((s.configFile || '').split(/[\\/]/).pop() || s.launchType || '')}</div>
+      <div class="big">${esc(version || '-')} <small>${esc(s.launchType || '')}</small></div>
+      <div class="hero-state"><span class="dot ${stateCls}"></span>${esc(s.serverState || '-')} · ${esc(s.hostName || s.name || '')}</div>
+    </div>
+    <div class="strip">
+      <div><span>가동 시간</span><b>${esc(fmtDuration(j.uptime))}</b></div>
+      <div><span>CPU 코어</span><b>${esc(os.availableProcessors ?? '-')}</b></div>
+      <div><span>Load Avg</span><b>${os.systemLoadAverage >= 0 ? os.systemLoadAverage.toFixed(2) : 'N/A'}</b></div>
+      <div><span>로드 클래스</span><b>${info.classLoading ? fmtNum(info.classLoading.loaded) : '-'}</b></div>
+      <div><span>배포</span><b>${info.deployments.length}개</b></div>
+    </div>`;
+
+  // Resource rings.
+  const dsList = ds ? ds.datasources.filter((d) => d.pool && d.pool.inUseCount !== undefined && d.maxPoolSize) : [];
+  const dsMax = dsList.length ? Math.max(...dsList.map((d) => (100 * d.pool.inUseCount) / d.maxPoolSize)) : null;
+  const dsWorst = dsList.length ? dsList.reduce((a, d) => ((d.pool.inUseCount / d.maxPoolSize) > (a.pool.inUseCount / a.maxPoolSize) ? d : a)) : null;
+  const cpuPct = os.systemLoadAverage >= 0 && os.availableProcessors ? (100 * os.systemLoadAverage) / os.availableProcessors : null;
+  $('#ov-rings').innerHTML = [
+    ring(mem.heap.percent, 'Heap', `${fmtBytes(mem.heap.used)}`),
+    ring(meta && meta.usage.max ? meta.usage.percent : null, 'Metaspace', meta && meta.usage.max ? fmtBytes(meta.usage.used) : '최대 무제한'),
+    ring(dsMax, 'DB 풀', dsWorst ? dsWorst.name : '통계 없음'),
+    ring(cpuPct, 'CPU 부하', cpuPct === null ? 'N/A' : `load ${os.systemLoadAverage.toFixed(2)}`),
+  ].join('');
+
   $('#ov-jvm').innerHTML = kv([
     ['PID / 이름', j.name], ['VM', j.vmName], ['벤더', j.vmVendor], ['VM 버전', j.vmVersion],
     ['Java 버전', j.javaVersion || j.specVersion], ['JAVA_HOME', j.javaHome],
-    ['로드된 클래스', info.classLoading ? fmtNum(info.classLoading.loaded) : null],
   ]);
   $('#ov-os').innerHTML = kv([
     ['OS', `${os.name || ''} ${os.version || ''}`.trim()], ['아키텍처', os.arch], ['CPU 코어', os.availableProcessors],
-    ['Load Average', os.systemLoadAverage >= 0 ? os.systemLoadAverage : 'N/A'],
     ...info.interfaces.map((i) => [`인터페이스 ${i.name}`, i.address]),
     ['관리 API', state.server.url],
   ]);
+
+  // Datasources with an in-use sparkline.
+  $('#ov-ds').innerHTML = !ds ? '<div class="empty">데이터소스 정보를 읽을 수 없습니다</div>'
+    : !ds.datasources.length ? '<div class="empty">설정된 데이터소스가 없습니다</div>'
+      : `<table><thead><tr><th>이름</th><th>드라이버</th><th class="r">사용 / 최대</th><th>상태</th><th>추이</th></tr></thead><tbody>${
+        ds.datasources.map((d) => {
+          const p = d.pool;
+          const has = d.statisticsEnabled && p && p.inUseCount !== undefined;
+          const pct = has && d.maxPoolSize ? (100 * p.inUseCount) / d.maxPoolSize : null;
+          const badge = !d.enabled ? '<span class="badge">비활성</span>'
+            : !has ? '<span class="badge violet">통계 꺼짐</span>'
+              : pct >= 90 || p.timedOut > 0 ? '<span class="badge critical">▲ 포화</span>'
+                : '<span class="badge good">● 정상</span>';
+          return `<tr><td class="name">${esc(d.name)}${d.xa ? ' <span class="badge blue">XA</span>' : ''}<div class="muted" style="font-size:11.5px">${esc(d.jndiName)}</div></td>
+            <td>${esc(d.driver)}</td><td class="r">${has ? `${fmtNum(p.inUseCount)} / ${fmtNum(d.maxPoolSize)}` : '-'}</td><td>${badge}</td>
+            <td>${has ? sparkline(state.dsHistory[d.name] || [], 'var(--series-1)', `${d.name} 사용 중 커넥션`) : ''}</td></tr>`;
+        }).join('')}</tbody></table>`;
+
+  // Memory pools with a usage sparkline.
+  $('#ov-pools').innerHTML = `<table><thead><tr><th>풀</th><th class="r">사용</th><th class="r">사용률</th><th>추이</th></tr></thead><tbody>${
+    mem.pools.map((p) => {
+      const pct = p.usage && p.usage.max ? (100 * p.usage.used) / p.usage.max : null;
+      return `<tr><td class="name">${esc(p.name)}<div class="muted" style="font-size:11.5px">${esc(p.type || '')}</div></td>
+        <td class="r">${fmtBytes(p.usage && p.usage.used)}</td><td class="r">${pct === null ? '-' : `${pct.toFixed(0)}%`}</td>
+        <td>${sparkline(state.history.map((h) => h.pools && h.pools[p.name]), p.type === 'HEAP' ? 'var(--series-1)' : 'var(--series-4)', `${p.name} 사용량`)}</td></tr>`;
+    }).join('')}</tbody></table>`;
+
+  // Profile card (server identity).
+  $('#ov-profile').innerHTML = `<div class="cover"></div><div class="avatar">WF</div>
+    <div class="name">${esc(s.name || state.server.name)}</div><div class="role">${esc(state.server.name)}</div>
+    <dl class="kv">${kv([
+      ['호스트', s.hostName], ['제품', `${s.productName || ''} ${s.productVersion || ''}`.trim()], ['Core 버전', s.releaseVersion],
+      ['설정 파일', s.configFile], ['Base 디렉터리', s.baseDir], ['로그 디렉터리', s.logDir], ['관리 API 버전', s.managementVersion],
+    ])}</dl>`;
+
   $('#ov-dep-count').textContent = `${info.deployments.length}개`;
-  $('#ov-deployments').innerHTML = info.deployments.length ? `<table><thead><tr><th>이름</th><th>상태</th><th>활성화 시각</th></tr></thead><tbody>${
-    info.deployments.map((d) => `<tr><td>${esc(d.name)}</td><td><span class="badge ${d.status === 'OK' ? 'good' : d.status === 'FAILED' ? 'critical' : ''}">${d.status === 'OK' ? '● ' : ''}${esc(d.status || (d.enabled ? 'enabled' : 'disabled'))}</span></td><td class="muted">${esc(fmtTime(d.enabledTime))}</td></tr>`).join('')
-  }</tbody></table>` : '<div class="empty">배포된 애플리케이션이 없습니다</div>';
+  $('#ov-deployments').innerHTML = info.deployments.length ? `<table><thead><tr><th>#</th><th>이름</th><th>상태</th><th>활성화 시각</th></tr></thead><tbody>${
+    info.deployments.map((d, i) => {
+      const cls = d.status === 'OK' ? 'good' : d.status === 'FAILED' ? 'critical' : '';
+      return `<tr><td class="muted">${i + 1}</td><td class="name">${esc(d.name)}</td><td><span class="badge ${cls}">${d.status === 'OK' ? '● ' : d.status === 'FAILED' ? '▲ ' : ''}${esc(d.status || (d.enabled ? 'enabled' : 'disabled'))}</span></td><td class="muted">${esc(fmtTime(d.enabledTime))}</td></tr>`;
+    }).join('')}</tbody></table>` : '<div class="empty">배포된 애플리케이션이 없습니다</div>';
   $('#ov-args').textContent = (j.inputArguments || []).join('\n') || '-';
+  $('#footer-server').textContent = `${state.server.name} · ${state.server.url}`;
+
+  updateOverviewCharts(mem);
 }
 
 // ---------------------------------------------------------------- memory
+const isYoung = (name) => /young|scavenge|copy|parnew|minor/i.test(name);
+
 async function sampleMemory() {
   const mem = await api(`/servers/${state.server.id}/memory`);
   state.history.push({
@@ -194,11 +307,23 @@ async function sampleMemory() {
     metaUsed: mem.metaspace && mem.metaspace.usage.used,
     metaCommitted: mem.metaspace && mem.metaspace.usage.committed,
     metaMax: mem.metaspace && mem.metaspace.usage.max,
+    pools: Object.fromEntries(mem.pools.map((p) => [p.name, p.usage ? p.usage.used : null])),
+    gcYoung: mem.gc.filter((g) => isYoung(g.name)).reduce((a, g) => a + (g.count || 0), 0),
+    gcOld: mem.gc.filter((g) => !isYoung(g.name)).reduce((a, g) => a + (g.count || 0), 0),
   });
   if (state.history.length > HISTORY_MAX) state.history.shift();
   state.lastMemory = mem;
   if (state.view === 'memory') updateCharts();
   return mem;
+}
+
+function recordDatasources(list) {
+  for (const d of list) {
+    if (!d.pool || d.pool.inUseCount === undefined) continue;
+    const h = state.dsHistory[d.name] || (state.dsHistory[d.name] = []);
+    h.push(d.pool.inUseCount);
+    if (h.length > 40) h.shift();
+  }
 }
 
 async function loadMemory() {
@@ -234,25 +359,93 @@ async function loadMemory() {
   ]) : '';
 }
 
+function hexToRgba(hex, a) {
+  const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex.trim());
+  return m ? `rgba(${parseInt(m[1], 16)},${parseInt(m[2], 16)},${parseInt(m[3], 16)},${a})` : hex;
+}
+
+/** Vertical gradient that fades the series colour into the card surface. */
+function areaFill(color) {
+  return (ctx) => {
+    const { chart } = ctx;
+    if (!chart.chartArea) return hexToRgba(color, 0.2);
+    const g = chart.ctx.createLinearGradient(0, chart.chartArea.top, 0, chart.chartArea.bottom);
+    g.addColorStop(0, hexToRgba(color, 0.45));
+    g.addColorStop(1, hexToRgba(color, 0));
+    return g;
+  };
+}
+
+function baseScales(yFormat) {
+  const muted = cssVar('--text-muted');
+  return {
+    x: { ticks: { color: muted, maxTicksLimit: 6, maxRotation: 0, font: { size: 11 } }, grid: { display: false }, border: { color: cssVar('--axis') } },
+    y: { beginAtZero: true, ticks: { color: muted, callback: yFormat, font: { size: 11 }, maxTicksLimit: 6 }, grid: { color: cssVar('--grid') }, border: { display: false } },
+  };
+}
+
+function tooltipStyle() {
+  return { backgroundColor: cssVar('--surface-3'), titleColor: cssVar('--text-primary'), bodyColor: cssVar('--text-secondary'), borderColor: 'rgba(255,255,255,.08)', borderWidth: 1, padding: 10, boxPadding: 4 };
+}
+
 function makeLineChart(canvas, series) {
-  const grid = cssVar('--grid'); const muted = cssVar('--text-muted');
   return new Chart(canvas, {
     type: 'line',
-    data: { labels: [], datasets: series.map((s) => ({
-      label: s.label, data: [], borderColor: cssVar(s.color), backgroundColor: cssVar(s.color),
-      borderWidth: 2, borderDash: s.dash ? [5, 4] : [], pointRadius: 0, pointHoverRadius: 4, tension: 0.2, fill: false,
-    })) },
+    data: { labels: [], datasets: series.map((s) => {
+      const color = cssVar(s.color);
+      return {
+        label: s.label, data: [], borderColor: color, backgroundColor: s.area ? areaFill(color) : color,
+        borderWidth: 2, borderDash: s.dash ? [5, 4] : [], pointRadius: 0, pointHoverRadius: 4,
+        pointHoverBackgroundColor: color, pointHoverBorderColor: cssVar('--surface-1'), pointHoverBorderWidth: 2,
+        tension: 0.4, fill: s.area ? 'origin' : false,
+      };
+    }) },
     options: {
       animation: false, responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${fmtBytes(c.parsed.y)}` } },
+        tooltip: { ...tooltipStyle(), callbacks: { label: (c) => ` ${c.dataset.label}: ${fmtBytes(c.parsed.y)}` } },
       },
-      scales: {
-        x: { ticks: { color: muted, maxTicksLimit: 6, maxRotation: 0 }, grid: { display: false }, border: { color: cssVar('--axis') } },
-        y: { beginAtZero: true, ticks: { color: muted, callback: (v) => fmtAxisBytes(v) }, grid: { color: grid }, border: { display: false } },
-      },
+      scales: baseScales((v) => fmtAxisBytes(v)),
+    },
+  });
+}
+
+function makeBarChart(canvas, series) {
+  return new Chart(canvas, {
+    type: 'bar',
+    data: { labels: [], datasets: series.map((s) => {
+      const color = cssVar(s.color);
+      return {
+        label: s.label, data: [], borderRadius: { topLeft: 4, topRight: 4 }, borderSkipped: 'start',
+        maxBarThickness: 8, categoryPercentage: 0.6, barPercentage: 0.8,
+        backgroundColor: (ctx) => {
+          const { chart } = ctx;
+          if (!chart.chartArea) return color;
+          const g = chart.ctx.createLinearGradient(0, chart.chartArea.top, 0, chart.chartArea.bottom);
+          g.addColorStop(0, color);
+          g.addColorStop(1, hexToRgba(color, 0.35));
+          return g;
+        },
+      };
+    }) },
+    options: {
+      animation: false, responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { ...tooltipStyle(), callbacks: { label: (c) => ` ${c.dataset.label}: ${c.parsed.y}회` } } },
+      scales: baseScales((v) => (Number.isInteger(v) ? v : '')),
+    },
+  });
+}
+
+function makeDonut(canvas) {
+  return new Chart(canvas, {
+    type: 'doughnut',
+    data: { labels: [], datasets: [{ data: [], backgroundColor: [], borderColor: cssVar('--surface-1'), borderWidth: 2, hoverOffset: 4 }] },
+    options: {
+      animation: false, responsive: true, maintainAspectRatio: false, cutout: '78%',
+      plugins: { legend: { display: false }, tooltip: { ...tooltipStyle(), callbacks: { label: (c) => ` ${c.label}: ${fmtBytes(c.parsed)}` } } },
     },
   });
 }
@@ -262,15 +455,31 @@ function legendHtml(series) {
 }
 
 const HEAP_SERIES = [
-  { label: '사용', color: '--series-1', key: 'heapUsed' },
+  { label: '사용', color: '--series-1', key: 'heapUsed', area: true },
   { label: 'Committed', color: '--series-2', key: 'heapCommitted' },
   { label: '최대 (Xmx)', color: '--text-muted', key: 'heapMax', dash: true },
 ];
 const META_SERIES = [
-  { label: '사용', color: '--series-1', key: 'metaUsed' },
+  { label: '사용', color: '--series-1', key: 'metaUsed', area: true },
   { label: 'Committed', color: '--series-2', key: 'metaCommitted' },
   { label: 'MaxMetaspaceSize', color: '--text-muted', key: 'metaMax', dash: true },
 ];
+const GC_SERIES = [
+  { label: 'Young GC', color: '--series-1', key: 'gcYoung' },
+  { label: 'Old / Concurrent GC', color: '--series-2', key: 'gcOld' },
+];
+const DONUT_COLORS = ['--series-1', '--series-2', '--series-3'];
+
+function fillLine(chart, series) {
+  chart.data.labels = state.history.map((h) => fmtClock(h.t));
+  series.forEach((s, i) => { chart.data.datasets[i].data = state.history.map((h) => (h[s.key] ?? null)); });
+  chart.update();
+}
+
+function historyRange() {
+  const h = state.history;
+  return h.length > 1 ? `최근 ${fmtDuration(h[h.length - 1].t - h[0].t)}` : '';
+}
 
 function ensureCharts() {
   if (state.charts.heap) return;
@@ -283,14 +492,45 @@ function ensureCharts() {
 function updateCharts() {
   if (typeof Chart === 'undefined') return;
   ensureCharts();
-  const labels = state.history.map((h) => fmtClock(h.t));
-  for (const [chart, series] of [[state.charts.heap, HEAP_SERIES], [state.charts.meta, META_SERIES]]) {
-    chart.data.labels = labels;
-    series.forEach((s, i) => { chart.data.datasets[i].data = state.history.map((h) => (h[s.key] ?? null)); });
-    chart.update();
+  fillLine(state.charts.heap, HEAP_SERIES);
+  fillLine(state.charts.meta, META_SERIES);
+  $('#heap-chart-range').textContent = historyRange();
+}
+
+function updateOverviewCharts(mem) {
+  if (typeof Chart === 'undefined') return;
+  if (!state.charts.ovHeap) {
+    $('#ov-heap-legend').innerHTML = legendHtml(HEAP_SERIES);
+    $('#ov-gc-legend').innerHTML = legendHtml(GC_SERIES).replace(/<span /g, '<span class="dot-key" ');
+    state.charts.ovHeap = makeLineChart($('#ov-heap-chart'), HEAP_SERIES);
+    state.charts.ovGc = makeBarChart($('#ov-gc-chart'), GC_SERIES);
+    state.charts.ovDonut = makeDonut($('#ov-donut'));
   }
-  const h = state.history;
-  $('#heap-chart-range').textContent = h.length > 1 ? `최근 ${fmtDuration(h[h.length - 1].t - h[0].t)}` : '';
+  fillLine(state.charts.ovHeap, HEAP_SERIES);
+  $('#ov-heap-range').textContent = historyRange();
+
+  // GC collections per refresh interval (difference of the cumulative counters).
+  const h = state.history.slice(-13);
+  const gc = state.charts.ovGc;
+  gc.data.labels = h.slice(1).map((x) => fmtClock(x.t));
+  GC_SERIES.forEach((s, i) => { gc.data.datasets[i].data = h.slice(1).map((x, k) => Math.max(0, x[s.key] - h[k][s.key])); });
+  gc.update();
+
+  // Heap composition by pool (max 3 slots; anything else folds into "기타").
+  // Colour follows the pool (Eden / Old / Survivor), never its rank by size.
+  const rank = (n) => (/eden/i.test(n) ? 0 : /old|tenured/i.test(n) ? 1 : /survivor/i.test(n) ? 2 : 3);
+  const heapPools = mem.pools.filter((p) => p.type === 'HEAP' && p.usage).sort((a, b) => rank(a.name) - rank(b.name));
+  const slices = heapPools.slice(0, 3).map((p, i) => ({ label: p.name, value: p.usage.used, color: DONUT_COLORS[i] }));
+  const rest = heapPools.slice(3).reduce((a, p) => a + p.usage.used, 0);
+  if (rest > 0) slices.push({ label: '기타', value: rest, color: '--text-muted' });
+  const donut = state.charts.ovDonut;
+  donut.data.labels = slices.map((x) => x.label);
+  donut.data.datasets[0].data = slices.map((x) => x.value);
+  donut.data.datasets[0].backgroundColor = slices.map((x) => cssVar(x.color));
+  donut.update();
+  const total = slices.reduce((a, x) => a + x.value, 0);
+  $('#ov-donut-center').innerHTML = `<div><b>${fmtBytes(total)}</b><span>Heap 사용</span></div>`;
+  $('#ov-donut-legend').innerHTML = slices.map((x) => `<div><i style="--c:var(${x.color})"></i>${esc(x.label)}<span>${fmtBytes(x.value)} · ${total ? ((100 * x.value) / total).toFixed(0) : 0}%</span></div>`).join('');
 }
 
 function resetCharts() {
@@ -302,6 +542,7 @@ function resetCharts() {
 // ---------------------------------------------------------------- datasources
 async function loadDatasources() {
   const { datasources, drivers } = await api(`/servers/${state.server.id}/datasources`);
+  recordDatasources(datasources);
   $('#ds-list').innerHTML = datasources.length ? datasources.map((d) => {
     const p = d.pool;
     const hasStats = d.statisticsEnabled && p && p.activeCount !== undefined;
@@ -352,7 +593,7 @@ document.addEventListener('click', async (e) => {
 
 // ---------------------------------------------------------------- threads
 const STATE_ORDER = ['RUNNABLE', 'BLOCKED', 'WAITING', 'TIMED_WAITING', 'NEW', 'TERMINATED'];
-const STATE_COLOR = { RUNNABLE: '--series-3', BLOCKED: '--critical', WAITING: '--series-1', TIMED_WAITING: '--series-4', NEW: '--text-muted', TERMINATED: '--text-muted' };
+const STATE_COLOR = { RUNNABLE: '--series-1', BLOCKED: '--critical', WAITING: '--series-4', TIMED_WAITING: '--series-3', NEW: '--text-muted', TERMINATED: '--text-muted' };
 
 function frameText(f) {
   const loc = f.nativeMethod ? 'Native Method' : f.fileName ? (f.lineNumber >= 0 ? `${f.fileName}:${f.lineNumber}` : f.fileName) : 'Unknown Source';
@@ -629,6 +870,7 @@ $('#refresh-select').addEventListener('change', schedule);
 $('#server-select').addEventListener('change', (e) => {
   state.server = state.servers.find((s) => s.id === e.target.value);
   state.history = [];
+  state.dsHistory = {};
   state.threads = null;
   $('#thread-result').hidden = true;
   $('#thread-empty').hidden = false;
@@ -636,6 +878,7 @@ $('#server-select').addEventListener('change', (e) => {
   refresh();
 });
 $('#btn-thread-dump').addEventListener('click', takeThreadDump);
+$('#btn-quick-thread').addEventListener('click', () => { setView('threads'); takeThreadDump(); });
 $('#th-filter').addEventListener('input', renderThreadList);
 $('#th-state-filter').addEventListener('change', renderThreadList);
 $('#ha-filter').addEventListener('input', renderHistogram);
@@ -669,13 +912,14 @@ dz.addEventListener('drop', (e) => {
   const f = e.dataTransfer.files[0];
   if (f) uploadHeap(f);
 });
-window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', resetCharts);
 
 async function start() {
   const me = await api('/auth/me').catch(() => null);
   if (!me) return;
   state.user = me.user;
-  $('#who').textContent = `${me.user.username} (${me.user.role})`;
+  $('#user-avatar').textContent = me.user.username.slice(0, 2);
+  $('#user-name').textContent = me.user.username;
+  $('#user-role').textContent = me.user.role === 'admin' ? '관리자' : '조회 전용';
   $('#mock-banner').hidden = !me.mock;
   $('#nav-users').hidden = me.user.role !== 'admin';
   if (me.user.mustChangePassword) { openPasswordModal(true); return; }

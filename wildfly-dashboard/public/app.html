@@ -8,57 +8,90 @@
 </head>
 <body>
   <div class="shell">
-    <nav class="sidebar" aria-label="메뉴">
-      <div class="brand"><div class="brand-mark">WF</div>WildFly Dashboard</div>
-      <button class="nav-item active" data-view="overview">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><path d="M7 7h.01M7 17h.01"/></svg>서버 정보</button>
-      <button class="nav-item" data-view="memory">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="6" width="16" height="12" rx="1.5"/><path d="M8 2v4M12 2v4M16 2v4M8 18v4M12 18v4M16 18v4"/></svg>메모리</button>
-      <button class="nav-item" data-view="datasources">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>DB 데이터소스</button>
-      <button class="nav-item" data-view="threads">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h13"/></svg>쓰레드 덤프</button>
-      <button class="nav-item" data-view="heap">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>힙 덤프 분석</button>
-      <button class="nav-item" data-view="users" id="nav-users" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-3.9 3.1-7 7-7s7 3.1 7 7M16 4a4 4 0 010 8M22 21c0-3-1.8-5.5-4.5-6.5"/></svg>사용자 관리</button>
+    <aside class="sidebar" aria-label="메뉴">
+      <div class="brand"><div class="brand-mark">WF</div><span>WildFly<b>DASH</b></span></div>
+      <div class="tagline">WildFly 서버 상태를<br><span>실시간</span>으로 모니터링합니다</div>
+      <div class="quick"><button class="btn primary" id="btn-quick-thread">쓰레드 덤프 수집</button></div>
+      <nav>
+        <button class="nav-item active" data-view="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>대시보드</button>
+        <button class="nav-item" data-view="memory"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="6" width="16" height="12" rx="1.5"/><path d="M8 2v4M12 2v4M16 2v4M8 18v4M12 18v4M16 18v4"/></svg>메모리</button>
+        <button class="nav-item" data-view="datasources"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/></svg>DB 데이터소스</button>
+        <button class="nav-item" data-view="threads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h13"/></svg>쓰레드 덤프</button>
+        <button class="nav-item" data-view="heap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>힙 덤프 분석</button>
+        <button class="nav-item" data-view="users" id="nav-users" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-3.9 3.1-7 7-7s7 3.1 7 7M16 4a4 4 0 010 8M22 21c0-3-1.8-5.5-4.5-6.5"/></svg>사용자 관리</button>
+      </nav>
       <div class="spacer"></div>
-      <div class="who" id="who"></div>
-      <button class="nav-item" id="btn-password">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>비밀번호 변경</button>
-      <button class="nav-item" id="btn-logout">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/></svg>로그아웃</button>
-    </nav>
+      <div class="bottom">
+        <button class="nav-item" id="btn-password"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>비밀번호 변경</button>
+        <button class="nav-item" id="btn-logout"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/></svg>로그아웃</button>
+      </div>
+    </aside>
 
     <div class="main">
       <header class="topbar">
-        <h2 id="view-title">서버 정보</h2>
-        <span class="status-pill" id="conn-status"><span class="dot"></span><span>연결 확인 중</span></span>
         <select id="server-select" aria-label="대상 서버"></select>
         <select id="refresh-select" aria-label="자동 새로고침">
           <option value="0">자동 새로고침 끔</option>
-          <option value="5000" selected>5초마다</option>
-          <option value="10000">10초마다</option>
-          <option value="30000">30초마다</option>
+          <option value="5000" selected>5초마다 새로고침</option>
+          <option value="10000">10초마다 새로고침</option>
+          <option value="30000">30초마다 새로고침</option>
         </select>
         <button class="btn sm" id="btn-refresh">새로고침</button>
+        <span class="grow"></span>
+        <span class="status-pill" id="conn-status"><span class="dot"></span><span>연결 확인 중</span></span>
+        <div class="user-chip"><div class="avatar" id="user-avatar">?</div><div class="who"><b id="user-name"></b><span id="user-role"></span></div></div>
       </header>
+      <div class="page-head"><h2 id="view-title">대시보드</h2><div class="crumbs">Home / <b id="view-crumb">대시보드</b></div></div>
 
       <div class="content">
         <div class="banner" id="mock-banner" hidden>MOCK 모드: WildFly 서버 없이 시뮬레이션 데이터를 표시하고 있습니다.</div>
         <div class="banner error" id="error-banner" hidden></div>
 
-        <!-- 서버 정보 -->
+        <!-- 대시보드 -->
         <section data-view-panel="overview">
-          <div class="grid cols-4" id="ov-tiles"></div>
+          <div class="grid cols-4" id="ov-kpis"></div>
+
+          <div class="grid cols-2-1 section">
+            <div class="card">
+              <h3>Heap 메모리 추이 <span class="right muted" id="ov-heap-range"></span></h3>
+              <div class="legend" id="ov-heap-legend"></div>
+              <div class="chart-box"><canvas id="ov-heap-chart" aria-label="Heap 메모리 사용량 추이"></canvas></div>
+            </div>
+            <div class="card">
+              <h3>GC 활동 <span class="right muted">새로고침 간격당 횟수</span></h3>
+              <div class="legend" id="ov-gc-legend"></div>
+              <div class="chart-box"><canvas id="ov-gc-chart" aria-label="GC 발생 횟수"></canvas></div>
+            </div>
+          </div>
+
+          <div class="grid cols-1-2 section">
+            <div class="card">
+              <h3>Heap 구성 <span class="right muted">메모리 풀별 사용량</span></h3>
+              <div class="donut-wrap"><canvas id="ov-donut" aria-label="Heap 메모리 풀 구성"></canvas><div class="donut-center" id="ov-donut-center"></div></div>
+              <div class="donut-legend" id="ov-donut-legend"></div>
+            </div>
+            <div class="card hero" id="ov-hero"></div>
+          </div>
+
           <div class="grid cols-3 section">
-            <div class="card"><h3>WildFly 서버</h3><dl class="kv" id="ov-server"></dl></div>
+            <div class="card"><h3>자원 사용률</h3><div class="rings" id="ov-rings"></div></div>
             <div class="card"><h3>JVM</h3><dl class="kv" id="ov-jvm"></dl></div>
             <div class="card"><h3>운영체제 / 네트워크</h3><dl class="kv" id="ov-os"></dl></div>
           </div>
+
           <div class="grid cols-2 section">
-            <div class="card"><h3>배포 애플리케이션 <span class="right muted" id="ov-dep-count"></span></h3><div class="table-wrap" id="ov-deployments"></div></div>
-            <div class="card"><h3>JVM 실행 옵션</h3><pre class="mono" id="ov-args" style="margin:0;white-space:pre-wrap;word-break:break-all;max-height:300px;overflow:auto"></pre></div>
+            <div class="card"><h3>데이터소스 <span class="right muted">사용 중 커넥션 추이</span></h3><div class="table-wrap" id="ov-ds"></div></div>
+            <div class="card"><h3>메모리 풀 <span class="right muted">사용량 추이</span></h3><div class="table-wrap" id="ov-pools"></div></div>
+          </div>
+
+          <div class="grid cols-1-2 section">
+            <div class="card profile" id="ov-profile"></div>
+            <div class="card">
+              <h3>배포 애플리케이션 <span class="right muted" id="ov-dep-count"></span></h3>
+              <div class="table-wrap" id="ov-deployments"></div>
+              <h3 style="margin-top:20px">JVM 실행 옵션</h3>
+              <pre class="mono" id="ov-args" style="margin:0;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow:auto;color:var(--text-secondary)"></pre>
+            </div>
           </div>
         </section>
 
@@ -172,6 +205,7 @@
           </div>
         </section>
       </div>
+      <footer class="footer"><span>© 2026 <b>WildFly Dashboard</b> · WildFly 관리 API 기반 모니터링</span><span id="footer-server"></span></footer>
     </div>
   </div>
 

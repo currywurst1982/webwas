@@ -4,7 +4,7 @@ WildFly 서버 모니터링 대시보드입니다. 로그인한 사용자만 사
 
 | 메뉴 | 내용 |
 |---|---|
-| **서버 정보** | 서버 상태(running / reload-required 등), 제품/Core 버전, 설정 파일, 가동 시간, JVM·OS 정보, 배포 애플리케이션 목록, JVM 실행 옵션 |
+| **대시보드** | KPI(서버 상태·Heap·Metaspace·쓰레드), Heap 추이·GC 활동·Heap 구성 차트, 자원 사용률 게이지, 데이터소스·메모리 풀 추이, 서버 상태(running / reload-required 등), 제품/Core 버전, 설정 파일, 가동 시간, JVM·OS 정보, 배포 애플리케이션 목록, JVM 실행 옵션 |
 | **메모리** | Heap 사용량/Committed/최대(Xmx) 실시간 추이 차트, **Metaspace** 사용량·peak·MaxMetaspaceSize 추이, Compressed Class Space, 메모리 풀별 사용률, GC 횟수/시간, 클래스 로딩 수 |
 | **DB 데이터소스** | 데이터소스/XA 데이터소스의 JNDI, URL, 드라이버, 풀 설정, 풀 통계(사용 중/Active/가용/대기/타임아웃/평균 대기 시간 등), 연결 테스트, JDBC 드라이버 목록 (비밀번호는 마스킹) |
 | **쓰레드 덤프** | 전체 쓰레드 덤프 수집, 상태 분포, 쓰레드 풀별 사용 현황(유휴/작업 중), 데드락 체인, 락 경합(소유자/대기자), 동일 스택 그룹(Hot Stack), DB 커넥션 대기 감지, 이름/클래스 검색, **jstack 형식 텍스트 다운로드** |

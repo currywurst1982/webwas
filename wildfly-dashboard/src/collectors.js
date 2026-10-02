@@ -13,7 +13,7 @@ const readRes = (path, extra = {}) => ({
 });
 
 async function serverInfo(client) {
-  const [root, runtime, os, deployments, classLoading, ifaces, env] = await client.composite([
+  const [root, runtime, os, deployments, classLoading, ifaces, env, threading] = await client.composite([
     readRes('/', { 'attributes-only': true }),
     readRes(`${PM}/type=runtime`),
     readRes(`${PM}/type=operating-system`),
@@ -21,6 +21,7 @@ async function serverInfo(client) {
     readRes(`${PM}/type=class-loading`),
     { operation: 'read-children-resources', address: [], 'child-type': 'interface', 'include-runtime': true },
     readRes('/core-service=server-environment'),
+    readRes(`${PM}/type=threading`),
   ]);
   if (!root) throw new Error('WildFly 서버 정보를 읽지 못했습니다');
 
@@ -71,6 +72,11 @@ async function serverInfo(client) {
       loaded: classLoading['loaded-class-count'],
       totalLoaded: classLoading['total-loaded-class-count'],
       unloaded: classLoading['unloaded-class-count'],
+    },
+    threads: threading && {
+      count: threading['thread-count'],
+      peak: threading['peak-thread-count'],
+      daemon: threading['daemon-thread-count'],
     },
     interfaces: Object.entries(ifaces || {}).map(([name, v]) => ({
       name, address: v['resolved-address'] || v['inet-address'] || null,

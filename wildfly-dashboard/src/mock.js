@@ -91,10 +91,14 @@ function threads() {
 }
 
 let heapUsed = 620 * MB;
+let youngGcs = 4210;
+let oldGcs = 380;
 function heapNow() {
-  // Saw-tooth: allocation grows until a young GC drops it again.
+  // Saw-tooth: allocation grows until a GC drops it again.
   heapUsed += (15 + Math.random() * 40) * MB;
-  if (heapUsed > 1500 * MB) heapUsed = (520 + Math.random() * 120) * MB;
+  youngGcs += Math.floor(Math.random() * 4);
+  if (Math.random() < 0.15) oldGcs += 1;
+  if (heapUsed > 1500 * MB) { heapUsed = (520 + Math.random() * 120) * MB; oldGcs += 1; }
   return heapUsed;
 }
 
@@ -179,10 +183,9 @@ const handlers = {
     };
   },
   'read-children-resources:core-service=platform-mbean/type=garbage-collector'() {
-    const t = Math.floor((Date.now() - started) / 60000);
     return {
-      G1_Young_Generation: { name: 'G1 Young Generation', 'collection-count': 4210 + t, 'collection-time': 61234 + t * 12, 'memory-pool-names': ['G1 Eden Space', 'G1 Survivor Space', 'G1 Old Gen'] },
-      G1_Concurrent_GC: { name: 'G1 Concurrent GC', 'collection-count': 380, 'collection-time': 2210 },
+      G1_Young_Generation: { name: 'G1 Young Generation', 'collection-count': youngGcs, 'collection-time': youngGcs * 14, 'memory-pool-names': ['G1 Eden Space', 'G1 Survivor Space', 'G1 Old Gen'] },
+      G1_Concurrent_GC: { name: 'G1 Concurrent GC', 'collection-count': oldGcs, 'collection-time': oldGcs * 6 },
       G1_Old_Generation: { name: 'G1 Old Generation', 'collection-count': 2, 'collection-time': 1830 },
     };
   },

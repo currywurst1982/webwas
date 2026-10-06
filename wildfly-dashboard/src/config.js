@@ -70,7 +70,7 @@ function load() {
       { id: 'local-9990', name: 'was01', url: 'http://127.0.0.1:9990/management', discovered: true, pid: 24816, user: 'wildfly',
         mock: { name: 'was01', pid: 24816 } },
       { id: 'local-10090', name: 'was02', url: 'http://127.0.0.1:10090/management', discovered: true, pid: 25120, user: 'wildfly',
-        mock: { name: 'was02', host: 'wildfly-prod-02.example.com', pid: 25120, heapMaxMB: 4096, heapLow: 0.55, heapHigh: 0.93, threads: 148, metaBaseMB: 388, uptimeHours: 30 } },
+        mock: { name: 'was02', host: 'wildfly-prod-02.example.com', pid: 25120, heapMaxMB: 4096, heapLow: 0.55, heapHigh: 0.93, threads: 148, metaBaseMB: 388, uptimeHours: 30, tps: 25, latency: 1.6 } },
       { id: 'local-10190', name: 'was03', url: 'http://127.0.0.1:10190/management', discovered: true, pid: 25544, user: 'wildfly',
         mock: { name: 'was03', host: 'wildfly-prod-03.example.com', pid: 25544, state: 'reload-required', heapMaxMB: 1024, threads: 41, uptimeHours: 2 } },
       { id: 'batch01', name: 'batch01 (원격)', url: 'http://10.0.12.40:9990/management',

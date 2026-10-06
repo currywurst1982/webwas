@@ -5,6 +5,7 @@ WildFly 서버 모니터링 대시보드입니다. 로그인한 사용자만 사
 | 메뉴 | 내용 |
 |---|---|
 | **대시보드** | KPI(서버 상태·Heap·Metaspace·쓰레드), Heap 추이·GC 활동·Heap 구성 차트, 자원 사용률 게이지, 데이터소스·메모리 풀 추이, 서버 상태(running / reload-required 등), 제품/Core 버전, 설정 파일, 가동 시간, JVM·OS 정보, 배포 애플리케이션 목록, JVM 실행 옵션 |
+| **XLog (트랜잭션)** | Scouter XLog 처럼 요청 하나하나를 점으로 표시 (가로: 종료 시각, 세로: 처리시간, 색: 정상/4xx/5xx). 드래그로 영역을 선택하면 해당 트랜잭션 목록(서비스, 처리시간, 상태, 클라이언트, 쓰레드), TPS·평균 응답시간·오류율·느린 요청 수, 서비스별 통계(건수, TPS, 평균, 95%, 최대, 오류, 처리시간 비중) |
 | **메모리** | Heap 사용량/Committed/최대(Xmx) 실시간 추이 차트, **Metaspace** 사용량·peak·MaxMetaspaceSize 추이, Compressed Class Space, 메모리 풀별 사용률, GC 횟수/시간, 클래스 로딩 수 |
 | **DB 데이터소스** | 데이터소스/XA 데이터소스의 JNDI, URL, 드라이버, 풀 설정, 풀 통계(사용 중/Active/가용/대기/타임아웃/평균 대기 시간 등), 연결 테스트, JDBC 드라이버 목록 (비밀번호는 마스킹) |
 | **쓰레드 덤프** | 전체 쓰레드 덤프 수집, 상태 분포, 쓰레드 풀별 사용 현황(유휴/작업 중), 데드락 체인, 락 경합(소유자/대기자), 동일 스택 그룹(Hot Stack), DB 커넥션 대기 감지, 이름/클래스 검색, **jstack 형식 텍스트 다운로드** |
@@ -134,6 +135,23 @@ npm start
 ```
 자동 탐지를 끄려면 `"enabled": false` 또는 `DASHBOARD_DISCOVERY=false` 를 설정합니다.
 
+## XLog (트랜잭션)
+
+XLog 는 WildFly(Undertow) **access log** 에 기록된 요청별 처리시간으로 그립니다. 대시보드가 같은 서버에 있는 access log 파일을 실시간으로 읽습니다(2초마다, 로그 rotate 자동 처리).
+WildFly 에 에이전트를 설치하지 않아도 되고, 그 대신 요청 안의 SQL·메서드 단위 프로파일은 볼 수 없습니다.
+
+**설정 (인스턴스마다 한 번):** XLog 화면에서 관리자가 **XLog 수집 설정** 버튼을 누르면 다음을 적용합니다.
+1. access log 활성화
+   - 패턴: `%h %{time,yyyy-MM-dd'T'HH:mm:ss.SSSZ} "%r" %s %b %D "%I"`
+   - 파일: `access_log_<인스턴스명>.log`. 이름을 인스턴스마다 다르게 해서, 같은 폴더를 공유하는 인스턴스끼리 섞이지 않게 합니다.
+   - 재기동이 필요 없습니다.
+2. HTTP/HTTPS/AJP 리스너의 `record-request-start-time=true` 설정
+   - 처리시간(`%D`) 기록에 필요합니다.
+   - **WildFly reload 후 적용**됩니다. reload 는 자동으로 하지 않으니 점검 시간에 `jboss-cli.sh -c --controller=127.0.0.1:<관리포트> ':reload'` 를 실행하세요.
+
+이미 access log 를 쓰고 있다면 패턴에 `%D`(또는 `%T`)와 시각(`%t` 또는 `%{time,...}`)이 있으면 그대로 읽습니다. 없으면 버튼을 누를 때 패턴 변경 여부를 묻습니다.
+직접 설정하려면 화면의 "직접 설정하려면 (jboss-cli)" 안내를 참고하세요. 원격 서버(대시보드와 다른 호스트)의 인스턴스는 로그 파일을 읽을 수 없어 XLog 를 지원하지 않습니다.
+
 ## 힙 덤프 분석
 
 - **생성**: `WILDFLY_LOCAL_HEAPDUMP=true`(또는 서버 설정 `allowLocalHeapDump: true`)이면 대시보드가 WildFly 의 PID 를
@@ -189,6 +207,7 @@ server.js                 Express 앱 (라우팅, 세션, 권한)
 src/wildfly-client.js     WildFly 관리 API 클라이언트 (HTTP Digest, composite 요청)
 src/collectors.js         서버/메모리/데이터소스/쓰레드 정보 수집, 인스턴스 요약
 src/discovery.js          로컬 WildFly 프로세스 자동 탐지 (/proc)
+src/xlog.js               access log 패턴 해석, 파일 tail, XLog 수집 설정
 src/thread-analyzer.js    쓰레드 덤프 분석, jstack 형식 출력
 src/hprof/parser.js       HPROF 스트리밍 파서, 클래스 히스토그램 파서
 src/heapdump.js           힙 덤프 저장/생성(jcmd)/분석 작업 관리

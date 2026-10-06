@@ -108,10 +108,12 @@ const isAdmin = () => state.user && state.user.role === 'admin';
 // ---------------------------------------------------------------- navigation
 const TITLES = {
   instances: '전체 인스턴스',
+  xlog: 'XLog (트랜잭션)',
   overview: '대시보드', memory: '메모리 (Heap / Metaspace)', datasources: 'DB 데이터소스',
   threads: '쓰레드 덤프', heap: '힙 덤프 분석', users: '사용자 관리',
 };
 function setView(view) {
+  if (state.xlog && view !== 'xlog') clearTimeout(state.xlog.timer);
   state.view = view;
   $$('.nav-item[data-view]').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
   $$('[data-view-panel]').forEach((p) => { p.hidden = p.dataset.viewPanel !== view; });
@@ -139,6 +141,12 @@ async function refresh(auto = false) {
       return;
     }
     if (!state.server) { showError('모니터링할 WildFly 인스턴스가 없습니다. "전체 인스턴스" 화면을 확인하세요.'); return; }
+    if (v === 'xlog') {
+      if (!auto) await loadXlog(); // XLog polls on its own 2-second timer
+      showError(null);
+      $('#conn-status').innerHTML = '<span class="dot good"></span><span>연결됨</span>';
+      return;
+    }
     if (v === 'overview') await loadOverview();
     else if (v === 'memory') await loadMemory();
     else if (v === 'datasources') await loadDatasources();
@@ -190,6 +198,7 @@ function selectServer(id, reload = true) {
   $('#thread-result').hidden = true;
   $('#thread-empty').hidden = false;
   resetCharts();
+  xlogReset();
   if (reload) refresh();
 }
 
@@ -655,6 +664,282 @@ function resetCharts() {
   state.charts = {};
   if (state.view === 'memory') updateCharts();
 }
+
+// ---------------------------------------------------------------- XLog
+const XL_POLL_MS = 2000;
+const SLOW_MS = 3000;
+
+function xlogReset() {
+  clearTimeout(state.xlog && state.xlog.timer);
+  state.xlog = { txns: [], seq: 0, timer: null, paused: false, now: Date.now(), selection: null, serverId: state.server && state.server.id };
+  if (state.charts.xlog) { state.charts.xlog.destroy(); delete state.charts.xlog; }
+  $('#xl-selected').hidden = true;
+  $('#xl-pause').textContent = '일시정지';
+}
+
+const xlWindow = () => Number($('#xl-window').value);
+const xlFilter = () => $('#xl-filter').value.trim().toLowerCase();
+const xlVisible = () => {
+  const f = xlFilter();
+  const min = state.xlog.now - xlWindow();
+  return state.xlog.txns.filter((t) => t.end >= min && (!f || `${t.method} ${t.uri}`.toLowerCase().includes(f)));
+};
+
+function serviceOf(t) {
+  const p = String(t.uri || '-').split('?')[0].split(';')[0]
+    .replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?=\/|$)/gi, '/{uuid}')
+    .replace(/\/\d+(?=\/|$)/g, '/{id}');
+  return `${t.method} ${p}`;
+}
+
+function fmtClockMs(t) {
+  const d = new Date(t);
+  return `${d.toTimeString().slice(0, 8)}.${String(d.getMilliseconds()).padStart(3, '0')}`;
+}
+
+async function loadXlog() {
+  if (!state.xlog || state.xlog.serverId !== (state.server && state.server.id)) xlogReset();
+  clearTimeout(state.xlog.timer);
+  const xl = state.xlog;
+  const data = await api(`/servers/${state.server.id}/xlog?since=${xl.seq}&window=${xlWindow()}`);
+  if (xl !== state.xlog) return; // server switched meanwhile
+  xl.seq = data.seq;
+  xl.now = data.now;
+  if (data.txns.length) xl.txns.push(...data.txns);
+  const keep = xl.now - 30 * 60000;
+  if (xl.txns.length && xl.txns[0].end < keep) xl.txns = xl.txns.filter((t) => t.end >= keep);
+  if (xl.txns.length > 60000) xl.txns = xl.txns.slice(-60000);
+  renderXlogSetup(data.status);
+  renderXlog();
+  if (state.view === 'xlog' && !xl.paused) xl.timer = setTimeout(() => loadXlog().catch((e) => showError(e.message)), XL_POLL_MS);
+}
+
+function renderXlogSetup(st) {
+  const box = $('#xl-setup');
+  const notes = [];
+  if (st.ready && st.notRecording && st.notRecording.length) {
+    notes.push(`<p>▲ 처리시간 기록(record-request-start-time)이 아직 적용되지 않은 리스너가 있습니다: <code>${esc(st.notRecording.join(', '))}</code>. 설정 후 WildFly reload 가 필요합니다. 그 전까지의 요청은 처리시간이 없어 표시되지 않습니다.</p>`);
+  }
+  if (st.ready && st.sharedWith && st.sharedWith.length) {
+    notes.push(`<p>▲ 이 access log 파일을 다른 인스턴스(${esc(st.sharedWith.join(', '))})도 사용합니다. 두 인스턴스의 요청이 섞여 보일 수 있습니다. access log 의 prefix 를 인스턴스마다 다르게 설정하세요.</p>`);
+  }
+  if (st.readError) notes.push(`<p class="muted">${esc(st.readError)}</p>`);
+  if (st.ready) {
+    box.hidden = !notes.length;
+    box.innerHTML = notes.length ? `<h3>XLog 수집 상태</h3>${notes.join('')}${st.notRecording && st.notRecording.length ? enableHelp() : ''}` : '';
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML = `<h3>XLog 수집 설정이 필요합니다</h3>
+    <p>${esc(st.reason)}</p>
+    <p>XLog 는 WildFly(Undertow) access log 에 기록된 요청별 처리시간으로 그립니다. 필요한 설정:
+      access log 활성화(처리시간 <code>%D</code> 포함 패턴), HTTP 리스너의 <code>record-request-start-time=true</code>.</p>
+    ${st.pattern ? `<p>현재 패턴: <code>${esc(st.pattern)}</code></p>` : ''}
+    ${st.code === 'unreadable' ? '' : enableHelp(st.code === 'pattern')}`;
+}
+
+function enableHelp(patternChange = false) {
+  const cli = `/subsystem=undertow/server=default-server/host=default-host/setting=access-log:add(pattern="%h %{time,yyyy-MM-dd'T'HH:mm:ss.SSSZ} \\"%r\\" %s %b %D \\"%I\\"", prefix="access_log_${(state.server.name || 'wildfly').replace(/[^A-Za-z0-9._-]/g, '_')}.")
+/subsystem=undertow/server=default-server/http-listener=default:write-attribute(name=record-request-start-time, value=true)
+:reload`;
+  return isAdmin()
+    ? `<p><button class="btn primary" id="xl-enable" data-pattern="${patternChange}">XLog 수집 설정</button>
+       <span class="muted"> access log 설정과 처리시간 기록을 켭니다. 처리시간 기록은 WildFly reload 후 적용됩니다 (reload 는 자동으로 하지 않습니다).</span></p>
+       <details><summary class="muted">직접 설정하려면 (jboss-cli)</summary><pre>${esc(cli)}</pre></details>`
+    : `<p class="muted">관리자가 설정할 수 있습니다. jboss-cli 로 직접 설정하려면:</p><pre>${esc(cli)}</pre>`;
+}
+
+function renderXlog() {
+  const xl = state.xlog;
+  const list = xlVisible();
+  const win = xlWindow();
+  const ymaxSel = $('#xl-ymax').value;
+  const elapsedSorted = list.map((t) => t.elapsed).sort((a, b) => a - b);
+  const p99 = elapsedSorted.length ? elapsedSorted[Math.floor(elapsedSorted.length * 0.99)] : 0;
+  const yMax = ymaxSel === 'auto' ? Math.max(500, Math.ceil((Math.max(p99, ...elapsedSorted.slice(-5)) * 1.1) / 500) * 500) : Number(ymaxSel);
+  xl.yMax = yMax;
+
+  // KPIs
+  const last10 = list.filter((t) => t.end >= xl.now - 10000).length;
+  const errors = list.filter((t) => t.status >= 500).length;
+  const slow = list.filter((t) => t.elapsed >= SLOW_MS).length;
+  const avg = list.length ? Math.round(list.reduce((a, t) => a + t.elapsed, 0) / list.length) : 0;
+  $('#xl-kpis').innerHTML = [
+    kpi('server', 'blue', 'TPS', (last10 / 10).toFixed(1), '최근 10초 초당 처리 건수'),
+    kpi('threads', 'violet', '평균 응답시간', `${fmtNum(avg)} ms`, `표시 범위 ${fmtNum(list.length)}건`),
+    kpi('meta', 'pink', '오류율 (5xx)', list.length ? `${((100 * errors) / list.length).toFixed(1)}%` : '-', `${fmtNum(errors)}건`, errors ? '<span class="badge critical">●</span>' : ''),
+    kpi('heap', 'orange', '느린 요청', fmtNum(slow), `${SLOW_MS / 1000}초 이상`, slow ? '<span class="badge warning">▲</span>' : ''),
+  ].join('');
+  $('#xl-count').textContent = `${fmtNum(list.length)}건 · ${xl.paused ? '일시정지됨' : '2초마다 갱신'}`;
+
+  // Scatter
+  if (typeof Chart !== 'undefined') {
+    if (!state.charts.xlog) state.charts.xlog = makeXlogChart($('#xl-chart'));
+    const ch = state.charts.xlog;
+    const pt = (t) => ({ x: t.end, y: Math.min(t.elapsed, yMax), t });
+    ch.data.datasets[0].data = list.filter((t) => t.status < 400).map(pt);
+    ch.data.datasets[1].data = list.filter((t) => t.status >= 400 && t.status < 500).map(pt);
+    ch.data.datasets[2].data = list.filter((t) => t.status >= 500).map(pt);
+    ch.options.scales.x.min = xl.now - win;
+    ch.options.scales.x.max = xl.now;
+    ch.options.scales.y.max = yMax;
+    ch.update('none');
+  }
+  renderServiceStats(list);
+}
+
+function makeXlogChart(canvas) {
+  const muted = cssVar('--text-muted');
+  const ds = (label, color, radius) => ({
+    label, data: [], backgroundColor: hexToRgba(cssVar(color), 0.75), borderWidth: 0,
+    pointRadius: radius, pointHoverRadius: radius + 2, pointHitRadius: 4,
+  });
+  return new Chart(canvas, {
+    type: 'scatter',
+    data: { datasets: [ds('정상', '--series-1', 2), ds('4xx', '--warning', 2.5), ds('5xx 오류', '--critical', 3)] },
+    options: {
+      animation: false, responsive: true, maintainAspectRatio: false, parsing: false, normalized: true,
+      events: ['mousemove', 'mouseout'],
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          ...tooltipStyle(),
+          callbacks: {
+            title: (items) => (items[0] ? fmtClockMs(items[0].raw.t.end) : ''),
+            label: (c) => {
+              const t = c.raw.t;
+              return ` ${t.method} ${t.uri.length > 70 ? `${t.uri.slice(0, 70)}…` : t.uri}  ${fmtNum(t.elapsed)} ms  [${t.status}]`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: { type: 'linear', ticks: { color: muted, maxTicksLimit: 7, maxRotation: 0, callback: (v) => fmtClock(v), font: { size: 11 } }, grid: { color: cssVar('--grid') }, border: { color: cssVar('--axis') } },
+        y: { min: 0, ticks: { color: muted, callback: (v) => (v >= 1000 ? `${(v / 1000).toFixed(v % 1000 ? 1 : 0)}s` : `${v}ms`), font: { size: 11 } }, grid: { color: cssVar('--grid') }, border: { display: false } },
+      },
+    },
+  });
+}
+
+function renderServiceStats(list) {
+  const groups = new Map();
+  for (const t of list) {
+    const k = serviceOf(t);
+    let g = groups.get(k);
+    if (!g) { g = { name: k, n: 0, sum: 0, max: 0, err: 0, times: [] }; groups.set(k, g); }
+    g.n++; g.sum += t.elapsed; g.max = Math.max(g.max, t.elapsed); g.times.push(t.elapsed);
+    if (t.status >= 500) g.err++;
+  }
+  const total = list.reduce((a, t) => a + t.elapsed, 0) || 1;
+  const winSec = xlWindow() / 1000;
+  const rows = [...groups.values()].sort((a, b) => b.sum - a.sum).slice(0, 30);
+  $('#xl-services').innerHTML = rows.length ? `<table><thead><tr><th>서비스</th><th class="r">건수</th><th class="r">TPS</th><th class="r">평균</th><th class="r">95%</th><th class="r">최대</th><th class="r">오류</th><th>처리시간 비중</th></tr></thead><tbody>${
+    rows.map((g) => {
+      g.times.sort((a, b) => a - b);
+      const p95 = g.times[Math.floor(g.times.length * 0.95)] || 0;
+      const avg = Math.round(g.sum / g.n);
+      const share = (100 * g.sum) / total;
+      return `<tr class="xl-svc-row" data-svc="${esc(g.name.split(' ').slice(1).join(' ').replace(/\{(id|uuid)\}.*$/, ''))}">
+        <td class="xl-uri">${esc(g.name)}</td><td class="r">${fmtNum(g.n)}</td><td class="r">${(g.n / winSec).toFixed(2)}</td>
+        <td class="r ${avg >= SLOW_MS ? 'xl-slow' : ''}">${fmtNum(avg)} ms</td><td class="r">${fmtNum(p95)} ms</td>
+        <td class="r ${g.max >= SLOW_MS ? 'xl-slow' : ''}">${fmtNum(g.max)} ms</td>
+        <td class="r">${g.err ? `<span class="badge critical">${g.err}</span>` : '0'}</td>
+        <td class="bar-cell"><span class="num">${share.toFixed(1)}%</span><div class="bar" style="width:${share}%"></div></td></tr>`;
+    }).join('')}</tbody></table>` : '<div class="empty">표시 범위에 트랜잭션이 없습니다</div>';
+}
+
+function showSelection(x1, x2, y1, y2) {
+  const xl = state.xlog;
+  const yMax = xl.yMax;
+  const picked = xlVisible().filter((t) => t.end >= x1 && t.end <= x2 && Math.min(t.elapsed, yMax) >= y1 && Math.min(t.elapsed, yMax) <= y2)
+    .sort((a, b) => b.elapsed - a.elapsed);
+  const box = $('#xl-selected');
+  box.hidden = false;
+  $('#xl-selected-info').textContent = `${fmtClock(x1)} ~ ${fmtClock(x2)} · ${fmtNum(Math.round(y1))}~${y2 >= yMax ? '' : fmtNum(Math.round(y2))} ms · ${fmtNum(picked.length)}건${picked.length > 500 ? ' (처리시간 상위 500건 표시)' : ''}`;
+  $('#xl-selected-table').innerHTML = picked.length ? `<table><thead><tr><th>종료 시각</th><th>서비스</th><th class="r">처리시간</th><th>상태</th><th>클라이언트</th><th>쓰레드</th><th class="r">응답 크기</th></tr></thead><tbody>${
+    picked.slice(0, 500).map((t) => {
+      const cls = t.status >= 500 ? 'critical' : t.status >= 400 ? 'warning' : 'good';
+      return `<tr><td class="mono">${fmtClockMs(t.end)}</td><td class="xl-uri"><b>${esc(t.method)}</b> ${esc(t.uri)}</td>
+        <td class="r ${t.elapsed >= SLOW_MS ? 'xl-slow' : ''}">${fmtNum(t.elapsed)} ms</td>
+        <td><span class="badge ${cls}">${t.status >= 500 ? '● ' : t.status >= 400 ? '▲ ' : ''}${t.status}</span></td>
+        <td>${esc(t.ip || '-')}</td><td>${esc(t.thread || '-')}</td><td class="r">${fmtBytes(t.bytes)}</td></tr>`;
+    }).join('')}</tbody></table>` : '<div class="empty">선택한 영역에 트랜잭션이 없습니다</div>';
+  box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// Drag-to-select on the scatter (Scouter style).
+(() => {
+  const boxEl = $('#xl-box');
+  const sel = $('#xl-sel');
+  let start = null;
+  const local = (e) => { const r = boxEl.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const clampToArea = (p) => {
+    const a = state.charts.xlog.chartArea;
+    return { x: Math.min(Math.max(p.x, a.left), a.right), y: Math.min(Math.max(p.y, a.top), a.bottom) };
+  };
+  boxEl.addEventListener('mousedown', (e) => {
+    if (!state.charts.xlog || e.button !== 0) return;
+    start = clampToArea(local(e));
+    Object.assign(sel.style, { left: `${start.x}px`, top: `${start.y}px`, width: '0px', height: '0px' });
+    sel.hidden = false;
+    e.preventDefault();
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!start) return;
+    const p = clampToArea(local(e));
+    Object.assign(sel.style, {
+      left: `${Math.min(start.x, p.x)}px`, top: `${Math.min(start.y, p.y)}px`,
+      width: `${Math.abs(p.x - start.x)}px`, height: `${Math.abs(p.y - start.y)}px`,
+    });
+  });
+  window.addEventListener('mouseup', (e) => {
+    if (!start) return;
+    const p = clampToArea(local(e));
+    sel.hidden = true;
+    const s0 = start; start = null;
+    const pad = Math.abs(p.x - s0.x) < 4 && Math.abs(p.y - s0.y) < 4 ? 6 : 0; // a click picks nearby points
+    const { x, y } = state.charts.xlog.scales;
+    const xs = [x.getValueForPixel(Math.min(s0.x, p.x) - pad), x.getValueForPixel(Math.max(s0.x, p.x) + pad)];
+    const ys = [y.getValueForPixel(Math.max(s0.y, p.y) + pad), y.getValueForPixel(Math.min(s0.y, p.y) - pad)];
+    showSelection(xs[0], xs[1], Math.max(0, ys[0]), ys[1]);
+  });
+})();
+
+$('#xl-window').addEventListener('change', () => { if (state.xlog) { state.xlog.seq = 0; state.xlog.txns = []; loadXlog().catch((e) => showError(e.message)); } });
+$('#xl-ymax').addEventListener('change', () => state.xlog && renderXlog());
+$('#xl-filter').addEventListener('input', () => state.xlog && renderXlog());
+$('#xl-pause').addEventListener('click', () => {
+  const xl = state.xlog;
+  if (!xl) return;
+  xl.paused = !xl.paused;
+  $('#xl-pause').textContent = xl.paused ? '다시 시작' : '일시정지';
+  if (xl.paused) { clearTimeout(xl.timer); renderXlog(); } else loadXlog().catch((e) => showError(e.message));
+});
+$('#xl-selected-close').addEventListener('click', () => { $('#xl-selected').hidden = true; });
+document.addEventListener('click', async (e) => {
+  const row = e.target.closest('.xl-svc-row');
+  if (row) { $('#xl-filter').value = row.dataset.svc; renderXlog(); return; }
+  const btn = e.target.closest('#xl-enable');
+  if (!btn) return;
+  const patternChange = btn.dataset.pattern === 'true';
+  if (patternChange && !confirm('기존 access log 패턴을 XLog 용 패턴으로 바꿉니다. access log 를 다른 도구에서 분석하고 있다면 영향이 있을 수 있습니다. 계속할까요?')) return;
+  btn.disabled = true;
+  try {
+    let r = await api(`/servers/${state.server.id}/xlog/enable`, { method: 'POST', body: { overwritePattern: patternChange } });
+    if (r.needsPatternChange) {
+      if (!confirm(`현재 access log 패턴(${r.currentPattern})에 처리시간이 없습니다. XLog 용 패턴으로 바꿀까요?`)) return;
+      r = await api(`/servers/${state.server.id}/xlog/enable`, { method: 'POST', body: { overwritePattern: true } });
+    }
+    toast(r.reloadRequired
+      ? '설정했습니다. 처리시간 기록은 WildFly reload 후 적용됩니다 (jboss-cli: :reload).'
+      : '설정했습니다. 새 요청부터 XLog 에 표시됩니다.');
+    await loadXlog();
+  } catch (ex) {
+    toast(ex.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 // ---------------------------------------------------------------- datasources
 async function loadDatasources() {

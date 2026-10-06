@@ -14,6 +14,7 @@ const collectors = require('./src/collectors');
 const threadAnalyzer = require('./src/thread-analyzer');
 const { HeapDumpManager } = require('./src/heapdump');
 const discovery = require('./src/discovery');
+const xlog = require('./src/xlog');
 const { UserStore, requireLogin, requireAdmin, publicUser, validatePassword } = require('./src/auth');
 
 const cfg = config.load();
@@ -272,6 +273,75 @@ api.get('/servers/:id/threads.txt', withServer(async (req, res, server, client) 
   const stamp = new Date(dump.timestamp).toISOString().replace(/[:.]/g, '-');
   res.attachment(`threaddump-${server.id}-${stamp}.txt`).type('text/plain; charset=utf-8')
     .send(threadAnalyzer.toText(dump, server));
+}));
+
+// --- XLog (transactions from the access log) ------------------------------------
+const xlogStates = new Map(); // server id -> { setup, setupAt, tail, store, parser, file }
+const XLOG_SETUP_TTL = 15000;
+
+async function xlogStatus(server, client, state) {
+  if (cfg.mock) return { ready: true, source: 'mock' };
+  if (!state.setup || Date.now() - state.setupAt > XLOG_SETUP_TTL) {
+    state.setup = await xlog.readSetup(client);
+    state.setupAt = Date.now();
+  }
+  const { settings, listeners } = state.setup;
+  const setting = settings.find((x) => x.server === 'default-server' && x.host === 'default-host') || settings[0];
+  const notRecording = listeners.filter((l) => !l.recordStart).map((l) => `${l.type}=${l.name}`);
+  const base = { pattern: setting ? setting.pattern : null, file: setting ? setting.file : null, notRecording };
+  if (!setting) return { ...base, ready: false, code: 'no-access-log', reason: 'access log 가 설정되어 있지 않습니다.' };
+  if (setting.useServerLog) return { ...base, ready: false, code: 'pattern', reason: 'access log 가 server.log 로 기록되도록 설정되어 있어 읽을 수 없습니다.' };
+  if (state.pattern !== setting.pattern) {
+    state.pattern = setting.pattern;
+    state.parser = xlog.compilePattern(setting.pattern);
+  }
+  if (!state.parser) return { ...base, ready: false, code: 'pattern', reason: 'access log 패턴에 처리시간(%D 또는 %T)과 시각(%t 또는 %{time,...})이 필요합니다.' };
+  if (state.file !== setting.file) {
+    state.file = setting.file;
+    state.tail = new xlog.FileTail(setting.file);
+  }
+  try {
+    fs.accessSync(setting.file, fs.constants.R_OK);
+  } catch (e) {
+    if (e.code !== 'ENOENT') {
+      return { ...base, ready: false, code: 'unreadable', reason: `access log 파일을 읽을 수 없습니다 (${e.code}). XLog 는 대시보드와 같은 서버에 있는 인스턴스만 지원합니다.` };
+    }
+  }
+  const sharedWith = [...xlogStates.entries()]
+    .filter(([id, st]) => id !== server.id && st.file === setting.file && findServer(id))
+    .map(([id]) => findServer(id).name);
+  return { ...base, ready: true, sharedWith };
+}
+
+api.get('/servers/:id/xlog', withServer(async (req, res, server, client) => {
+  if (!xlogStates.has(server.id)) xlogStates.set(server.id, { store: new xlog.XLogStore() });
+  const state = xlogStates.get(server.id);
+  const status = await xlogStatus(server, client, state);
+  let readError = null;
+  if (status.ready) {
+    if (cfg.mock) {
+      for (const tx of client.xlogPoll()) state.store.add(tx);
+    } else {
+      const { lines, error } = state.tail.read();
+      readError = error || null;
+      for (const line of lines) {
+        const tx = state.parser(line);
+        if (tx) state.store.add(tx);
+      }
+    }
+  }
+  const windowMs = Math.min(Number(req.query.window) || 10 * 60000, 60 * 60000);
+  const since = Number(req.query.since) || 0;
+  const txns = state.store.since(since, Date.now() - windowMs).slice(-30000);
+  res.json({ status: { ...status, readError }, seq: state.store.seq, now: Date.now(), txns });
+}));
+
+api.post('/servers/:id/xlog/enable', requireAdmin, withServer(async (req, res, server, client) => {
+  if (cfg.mock) throw Object.assign(new Error('Mock 모드에서는 설정 변경을 지원하지 않습니다'), { status: 400 });
+  const result = await xlog.enable(client, server.name, { overwritePattern: req.body.overwritePattern === true });
+  const state = xlogStates.get(server.id);
+  if (state) state.setup = null;
+  res.json(result);
 }));
 
 // --- heap dumps ---------------------------------------------------------------

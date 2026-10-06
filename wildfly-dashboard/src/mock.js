@@ -105,6 +105,9 @@ function createState(profile = {}) {
     heapLow: heapMax * (profile.heapLow || 0.27),
     heapHigh: heapMax * (profile.heapHigh || 0.73),
     heapUsed: heapMax * (profile.heapLow || 0.27) + 100 * MB,
+    xlogTps: profile.tps || 12,
+    xlogFactor: profile.latency || 1,
+    xlogLast: null,
     metaBaseMB: profile.metaBaseMB || 214,
     started: Date.now() - (profile.uptimeHours || 77) * 3600 * 1000,
     youngGcs: 4210,
@@ -242,6 +245,47 @@ function makeHandlers(m) {
   };
 }
 
+// Simulated access-log transactions for the XLog view.
+const SERVICES = [
+  { method: 'GET', uri: '/shop/main.do', w: 30, base: 25 },
+  { method: 'GET', uri: '/shop/product/{id}', w: 25, base: 45 },
+  { method: 'GET', uri: '/api/search', w: 15, base: 120, spread: 1.0 },
+  { method: 'POST', uri: '/shop/order.do', w: 8, base: 260, db: true },
+  { method: 'POST', uri: '/login.do', w: 6, base: 80 },
+  { method: 'GET', uri: '/report/monthly.do', w: 1, base: 2400, spread: 0.6, db: true },
+  { method: 'GET', uri: '/static/app.js', w: 15, base: 3 },
+];
+const TOTAL_W = SERVICES.reduce((a, x) => a + x.w, 0);
+
+function gauss() {
+  let u = 0; let v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+function makeTransaction(m, end) {
+  let r = Math.random() * TOTAL_W;
+  const svc = SERVICES.find((x) => (r -= x.w) < 0) || SERVICES[0];
+  // A recurring "DB lock" window makes DB services slow for 20 seconds every 3 minutes.
+  const dbSlow = svc.db && (end % 180000) < 20000;
+  let elapsed = svc.base * m.xlogFactor * Math.exp(gauss() * (svc.spread || 0.45));
+  if (dbSlow) elapsed += 3000 + Math.random() * 4000;
+  const rnd = Math.random();
+  const status = rnd < 0.012 ? 500 : rnd < 0.03 ? 404 : (svc.method === 'POST' && rnd < 0.05 ? 302 : 200);
+  const id = 1000 + Math.floor(Math.random() * 9000);
+  return {
+    end: Math.round(end),
+    elapsed: Math.max(1, Math.round(status === 500 ? elapsed * 1.5 : elapsed)),
+    status,
+    method: svc.method,
+    uri: svc.uri.replace('{id}', id) + (svc.uri === '/api/search' ? `?q=item${id % 50}` : ''),
+    ip: `10.0.${Math.floor(Math.random() * 4)}.${10 + Math.floor(Math.random() * 200)}`,
+    bytes: Math.floor(500 + Math.random() * 20000),
+    thread: `default task-${1 + Math.floor(Math.random() * 40)}`,
+  };
+}
+
 class MockClient {
   constructor(server) {
     this.server = server;
@@ -274,6 +318,19 @@ class MockClient {
     if (!h) throw new Error(`WFLYCTL0030: No resource definition is registered for address ${key(op.address)} (${op.operation})`);
     const v = h();
     return v === undefined ? null : JSON.parse(JSON.stringify(v));
+  }
+
+  /** Transactions finished since the previous call (the first call back-fills five minutes). */
+  xlogPoll() {
+    const m = this.m;
+    if (m.down) return [];
+    const now = Date.now();
+    const from = m.xlogLast === null ? now - 5 * 60000 : m.xlogLast;
+    m.xlogLast = now;
+    const out = [];
+    const n = Math.round(((now - from) / 1000) * m.xlogTps * (0.85 + Math.random() * 0.3));
+    for (let i = 0; i < n; i++) out.push(makeTransaction(m, from + Math.random() * (now - from)));
+    return out.sort((a, b) => a.end - b.end);
   }
 
   async execute(op) {

@@ -323,6 +323,21 @@ td.name { color: var(--text-primary); }
 .inst-error { margin-top: 6px; padding: 10px 12px; border-radius: 4px; background: rgba(208, 59, 59, .12); color: var(--critical-ink); font-size: 12.5px; overflow-wrap: anywhere; }
 .inst-warn { margin-top: 8px; font-size: 12px; color: var(--warning-ink); overflow-wrap: anywhere; }
 
+/* XLog */
+.xl-toolbar { margin-bottom: 10px; }
+.xl-toolbar select { min-width: 0 !important; }
+.xl-toolbar input[type=text] { min-width: 200px; }
+.xl-legend { margin: 0 0 0 auto; }
+.xl-box { position: relative; height: 380px; user-select: none; cursor: crosshair; }
+.xl-sel { position: absolute; border: 1px solid var(--accent); background: rgba(47, 140, 247, .15); pointer-events: none; }
+.xl-hint { font-size: 11.5px; margin-top: 8px; }
+.xl-setup { border-color: rgba(250, 178, 25, .45); }
+.xl-setup p { margin: 6px 0; color: var(--text-secondary); }
+.xl-setup pre { background: var(--page); padding: 10px 12px; border-radius: 4px; overflow-x: auto; color: #b8c2de; margin: 8px 0; }
+.xl-slow { color: var(--warning-ink); font-weight: 600; }
+.xl-svc-row { cursor: pointer; }
+.xl-uri { color: var(--text-primary); word-break: break-all; }
+
 /* threads */
 .thread-list { max-height: 640px; overflow: auto; }
 .thread { border-bottom: 1px solid var(--grid); }

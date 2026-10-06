@@ -9,13 +9,23 @@ window.addEventListener('error', (e) => {
   const pill = document.getElementById('conn-status');
   if (banner) {
     banner.hidden = false;
-    banner.textContent = `화면 스크립트 오류: ${e.message}. 대시보드를 업데이트한 직후라면 Ctrl+F5 (강력 새로고침) 로 다시 불러오세요.`;
+    banner.textContent = `화면 스크립트 오류: ${e.message} (${(e.filename || '').split('/').pop()}:${e.lineno || '?'}). 대시보드를 업데이트한 직후라면 Ctrl+F5 (강력 새로고침) 로 다시 불러오세요.`;
   }
   if (pill) pill.innerHTML = '<span class="dot critical"></span><span>화면 오류</span>';
 });
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
+
+// Must match <meta name="dashboard-build"> in app.html; a mismatch means the two files come from different versions.
+const BUILD = '2026.10.06';
+const missingElements = [];
+/** addEventListener that tolerates a missing element (an out-of-date app.html must not stop the whole page). */
+function on(sel, ev, fn) {
+  const el = $(sel);
+  if (el) el.addEventListener(ev, fn);
+  else missingElements.push(sel);
+}
 const esc = (v) => String(v === undefined || v === null ? '' : v)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
@@ -694,8 +704,10 @@ function xlogReset() {
   clearTimeout(state.xlog && state.xlog.timer);
   state.xlog = { txns: [], seq: 0, timer: null, paused: false, now: Date.now(), selection: null, serverId: state.server && state.server.id };
   if (state.charts.xlog) { state.charts.xlog.destroy(); delete state.charts.xlog; }
-  $('#xl-selected').hidden = true;
-  $('#xl-pause').textContent = '일시정지';
+  const selBox = $('#xl-selected');
+  const pause = $('#xl-pause');
+  if (selBox) selBox.hidden = true;
+  if (pause) pause.textContent = '일시정지';
 }
 
 const xlWindow = () => Number($('#xl-window').value);
@@ -890,8 +902,8 @@ function showSelection(x1, x2, y1, y2) {
 
 // Drag-to-select on the scatter (Scouter style).
 (() => {
-  const boxEl = $('#xl-box');
-  const sel = $('#xl-sel');
+  const boxEl = $('#xl-box') || document.createElement('div');
+  const sel = $('#xl-sel') || document.createElement('div');
   let start = null;
   const local = (e) => { const r = boxEl.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
   const clampToArea = (p) => {
@@ -926,17 +938,17 @@ function showSelection(x1, x2, y1, y2) {
   });
 })();
 
-$('#xl-window').addEventListener('change', () => { if (state.xlog) { state.xlog.seq = 0; state.xlog.txns = []; loadXlog().catch((e) => showError(e.message)); } });
-$('#xl-ymax').addEventListener('change', () => state.xlog && renderXlog());
-$('#xl-filter').addEventListener('input', () => state.xlog && renderXlog());
-$('#xl-pause').addEventListener('click', () => {
+on('#xl-window', 'change', () => { if (state.xlog) { state.xlog.seq = 0; state.xlog.txns = []; loadXlog().catch((e) => showError(e.message)); } });
+on('#xl-ymax', 'change', () => state.xlog && renderXlog());
+on('#xl-filter', 'input', () => state.xlog && renderXlog());
+on('#xl-pause', 'click', () => {
   const xl = state.xlog;
   if (!xl) return;
   xl.paused = !xl.paused;
   $('#xl-pause').textContent = xl.paused ? '다시 시작' : '일시정지';
   if (xl.paused) { clearTimeout(xl.timer); renderXlog(); } else loadXlog().catch((e) => showError(e.message));
 });
-$('#xl-selected-close').addEventListener('click', () => { $('#xl-selected').hidden = true; });
+on('#xl-selected-close', 'click', () => { $('#xl-selected').hidden = true; });
 document.addEventListener('click', async (e) => {
   const row = e.target.closest('.xl-svc-row');
   if (row) { $('#xl-filter').value = row.dataset.svc; renderXlog(); return; }
@@ -1239,7 +1251,7 @@ async function loadUsers() {
   }</tbody></table>`;
 }
 
-$('#user-form').addEventListener('submit', async (e) => {
+on('#user-form', 'submit', async (e) => {
   e.preventDefault();
   try {
     await api('/users', { method: 'POST', body: { username: $('#nu-name').value.trim(), password: $('#nu-pw').value, role: $('#nu-role').value } });
@@ -1271,8 +1283,8 @@ function openPasswordModal(forced) {
   $('#pw-cur').focus();
 }
 
-$('#pw-cancel').addEventListener('click', () => { $('#pw-modal').hidden = true; });
-$('#pw-form').addEventListener('submit', async (e) => {
+on('#pw-cancel', 'click', () => { $('#pw-modal').hidden = true; });
+on('#pw-form', 'submit', async (e) => {
   e.preventDefault();
   if ($('#pw-new').value !== $('#pw-new2').value) { $('#pw-error').textContent = '새 비밀번호가 일치하지 않습니다'; return; }
   try {
@@ -1288,21 +1300,21 @@ $('#pw-form').addEventListener('submit', async (e) => {
 
 // ---------------------------------------------------------------- bootstrap
 $$('.nav-item[data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
-$('#btn-refresh').addEventListener('click', () => refresh());
-$('#refresh-select').addEventListener('change', schedule);
-$('#server-select').addEventListener('change', (e) => selectServer(e.target.value));
-$('#btn-thread-dump').addEventListener('click', takeThreadDump);
-$('#btn-quick-thread').addEventListener('click', () => { setView('threads'); takeThreadDump(); });
-$('#th-filter').addEventListener('input', renderThreadList);
-$('#th-state-filter').addEventListener('change', renderThreadList);
-$('#ha-filter').addEventListener('input', renderHistogram);
-$('#btn-password').addEventListener('click', () => openPasswordModal(false));
-$('#btn-logout').addEventListener('click', async () => {
+on('#btn-refresh', 'click', () => refresh());
+on('#refresh-select', 'change', schedule);
+on('#server-select', 'change', (e) => selectServer(e.target.value));
+on('#btn-thread-dump', 'click', takeThreadDump);
+on('#btn-quick-thread', 'click', () => { setView('threads'); takeThreadDump(); });
+on('#th-filter', 'input', renderThreadList);
+on('#th-state-filter', 'change', renderThreadList);
+on('#ha-filter', 'input', renderHistogram);
+on('#btn-password', 'click', () => openPasswordModal(false));
+on('#btn-logout', 'click', async () => {
   await api('/auth/logout', { method: 'POST' }).catch(() => {});
   location.href = '/login';
 });
-$('#heap-file').addEventListener('change', (e) => { if (e.target.files[0]) uploadHeap(e.target.files[0]); e.target.value = ''; });
-$('#btn-heap-generate').addEventListener('click', async () => {
+on('#heap-file', 'change', (e) => { if (e.target.files[0]) uploadHeap(e.target.files[0]); e.target.value = ''; });
+on('#btn-heap-generate', 'click', async () => {
   if (!confirm('힙 덤프 생성 중에는 WildFly JVM 이 잠시 멈춥니다. 계속할까요?')) return;
   const btn = $('#btn-heap-generate');
   btn.disabled = true;
@@ -1318,7 +1330,7 @@ $('#btn-heap-generate').addEventListener('click', async () => {
     await loadHeapList();
   }
 });
-const dz = $('#dropzone');
+const dz = $('#dropzone') || document.createElement('div');
 ['dragenter', 'dragover'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); if (isAdmin()) dz.classList.add('drag'); }));
 ['dragleave', 'drop'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('drag'); }));
 dz.addEventListener('drop', (e) => {
@@ -1327,7 +1339,23 @@ dz.addEventListener('drop', (e) => {
   if (f) uploadHeap(f);
 });
 
+function checkBuild() {
+  const meta = document.querySelector('meta[name="dashboard-build"]');
+  const htmlBuild = meta ? meta.content : '(없음)';
+  if (htmlBuild === BUILD && !missingElements.length) return;
+  // Built here (not taken from app.html) so it also shows with an old page, and kept apart from #error-banner,
+  // which successful refreshes clear.
+  const b = document.createElement('div');
+  b.className = 'banner error';
+  b.id = 'build-banner';
+  ($('.content') || document.body).prepend(b);
+  b.textContent = `화면 파일 버전이 맞지 않습니다: app.html ${htmlBuild} / app.js ${BUILD}. `
+    + '대시보드 서버의 public 폴더 전체(public/app.html 포함)가 새 버전으로 복사되었는지 확인한 뒤 Ctrl+F5 로 새로고침하세요.'
+    + (missingElements.length ? ` (화면에 없는 요소: ${missingElements.slice(0, 5).join(', ')}${missingElements.length > 5 ? ' …' : ''})` : '');
+}
+
 async function start() {
+  checkBuild();
   const me = await api('/auth/me').catch(() => null);
   if (!me) return;
   state.user = me.user;

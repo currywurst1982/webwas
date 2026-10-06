@@ -18,7 +18,7 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 
 // Must match <meta name="dashboard-build"> in app.html; a mismatch means the two files come from different versions.
-const BUILD = '2026.10.06.2';
+const BUILD = '2026.10.06.3';
 const missingElements = [];
 /** addEventListener that tolerates a missing element (an out-of-date app.html must not stop the whole page). */
 function on(sel, ev, fn) {

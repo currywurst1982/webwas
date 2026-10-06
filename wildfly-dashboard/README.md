@@ -70,6 +70,23 @@ npm start
 | `admin` | 전체 조회 + 힙 덤프 생성/업로드/다운로드/삭제, 데이터소스 연결 테스트, 사용자 관리 |
 | `viewer` | 조회 전용 (쓰레드 덤프 수집, 힙 덤프 분석 결과 조회 포함) |
 
+## 업데이트
+
+`scripts/update.sh` 가 받기 → 백업 → 중지 → 복사 → 시작 → **새 빌드 응답 확인**까지 한 번에 합니다.
+`config/` 와 `data/`(사용자 계정, 힙 덤프)는 건드리지 않습니다.
+
+```bash
+sudo /opt/wildfly-dashboard/scripts/update.sh              # 최신 코드로 업데이트
+sudo /opt/wildfly-dashboard/scripts/update.sh --rollback   # 직전 버전으로 되돌리기
+FORCE=1 sudo -E /opt/wildfly-dashboard/scripts/update.sh   # 같은 빌드라도 다시 설치 + 재시작
+```
+
+- **설치 폴더와 실행 계정:** 설치 폴더는 `INSTALL_DIR`(기본 `/opt/wildfly-dashboard`)입니다. 실행 계정은 설치 폴더의 소유자이며, `RUN_USER` 로 바꿀 수 있습니다.
+- **재시작 방식:** systemd 서비스 `wildfly-dashboard` 가 있으면 systemd 로 재시작하고, 없으면 `nohup` 으로 실행합니다(로그: `dashboard.log`).
+- **인터넷이 안 되는 서버:** PC 에서 ZIP 을 받아 서버에 올린 뒤 `SOURCE_ZIP=/tmp/webwas.zip sudo -E .../update.sh` 로 실행합니다.
+- **포트 충돌:** 대시보드 포트를 다른 프로그램이 쓰고 있으면 아무것도 바꾸지 않고 멈춥니다.
+- **업데이트 확인:** 업데이트 후 `http://<서버>:9080/healthz` 가 새 빌드 번호를 돌려주는지 확인합니다. 화면 맨 아래에도 빌드 번호가 표시됩니다.
+
 ## WildFly 준비
 
 1. 관리 사용자 생성 (모니터링 전용 계정 권장):

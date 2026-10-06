@@ -137,6 +137,8 @@ const noCache = (req, res, next) => { res.set('Cache-Control', 'no-cache'); next
 app.use(['/app', '/login', '/static', '/vendor'], noCache);
 
 app.get('/', (req, res) => res.redirect(loggedIn(req) ? '/app' : '/login'));
+// Unauthenticated liveness/version check (used by scripts/update.sh); exposes nothing but the build id.
+app.get('/healthz', (req, res) => res.set('Cache-Control', 'no-store').json({ ok: true, build: BUILD }));
 app.get('/login', (req, res) => (loggedIn(req) ? res.redirect('/app') : res.sendFile(path.join(PUBLIC, 'login.html'))));
 app.get('/app', (req, res) => (loggedIn(req) ? res.sendFile(path.join(PUBLIC, 'app.html')) : res.redirect('/login')));
 app.use('/static', express.static(PUBLIC, { index: false }));

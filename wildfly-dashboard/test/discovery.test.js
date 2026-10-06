@@ -22,8 +22,12 @@ test('derives the management URL from the command line', () => {
   assert.strictEqual(parseCommandLine(java('-Djboss.bind.address.management=::1')).url, 'http://[::1]:9990/management');
 });
 
-test('ignores non-WildFly and domain processes', () => {
+test('ignores non-WildFly, domain and tool processes', () => {
   assert.strictEqual(parseCommandLine(['/usr/bin/java', '-jar', 'app.jar']), null);
+  // jboss-cli.sh runs from jboss-modules.jar too (with -c), it must not become an instance
+  const cli = ['/usr/bin/java', '-Dlogging.configuration=file:/opt/wildfly/bin/jboss-cli-logging.properties', '-jar',
+    '/opt/wildfly/jboss-modules.jar', '-mp', '/opt/wildfly/modules', 'org.jboss.as.cli', '-c', '--controller=127.0.0.1:10090'];
+  assert.strictEqual(parseCommandLine(cli).kind, 'tool');
   const hc = ['/usr/bin/java', '-D[Host Controller]', '-jar', '/opt/wildfly/jboss-modules.jar'];
   assert.strictEqual(parseCommandLine(hc).kind, 'host-controller');
   const ds = ['/usr/bin/java', '-D[Server:server-one]', '-jar', '/opt/wildfly/jboss-modules.jar'];

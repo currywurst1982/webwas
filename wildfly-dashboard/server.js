@@ -293,7 +293,8 @@ async function xlogStatus(server, client, state) {
   const { settings, listeners } = state.setup;
   const setting = settings.find((x) => x.server === 'default-server' && x.host === 'default-host') || settings[0];
   const notRecording = listeners.filter((l) => !l.recordStart).map((l) => `${l.type}=${l.name}`);
-  const base = { pattern: setting ? setting.pattern : null, file: setting ? setting.file : null, notRecording };
+  const reloadRequired = /required/.test(state.setup.serverState || '');
+  const base = { pattern: setting ? setting.pattern : null, file: setting ? setting.file : null, notRecording, reloadRequired, serverState: state.setup.serverState };
   if (!setting) return { ...base, ready: false, code: 'no-access-log', reason: 'access log 가 설정되어 있지 않습니다.' };
   if (setting.useServerLog) return { ...base, ready: false, code: 'pattern', reason: 'access log 가 server.log 로 기록되도록 설정되어 있어 읽을 수 없습니다.' };
   if (state.pattern !== setting.pattern) {
@@ -331,14 +332,22 @@ api.get('/servers/:id/xlog', withServer(async (req, res, server, client) => {
       readError = error || null;
       for (const line of lines) {
         const tx = state.parser(line);
-        if (tx) state.store.add(tx);
+        if (!tx) continue;
+        if (tx.skipped) {
+          state.noElapsed = [...(state.noElapsed || []), tx.end].slice(-1000);
+        } else {
+          state.store.add(tx);
+          // a timed request after the skipped ones means the reload happened: stop warning
+          if (state.noElapsed && state.noElapsed.length && tx.end > state.noElapsed[state.noElapsed.length - 1]) state.noElapsed = [];
+        }
       }
     }
   }
   const windowMs = Math.min(Number(req.query.window) || 10 * 60000, 60 * 60000);
   const since = Number(req.query.since) || 0;
   const txns = state.store.since(since, Date.now() - windowMs).slice(-30000);
-  res.json({ status: { ...status, readError }, seq: state.store.seq, now: Date.now(), txns });
+  const recentNoElapsed = (state.noElapsed || []).filter((t) => t >= Date.now() - windowMs).length;
+  res.json({ status: { ...status, readError, noElapsed: recentNoElapsed }, seq: state.store.seq, now: Date.now(), txns });
 }));
 
 api.post('/servers/:id/xlog/enable', requireAdmin, withServer(async (req, res, server, client) => {

@@ -85,7 +85,9 @@ function compilePattern(pattern) {
     fields.forEach((f, i) => { if (f) v[f] = mm[i + 1]; });
     const end = v.isoTime !== undefined ? parseIsoTime(v.isoTime) : parseClfTime(v.clfTime);
     const elapsed = v.elapsedMs !== undefined ? Number(v.elapsedMs) : Math.round(Number(v.elapsedSec) * 1000);
-    if (Number.isNaN(end) || Number.isNaN(elapsed)) return null; // "-" = start time not recorded
+    if (Number.isNaN(end)) return null;
+    // "-" means Undertow did not record the request start time (record-request-start-time not active yet).
+    if (Number.isNaN(elapsed)) return { skipped: 'no-elapsed', end };
     let method = v.method;
     let uri = v.uri;
     if (v.request !== undefined) {
@@ -185,9 +187,10 @@ class XLogStore {
 // ---------------------------------------------------------------- management model
 
 async function readSetup(client) {
-  const [undertow, paths] = await client.composite([
+  const [undertow, paths, serverState] = await client.composite([
     { operation: 'read-resource', address: addr('/subsystem=undertow'), recursive: true, 'resolve-expressions': true, 'include-defaults': true },
     { operation: 'read-children-resources', address: [], 'child-type': 'path', 'include-runtime': true },
+    { operation: 'read-attribute', address: [], name: 'server-state' },
   ]);
   if (!undertow) throw new Error('undertow 서브시스템을 읽지 못했습니다');
   const pathOf = (name) => (paths && paths[name] && paths[name].path) || null;
@@ -208,7 +211,7 @@ async function readSetup(client) {
       settings.push({ server: serverName, host: hostName, pattern: a.pattern || 'common', file, useServerLog: Boolean(a['use-server-log']), prefix: a.prefix });
     }
   }
-  return { settings, listeners };
+  return { settings, listeners, serverState: serverState || null };
 }
 
 /** Turns on what XLog needs. Returns whether a reload is required for it to take effect. */

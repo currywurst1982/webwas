@@ -15,8 +15,10 @@ test('parses the dashboard access-log pattern (real WildFly 37 line)', () => {
   assert.strictEqual(t.status, 200);
   assert.strictEqual(t.uri, '/shop/order.jsp?ms=3000');
   assert.strictEqual(t.thread, 'default task-3');
-  // "-" means the request start time was not recorded yet: skipped
-  assert.strictEqual(parse('127.0.0.1 2026-10-06T00:27:53.826+0000 "GET / HTTP/1.1" 200 1391 - "default task-2"'), null);
+  // "-" means the request start time was not recorded yet (reload pending): reported as skipped
+  assert.deepStrictEqual(parse('127.0.0.1 2026-10-06T00:27:53.826+0000 "GET / HTTP/1.1" 200 1391 - "default task-2"'),
+    { skipped: 'no-elapsed', end: Date.UTC(2026, 9, 6, 0, 27, 53, 826) });
+  assert.strictEqual(parse('garbage'), null);
 });
 
 test('parses common log format with %D or %T, rejects patterns without elapsed time', () => {

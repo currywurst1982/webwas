@@ -111,7 +111,8 @@ function parseCommandLine(args) {
   const kind = args.includes('-D[Standalone]') ? 'standalone'
     : domainServer ? 'domain-server'
       : args.includes('-D[Host Controller]') ? 'host-controller'
-        : args.includes('-D[Process Controller]') ? 'process-controller' : 'standalone';
+        // jboss-cli.sh, add-user.sh etc. also run from jboss-modules.jar; only servers carry a -D[...] marker
+        : args.includes('-D[Process Controller]') ? 'process-controller' : 'tool';
 
   const props = systemProperties(args);
   const home = option(args, ['-Djboss.home.dir']) || null;

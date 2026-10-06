@@ -750,6 +750,13 @@ async function loadXlog() {
 function renderXlogSetup(st) {
   const box = $('#xl-setup');
   const notes = [];
+  const reloadCmd = `${'$'}JBOSS_HOME/bin/jboss-cli.sh -c --controller=127.0.0.1:${(state.server.url.match(/:(\d+)\//) || [])[1] || 9990} --user=<관리계정> --password=<비밀번호> --command=':reload'`;
+  if (st.ready && (st.noElapsed > 0 || st.reloadRequired)) {
+    notes.push(`<p>▲ ${st.noElapsed > 0 ? `최근 요청 ${fmtNum(st.noElapsed)}건은 access log 에 처리시간이 없어(<code>-</code>) 표시하지 못했습니다. ` : ''}`
+      + `${st.reloadRequired ? `WildFly 가 <b>${esc(st.serverState)}</b> 상태입니다. ` : ''}`
+      + '처리시간 기록(record-request-start-time)은 <b>WildFly reload 후</b> 적용됩니다. 점검 시간에 reload 하세요:</p>'
+      + `<pre>${esc(reloadCmd)}</pre>`);
+  }
   if (st.ready && st.notRecording && st.notRecording.length) {
     notes.push(`<p>▲ 처리시간 기록(record-request-start-time)이 아직 적용되지 않은 리스너가 있습니다: <code>${esc(st.notRecording.join(', '))}</code>. 설정 후 WildFly reload 가 필요합니다. 그 전까지의 요청은 처리시간이 없어 표시되지 않습니다.</p>`);
   }

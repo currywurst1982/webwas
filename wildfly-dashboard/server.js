@@ -130,6 +130,11 @@ app.use('/api', (req, res, next) => {
 const PUBLIC = path.join(__dirname, 'public');
 const loggedIn = (req) => Boolean(req.session.username && users.find(req.session.username));
 
+// Pages and assets are always revalidated (cheap 304s) so an update never mixes an old
+// cached page with a new script.
+const noCache = (req, res, next) => { res.set('Cache-Control', 'no-cache'); next(); };
+app.use(['/app', '/login', '/static', '/vendor'], noCache);
+
 app.get('/', (req, res) => res.redirect(loggedIn(req) ? '/app' : '/login'));
 app.get('/login', (req, res) => (loggedIn(req) ? res.redirect('/app') : res.sendFile(path.join(PUBLIC, 'login.html'))));
 app.get('/app', (req, res) => (loggedIn(req) ? res.sendFile(path.join(PUBLIC, 'app.html')) : res.redirect('/login')));

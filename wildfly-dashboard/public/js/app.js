@@ -2,6 +2,18 @@
 
 /* global Chart */
 
+// If the page and script ever disagree (e.g. a stale browser cache after an update),
+// say so instead of sitting on "연결 확인 중".
+window.addEventListener('error', (e) => {
+  const banner = document.getElementById('error-banner');
+  const pill = document.getElementById('conn-status');
+  if (banner) {
+    banner.hidden = false;
+    banner.textContent = `화면 스크립트 오류: ${e.message}. 대시보드를 업데이트한 직후라면 Ctrl+F5 (강력 새로고침) 로 다시 불러오세요.`;
+  }
+  if (pill) pill.innerHTML = '<span class="dot critical"></span><span>화면 오류</span>';
+});
+
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 const esc = (v) => String(v === undefined || v === null ? '' : v)
@@ -30,7 +42,16 @@ async function api(path, opts = {}) {
     headers['Content-Type'] = 'application/json';
     body = JSON.stringify(body);
   }
-  const res = await fetch(`/api${path}`, { method: opts.method || 'GET', headers, body });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs || 20000);
+  let res;
+  try {
+    res = await fetch(`/api${path}`, { method: opts.method || 'GET', headers, body, signal: ctrl.signal });
+  } catch (e) {
+    throw new Error(e.name === 'AbortError' ? '대시보드 서버 응답 시간 초과' : `대시보드 서버에 연결할 수 없습니다 (${e.message})`);
+  } finally {
+    clearTimeout(timer);
+  }
   if (res.status === 401) { location.href = '/login'; throw new Error('로그인이 필요합니다'); }
   const data = await res.json().catch(() => ({}));
   if (res.status === 403 && data.mustChangePassword) { openPasswordModal(true); }
@@ -1007,7 +1028,7 @@ async function takeThreadDump() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> 수집 중...';
   try {
-    state.threads = await api(`/servers/${state.server.id}/threads`);
+    state.threads = await api(`/servers/${state.server.id}/threads`, { timeoutMs: 90000 });
     renderThreads();
   } catch (e) {
     toast(e.message);
@@ -1287,7 +1308,7 @@ $('#btn-heap-generate').addEventListener('click', async () => {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> 생성 중...';
   try {
-    const meta = await api(`/servers/${state.server.id}/heapdump`, { method: 'POST', body: { live: $('#heap-live').checked } });
+    const meta = await api(`/servers/${state.server.id}/heapdump`, { method: 'POST', body: { live: $('#heap-live').checked }, timeoutMs: 35 * 60000 });
     state.pendingOpen = meta.id;
     toast(`힙 덤프 생성 완료 (${fmtBytes(meta.size)}) - 분석을 시작했습니다`);
   } catch (ex) {

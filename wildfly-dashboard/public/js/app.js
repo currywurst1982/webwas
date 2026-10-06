@@ -1045,7 +1045,8 @@ async function loadDatasources() {
     </div>`;
   }).join('') : '<div class="card empty">설정된 데이터소스가 없습니다</div>';
   $('#ds-drivers').innerHTML = `<table><thead><tr><th>이름</th><th>모듈</th><th>클래스</th><th>버전</th></tr></thead><tbody>${
-    drivers.map((d) => `<tr><td>${esc(d.name)}</td><td class="mono">${esc(d.module)}</td><td class="mono">${esc(d.className || '-')}</td><td>${esc(d.version || '-')}</td></tr>`).join('')
+    drivers.map((d) => `<tr><td>${esc(d.name)}</td><td class="mono">${esc(d.module || d.deployment || '-')}</td><td class="mono">${esc(d.className || '-')}</td>
+      <td title="${esc(d.versionSource || '')}">${esc(d.version || '-')}${d.jdbcCompliant === false ? ' <span class="muted">(JDBC 비호환)</span>' : ''}</td></tr>`).join('')
   }</tbody></table>`;
 }
 

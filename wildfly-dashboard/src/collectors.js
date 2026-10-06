@@ -5,6 +5,7 @@
 // java.lang.management MXBeans of the server JVM.
 
 const { addr } = require('./wildfly-client');
+const driverVersion = require('./driver-version');
 
 const PM = '/core-service=platform-mbean';
 
@@ -164,10 +165,17 @@ function stripSecrets(obj) {
 }
 
 async function datasources(client) {
-  const res = await client.execute({
-    operation: 'read-resource', address: addr('/subsystem=datasources'), recursive: true, 'include-runtime': true,
-    'resolve-expressions': true,
-  });
+  const [res, installed, home] = await client.composite([
+    {
+      operation: 'read-resource', address: addr('/subsystem=datasources'), recursive: true, 'include-runtime': true,
+      'resolve-expressions': true,
+    },
+    // what the loaded Driver class reports (the jdbc-driver resource only holds what was configured, often nothing)
+    { operation: 'installed-drivers-list', address: addr('/subsystem=datasources') },
+    { operation: 'read-attribute', address: addr('/core-service=server-environment'), name: 'home-dir' },
+  ]);
+  if (!res) throw new Error('datasources 서브시스템을 읽지 못했습니다');
+  const loaded = new Map((Array.isArray(installed) ? installed : []).map((d) => [d['driver-name'], d]));
   const list = [];
   for (const [kind, key] of [['data-source', false], ['xa-data-source', true]]) {
     for (const [name, ds] of Object.entries(res[kind] || {})) {
@@ -201,14 +209,24 @@ async function datasources(client) {
       });
     }
   }
-  const drivers = Object.entries(res['jdbc-driver'] || {}).map(([name, d]) => ({
-    name,
-    module: d['driver-module-name'],
-    className: d['driver-class-name'] || d['driver-datasource-class-name'] || d['driver-xa-datasource-class-name'] || null,
-    version: d['driver-major-version'] !== undefined && d['driver-major-version'] !== null
-      ? `${d['driver-major-version']}.${d['driver-minor-version'] ?? 0}` : null,
-    jdbcCompliant: d['jdbc-compliant'],
-  }));
+  const drivers = Object.entries(res['jdbc-driver'] || {}).map(([name, conf]) => {
+    const rt = loaded.get(name) || {};
+    const pick = (k) => (conf[k] !== undefined && conf[k] !== null && conf[k] !== '' ? conf[k] : (rt[k] !== '' ? rt[k] : null));
+    const major = pick('driver-major-version');
+    const minor = pick('driver-minor-version');
+    const module = pick('driver-module-name');
+    // full version from the module jar's MANIFEST when the dashboard runs on the WildFly host
+    const full = module ? driverVersion.moduleDriverVersion(home, module, pick('module-slot')) : null;
+    return {
+      name,
+      module,
+      deployment: pick('deployment-name'),
+      className: pick('driver-class-name') || pick('driver-datasource-class-name') || pick('driver-xa-datasource-class-name'),
+      version: full ? full.version : major !== null && major !== undefined ? `${major}.${minor ?? 0}` : null,
+      versionSource: full ? `jar: ${full.jar}` : major !== null && major !== undefined ? 'JDBC Driver (major.minor)' : null,
+      jdbcCompliant: pick('jdbc-compliant'),
+    };
+  });
   return { datasources: stripSecrets(list), drivers };
 }
 

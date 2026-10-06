@@ -413,12 +413,10 @@ async function loadOverview() {
       : `<table><thead><tr><th>이름</th><th>드라이버</th><th class="r">사용 / 최대</th><th>상태</th><th>추이</th></tr></thead><tbody>${
         ds.datasources.map((d) => {
           const p = d.pool;
-          const has = d.statisticsEnabled && p && p.inUseCount !== undefined;
-          const pct = has && d.maxPoolSize ? (100 * p.inUseCount) / d.maxPoolSize : null;
-          const badge = !d.enabled ? '<span class="badge">비활성</span>'
-            : !has ? '<span class="badge violet">통계 꺼짐</span>'
-              : pct >= 90 || p.timedOut > 0 ? '<span class="badge critical">▲ 포화</span>'
-                : '<span class="badge good">● 정상</span>';
+          const health = dsHealth(d);
+          const has = health.has;
+          const badge = health.level === 'ok' && !health.badges.length ? '<span class="badge good">● 정상</span>'
+            : health.badges.join(' ') || '<span class="badge good">● 정상</span>';
           return `<tr><td class="name">${esc(d.name)}${d.xa ? ' <span class="badge blue">XA</span>' : ''}<div class="muted" style="font-size:11.5px">${esc(d.jndiName)}</div></td>
             <td>${esc(d.driver)}</td><td class="r">${has ? `${fmtNum(p.inUseCount)} / ${fmtNum(d.maxPoolSize)}` : '-'}</td><td>${badge}</td>
             <td>${has ? sparkline(state.dsHistory[d.name] || [], 'var(--series-1)', `${d.name} 사용 중 커넥션`) : ''}</td></tr>`;
@@ -475,12 +473,43 @@ async function sampleMemory() {
 }
 
 function recordDatasources(list) {
+  const now = Date.now();
+  state.dsFail = state.dsFail || {};
   for (const d of list) {
     if (!d.pool || d.pool.inUseCount === undefined) continue;
     const h = state.dsHistory[d.name] || (state.dsHistory[d.name] = []);
     h.push(d.pool.inUseCount);
     if (h.length > 40) h.shift();
+    // BlockingFailureCount is cumulative since start: keep 10 minutes of samples to see whether it is growing now.
+    const f = (state.dsFail[d.name] || []).filter((x) => x.t >= now - 10 * 60000);
+    f.push({ t: now, v: d.pool.blockingFailureCount || 0 });
+    state.dsFail[d.name] = f;
   }
+}
+
+/**
+ * Pool health from the statistics that really indicate trouble:
+ * - saturation: connections in use >= 90% of max-pool-size right now
+ * - acquisition failures: BlockingFailureCount (IJ000453 "Unable to get managed connection") growing in the last 5 minutes
+ * TimedOut is NOT a problem: it counts idle connections closed by idle-timeout-minutes.
+ */
+function dsHealth(d) {
+  const p = d.pool;
+  const has = d.statisticsEnabled && p && p.inUseCount !== undefined;
+  if (!d.enabled) return { has, badges: ['<span class="badge">비활성</span>'], level: 'off' };
+  if (!has) return { has, badges: ['<span class="badge violet">통계 꺼짐</span>'], level: 'off' };
+  const pct = d.maxPoolSize ? (100 * p.inUseCount) / d.maxPoolSize : 0;
+  const samples = (state.dsFail && state.dsFail[d.name]) || [];
+  const base = samples.find((x) => x.t >= Date.now() - 5 * 60000) || samples[0];
+  const recentFail = base ? Math.max(0, (p.blockingFailureCount || 0) - base.v) : 0;
+  const badges = [];
+  if (recentFail > 0) badges.push(`<span class="badge critical" title="최근 5분 동안 커넥션을 얻지 못한 요청 수 (IJ000453)">● 획득 실패 +${recentFail}</span>`);
+  if (pct >= 90) badges.push(`<span class="badge warning" title="사용 중 커넥션이 max-pool-size 의 90% 이상">▲ 풀 포화 ${Math.round(pct)}%</span>`);
+  if (!badges.length && p.blockingFailureCount > 0) {
+    badges.push(`<span class="badge" title="서버 시작(또는 통계 초기화) 이후 누적. 최근 5분 동안은 늘지 않았습니다">획득 실패 누적 ${fmtNum(p.blockingFailureCount)}</span>`);
+  }
+  const level = recentFail > 0 ? 'critical' : pct >= 90 ? 'warning' : 'ok';
+  return { has, badges, level, pct, recentFail };
 }
 
 async function loadMemory() {
@@ -989,11 +1018,11 @@ async function loadDatasources() {
     const p = d.pool;
     const hasStats = d.statisticsEnabled && p && p.activeCount !== undefined;
     const inUse = hasStats ? p.inUseCount : null;
-    const warn = hasStats && (p.timedOut > 0 || p.blockingFailureCount > 0 || (d.maxPoolSize && p.inUseCount >= d.maxPoolSize));
+    const health = dsHealth(d);
     return `<div class="card">
       <h3>${esc(d.name)} ${d.xa ? '<span class="badge">XA</span>' : ''}
-        <span class="badge ${d.enabled ? 'good' : ''}">${d.enabled ? '● 활성' : '비활성'}</span>
-        ${warn ? '<span class="badge warning">▲ 풀 포화/타임아웃</span>' : ''}
+        ${d.enabled ? (health.level === 'ok' ? '<span class="badge good">● 정상</span>' : '') : ''}
+        ${health.badges.join(' ')}
         <span class="right">${isAdmin() ? `<button class="btn sm" data-ds-test="${esc(d.name)}" data-xa="${d.xa}">연결 테스트</button>` : ''}</span></h3>
       <dl class="kv">${kv([
         ['JNDI', d.jndiName], ['URL', d.connectionUrl], ['드라이버', d.driver], ['DB 사용자', d.userName],
@@ -1002,15 +1031,16 @@ async function loadDatasources() {
       ])}</dl>
       ${hasStats ? `
         ${meter('사용 중 커넥션 / 최대', inUse, d.maxPoolSize, `${fmtNum(inUse)} / ${fmtNum(d.maxPoolSize)}`)}
-        ${meter('생성된(Active) 커넥션 / 최대', p.activeCount, d.maxPoolSize, `${fmtNum(p.activeCount)} / ${fmtNum(d.maxPoolSize)}`)}
+        ${meter('생성된(Active) 커넥션 / 최대 (유휴 포함)', p.activeCount, d.maxPoolSize, `${fmtNum(p.activeCount)} / ${fmtNum(d.maxPoolSize)}`, true)}
         <div class="table-wrap section"><table><tbody>
           <tr><td>가용(Available)</td><td class="r">${fmtNum(p.availableCount)}</td><td>최대 사용(MaxUsed)</td><td class="r">${fmtNum(p.maxUsedCount)}</td></tr>
-          <tr><td>대기 횟수(Wait)</td><td class="r">${fmtNum(p.waitCount)}</td><td>타임아웃(TimedOut)</td><td class="r">${fmtNum(p.timedOut)}</td></tr>
+          <tr><td title="커넥션이 모두 사용 중이라 기다려야 했던 요청 수 (누적)">대기 발생(WaitCount)</td><td class="r">${fmtNum(p.waitCount)}</td><td title="오래 쓰이지 않아 idle-timeout 으로 정리된 커넥션 수. 정상 동작입니다">유휴 정리(TimedOut)</td><td class="r">${fmtNum(p.timedOut)}</td></tr>
           <tr><td>평균 대기 시간</td><td class="r">${fmtMs(p.averageBlockingTime)}</td><td>최대 대기 시간</td><td class="r">${fmtMs(p.maxWaitTime)}</td></tr>
           <tr><td>평균 사용 시간</td><td class="r">${fmtMs(p.averageUsageTime)}</td><td>평균 생성 시간</td><td class="r">${fmtMs(p.averageCreationTime)}</td></tr>
-          <tr><td>생성 / 제거</td><td class="r">${fmtNum(p.createdCount)} / ${fmtNum(p.destroyedCount)}</td><td>획득 실패</td><td class="r">${fmtNum(p.blockingFailureCount)}</td></tr>
+          <tr><td>생성 / 제거</td><td class="r">${fmtNum(p.createdCount)} / ${fmtNum(p.destroyedCount)}</td><td title="blocking-timeout 안에 커넥션을 얻지 못해 실패한 요청 수 (누적, IJ000453)">획득 실패(BlockingFailure)</td><td class="r ${health.recentFail ? 'xl-slow' : ''}">${fmtNum(p.blockingFailureCount)}</td></tr>
           ${d.jdbc && d.jdbc.preparedStatementCacheHitCount !== undefined ? `<tr><td>PS 캐시 hit / miss</td><td class="r">${fmtNum(d.jdbc.preparedStatementCacheHitCount)} / ${fmtNum(d.jdbc.preparedStatementCacheMissCount)}</td><td></td><td></td></tr>` : ''}
-        </tbody></table></div>`
+        </tbody></table></div>
+        <p class="muted" style="font-size:11.5px;margin:8px 0 0">대기 발생·획득 실패·유휴 정리는 서버 시작(또는 통계 초기화) 이후 누적값입니다. 경고는 <b>지금</b> 사용률 90% 이상이거나 획득 실패가 <b>최근 5분</b> 안에 늘었을 때만 표시합니다.</p>`
       : `<p class="muted" style="font-size:12.5px;margin-bottom:0">풀 통계가 비활성화되어 있습니다. 활성화: <code>/subsystem=datasources/${d.xa ? 'xa-data-source' : 'data-source'}=${esc(d.name)}:write-attribute(name=statistics-enabled,value=true)</code></p>`}
     </div>`;
   }).join('') : '<div class="card empty">설정된 데이터소스가 없습니다</div>';

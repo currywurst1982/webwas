@@ -135,6 +135,17 @@ npm start
 ```
 자동 탐지를 끄려면 `"enabled": false` 또는 `DASHBOARD_DISCOVERY=false` 를 설정합니다.
 
+## DB 데이터소스 경고 기준
+
+| 표시 | 조건 | 의미 |
+|---|---|---|
+| ● 획득 실패 +N | `BlockingFailureCount` 가 최근 5분 안에 늘어남 | `blocking-timeout-wait-millis` 안에 커넥션을 얻지 못해 요청이 실패함 (`IJ000453: Unable to get managed connection`) |
+| ▲ 풀 포화 N% | 사용 중(`InUseCount`) / `max-pool-size` ≥ 90% | 커넥션이 거의 다 쓰이는 중. 곧 대기·획득 실패가 생길 수 있음 |
+| 획득 실패 누적 N (회색) | 누적값만 있고 최근 5분간 늘지 않음 | 예전에 실패가 있었음. 지금 문제는 아님 |
+
+`TimedOut`(유휴 정리)은 `idle-timeout-minutes` 동안 쓰이지 않아 닫힌 커넥션 수로, 정상 동작이라 경고에 쓰지 않습니다.
+대기 발생·획득 실패·유휴 정리는 서버 시작(또는 통계 초기화) 이후 누적값입니다.
+
 ## XLog (트랜잭션)
 
 XLog 는 WildFly(Undertow) **access log** 에 기록된 요청별 처리시간으로 그립니다. 대시보드가 같은 서버에 있는 access log 파일을 실시간으로 읽습니다(2초마다, 로그 rotate 자동 처리).

@@ -220,10 +220,15 @@ function makeHandlers(m) {
   'dump-all-threads:core-service=platform-mbean/type=threading': threads,
   'find-deadlocked-threads:core-service=platform-mbean/type=threading'() { return undefined; },
   'read-resource:subsystem=datasources'() {
+    if (Math.random() < 0.15) m.dsFailures = (m.dsFailures || 3) + 1;
     return {
       'data-source': {
         ExampleDS: ds('java:jboss/datasources/ExampleDS', 'jdbc:h2:mem:test;DB_CLOSE_DELAY=-1', 'h2', false, { 'min-pool-size': undefined, 'max-pool-size': undefined }),
-        OrderDS: ds('java:jboss/datasources/OrderDS', 'jdbc:postgresql://db-prod:5432/orders', 'postgresql', true),
+        OrderDS: (() => {
+          const o = ds('java:jboss/datasources/OrderDS', 'jdbc:postgresql://db-prod:5432/orders', 'postgresql', true);
+          o.statistics.pool.BlockingFailureCount = m.dsFailures || 3;
+          return o;
+        })(),
       },
       'xa-data-source': {
         BillingXADS: {

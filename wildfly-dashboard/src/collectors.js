@@ -205,7 +205,8 @@ async function datasources(client) {
     name,
     module: d['driver-module-name'],
     className: d['driver-class-name'] || d['driver-datasource-class-name'] || d['driver-xa-datasource-class-name'] || null,
-    version: d['driver-major-version'] !== undefined ? `${d['driver-major-version']}.${d['driver-minor-version']}` : null,
+    version: d['driver-major-version'] !== undefined && d['driver-major-version'] !== null
+      ? `${d['driver-major-version']}.${d['driver-minor-version'] ?? 0}` : null,
     jdbcCompliant: d['jdbc-compliant'],
   }));
   return { datasources: stripSecrets(list), drivers };

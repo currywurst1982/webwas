@@ -43,8 +43,9 @@ function instanceName(p) {
   if (p.serverName) return p.serverName;
   const base = p.baseDir ? path.basename(p.baseDir) : '';
   if (base && base !== 'standalone') return base;
-  const conf = (p.configFile || '').replace(/^.*[\\/]/, '').replace(/\.xml$/, '');
-  return conf && conf !== 'standalone' ? `${conf} :${p.port}` : `WildFly :${p.port}`;
+  // standalone-claude-test.xml -> "claude-test"; plain standalone.xml has no name of its own
+  const conf = (p.configFile || '').replace(/^.*[\\/]/, '').replace(/\.xml$/, '').replace(/^standalone-?/, '');
+  return conf || `WildFly :${p.port}`;
 }
 
 function runDiscovery() {
@@ -58,6 +59,7 @@ function runDiscovery() {
     if (known) {
       // Already configured by hand: just remember which process answers there.
       Object.assign(known, { pid: p.pid, user: p.user });
+      if (known.autoName) known.name = instanceName(p);
       continue;
     }
     // Two processes resolving to the same port means one of them was mis-detected;

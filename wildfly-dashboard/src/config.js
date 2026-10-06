@@ -92,6 +92,8 @@ function load() {
   cfg.servers = cfg.servers.map((s, i) => ({
     id: String(s.id || `server${i + 1}`),
     name: s.name || s.id || `server${i + 1}`,
+    // Without an explicit name a local server takes its instance name once discovery finds its process.
+    autoName: !s.name,
     url: normalizeUrl(s.url || `http://${s.host || 'localhost'}:${s.port || 9990}/management`),
     username: s.username || '',
     password: s.password || '',

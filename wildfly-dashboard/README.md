@@ -121,6 +121,14 @@ npm start
    - domain 모드 서버는 자동 탐지하지 않습니다.
 2. **`servers` 설정:** 원격 서버나 자동 탐지가 안 되는 인스턴스를 직접 등록합니다. 자동 탐지된 인스턴스와 주소가 같으면 설정한 쪽이 우선이고, 중복으로 표시되지 않습니다.
 
+**인스턴스 이름**은 다음 순서로 정해집니다.
+1. `servers` 항목의 `name` (직접 적은 경우)
+2. `-Djboss.node.name` / `-Djboss.server.name`
+3. 인스턴스 폴더(base dir) 이름 (공용 `standalone` 폴더는 제외)
+4. 설정 파일 이름에서 `standalone-` 과 `.xml` 을 뺀 이름 (`standalone-claude-test.xml` → `claude-test`)
+
+`servers` 에 등록한 로컬 서버도 `name` 을 비워 두면 같은 규칙으로 인스턴스 이름이 붙습니다.
+
 ```json
 "discovery": { "enabled": true, "intervalSeconds": 30, "username": "monitor", "password": "change-me" }
 ```

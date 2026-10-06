@@ -111,11 +111,13 @@ npm start
 인스턴스 목록은 두 곳에서 만들어집니다.
 
 1. **자동 탐지 (Linux, 기본 켜짐):** 대시보드가 있는 서버에서 실행 중인 WildFly **standalone** 프로세스를 `discovery.intervalSeconds`(기본 30초)마다 찾습니다.
-   - 각 프로세스의 실행 옵션에서 관리 주소와 포트를 계산합니다. 사용하는 옵션은 `-bmanagement`, `-Djboss.bind.address.management`, `-Djboss.management.http.port`, `-Djboss.socket.binding.port-offset`입니다.
+   - 각 프로세스의 관리 주소와 포트를 계산합니다. 먼저 그 인스턴스가 쓰는 설정 파일(`-c standalone-xxx.xml`)의 `port-offset`, `management-http` 포트, management 인터페이스 주소를 읽습니다. 그다음 실행 옵션(`-bmanagement`, `-Djboss.socket.binding.port-offset` 등)을 반영합니다.
+     그래서 여러 인스턴스가 **같은 standalone 폴더를 공유하고 설정 파일만 다른 구성**(포트 오프셋이 설정 파일 안에만 있는 경우)도 포트를 정확히 찾습니다.
    - 새로 뜬 인스턴스는 자동으로 추가되고, 종료된 인스턴스는 다음 탐지 때 빠집니다.
    - 관리 API 가 알려 주는 PID 와 실제 프로세스 PID 를 비교합니다. 다르면 카드에 경고가 표시됩니다. 포트 오프셋을 `standalone.xml` 에만 설정한 경우가 그렇습니다.
    - 탐지한 인스턴스에는 `discovery.username` / `password` 관리 계정을 사용합니다. 비어 있으면 `servers` 에 등록한 로컬 서버의 계정을 씁니다.
-     인스턴스마다 `add-user.sh -sc <인스턴스 base dir>/configuration -u monitor -p '...'` 로 같은 계정을 만들어 두면 편합니다.
+     관리 계정은 인스턴스 폴더(base dir)의 `configuration/mgmt-users.properties` 에 저장됩니다.
+     폴더가 인스턴스마다 다르면 폴더마다 `add-user.sh -sc <base dir>/configuration -u monitor -p '...'` 를 실행하고, 같은 폴더를 공유하면 한 번만 실행하면 됩니다.
    - domain 모드 서버는 자동 탐지하지 않습니다.
 2. **`servers` 설정:** 원격 서버나 자동 탐지가 안 되는 인스턴스를 직접 등록합니다. 자동 탐지된 인스턴스와 주소가 같으면 설정한 쪽이 우선이고, 중복으로 표시되지 않습니다.
 

@@ -55,7 +55,54 @@ function option(args, names) {
   return value;
 }
 
-const intOr = (v, def) => (v !== undefined && /^-?\d+$/.test(v) ? Number(v) : def);
+const intOr = (v, def) => (v !== undefined && /^-?\d+$/.test(String(v)) ? Number(v) : def);
+
+/** System properties given on the command line; -b/-bmanagement are shortcuts for bind addresses. */
+function systemProperties(args) {
+  const props = {};
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    let m = /^-D([^=]+)=(.*)$/.exec(a);
+    if (m) { props[m[1]] = m[2]; continue; }
+    m = /^-b(management)?(?:=(.*))?$/.exec(a);
+    if (m) {
+      const value = m[2] !== undefined ? m[2] : args[i + 1];
+      if (value !== undefined) props[m[1] ? 'jboss.bind.address.management' : 'jboss.bind.address'] = value;
+    }
+  }
+  return props;
+}
+
+/** Resolves a WildFly expression such as ${jboss.socket.binding.port-offset:0} against the given properties. */
+function resolveExpression(value, props) {
+  if (value === undefined || value === null) return undefined;
+  return String(value).replace(/\$\{([^}]+)\}/g, (_, expr) => {
+    const i = expr.indexOf(':');
+    const names = (i < 0 ? expr : expr.slice(0, i)).split(',');
+    for (const n of names) if (props[n.trim()] !== undefined) return props[n.trim()];
+    return i < 0 ? '' : expr.slice(i + 1);
+  });
+}
+
+/**
+ * Reads the management port, port offset and management address from the
+ * server's configuration file (standalone*.xml). Instances that share one
+ * base dir usually differ only by the -c file, which holds their port offset.
+ */
+function readServerConfig(file, props) {
+  let xml;
+  try {
+    xml = fs.readFileSync(file, 'utf8');
+  } catch (_) {
+    return null;
+  }
+  const attr = (re) => { const m = re.exec(xml); return m ? resolveExpression(m[1], props) : undefined; };
+  return {
+    offset: attr(/<socket-binding-group\b[^>]*\bport-offset="([^"]*)"/),
+    port: attr(/<socket-binding\s+name="management-http"[^>]*\bport="([^"]*)"/),
+    address: attr(/<interface\s+name="management"\s*>\s*<inet-address\s+value="([^"]*)"/),
+  };
+}
 
 /** Parses a WildFly java command line; returns null when it is not a WildFly server process. */
 function parseCommandLine(args) {
@@ -66,18 +113,24 @@ function parseCommandLine(args) {
       : args.includes('-D[Host Controller]') ? 'host-controller'
         : args.includes('-D[Process Controller]') ? 'process-controller' : 'standalone';
 
-  const offset = intOr(option(args, ['-Djboss.socket.binding.port-offset']), 0);
-  const port = intOr(option(args, ['-Djboss.management.http.port']), 9990) + offset;
-  let address = option(args, ['-bmanagement', '-Djboss.bind.address.management']) || '127.0.0.1';
-  if (/^(0\.0\.0\.0|::|\[::\]|)$/.test(address) || address.includes('${')) address = '127.0.0.1';
+  const props = systemProperties(args);
   const home = option(args, ['-Djboss.home.dir']) || null;
   const baseDir = option(args, ['-Djboss.server.base.dir']) || (home ? path.join(home, 'standalone') : null);
   const configFile = option(args, ['-c', '--server-config', '-Djboss.server.default.config']) || 'standalone.xml';
+  const configDir = props['jboss.server.config.dir'] || (baseDir ? path.join(baseDir, 'configuration') : null);
+  const configPath = path.isAbsolute(configFile) ? configFile : (configDir ? path.join(configDir, configFile) : null);
+  const xml = (configPath && readServerConfig(configPath, props)) || {};
+
+  // The configuration file wins (its expressions already see the -D values); fall back to the command line.
+  const offset = intOr(xml.offset, intOr(props['jboss.socket.binding.port-offset'], 0));
+  const port = intOr(xml.port, intOr(props['jboss.management.http.port'], 9990)) + offset;
+  let address = xml.address || props['jboss.bind.address.management'] || '127.0.0.1';
+  if (/^(0\.0\.0\.0|::|\[::\]|)$/.test(address) || address.includes('${')) address = '127.0.0.1';
   const serverName = option(args, ['-Djboss.server.name', '-Djboss.node.name']) ||
     (domainServer ? domainServer.slice(10, -1) : null);
   const host = address.includes(':') && !address.startsWith('[') ? `[${address}]` : address;
 
-  return { kind, address, port, offset, url: `http://${host}:${port}/management`, home, baseDir, configFile, serverName };
+  return { kind, address, port, offset, url: `http://${host}:${port}/management`, home, baseDir, configFile, configPath, serverName };
 }
 
 /** Scans /proc for WildFly processes. Only standalone servers have their own management endpoint. */
@@ -98,4 +151,4 @@ function scan(procDir = '/proc') {
   return found.sort((a, b) => a.port - b.port);
 }
 
-module.exports = { scan, parseCommandLine };
+module.exports = { scan, parseCommandLine, resolveExpression };

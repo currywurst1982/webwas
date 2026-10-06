@@ -42,7 +42,9 @@ function clientFor(server) {
 function instanceName(p) {
   if (p.serverName) return p.serverName;
   const base = p.baseDir ? path.basename(p.baseDir) : '';
-  return base && base !== 'standalone' ? base : `WildFly :${p.port}`;
+  if (base && base !== 'standalone') return base;
+  const conf = (p.configFile || '').replace(/^.*[\\/]/, '').replace(/\.xml$/, '');
+  return conf && conf !== 'standalone' ? `${conf} :${p.port}` : `WildFly :${p.port}`;
 }
 
 function runDiscovery() {
@@ -50,6 +52,7 @@ function runDiscovery() {
   const procs = discovery.scan();
   const configured = new Map(staticServers.map((s) => [sameEndpoint(s.url), s]));
   const next = [];
+  const ports = procs.map((p) => p.port);
   for (const p of procs) {
     const known = configured.get(sameEndpoint(p.url));
     if (known) {
@@ -57,8 +60,11 @@ function runDiscovery() {
       Object.assign(known, { pid: p.pid, user: p.user });
       continue;
     }
+    // Two processes resolving to the same port means one of them was mis-detected;
+    // keep both (the PID check flags the wrong one) with distinct ids.
+    const clash = ports.filter((x) => x === p.port).length > 1;
     next.push({
-      id: `local-${p.port}`,
+      id: clash ? `local-${p.port}-pid${p.pid}` : `local-${p.port}`,
       name: instanceName(p),
       url: p.url,
       username: cfg.discovery.username,

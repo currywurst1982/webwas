@@ -209,21 +209,33 @@ async function datasources(client) {
       });
     }
   }
-  const drivers = Object.entries(res['jdbc-driver'] || {}).map(([name, conf]) => {
+  // Drivers deployed as a jar (deployments/postgresql-42.7.4.jar) are only in the installed list.
+  const configured = res['jdbc-driver'] || {};
+  const entries = [
+    ...Object.entries(configured),
+    ...[...loaded.keys()].filter((n) => !configured[n]).map((n) => [n, {}]),
+  ];
+  const drivers = entries.map(([name, conf]) => {
     const rt = loaded.get(name) || {};
     const pick = (k) => (conf[k] !== undefined && conf[k] !== null && conf[k] !== '' ? conf[k] : (rt[k] !== '' ? rt[k] : null));
     const major = pick('driver-major-version');
     const minor = pick('driver-minor-version');
     const module = pick('driver-module-name');
     // full version from the module jar's MANIFEST when the dashboard runs on the WildFly host
-    const full = module ? driverVersion.moduleDriverVersion(home, module, pick('module-slot')) : null;
+    let full = module ? driverVersion.moduleDriverVersion(home, module, pick('module-slot')) : null;
+    const deployment = pick('deployment-name');
+    if (!full && deployment && major !== null && major !== undefined) {
+      // a deployed driver's file name usually carries the full version; trust it only if it matches the driver
+      const m = /(\d+\.\d+(?:\.\d+)*)/.exec(deployment);
+      if (m && m[1].startsWith(`${major}.${minor ?? 0}`)) full = { version: m[1], source: `배포 파일 이름: ${deployment}` };
+    }
     return {
       name,
       module,
-      deployment: pick('deployment-name'),
+      deployment,
       className: pick('driver-class-name') || pick('driver-datasource-class-name') || pick('driver-xa-datasource-class-name'),
       version: full ? full.version : major !== null && major !== undefined ? `${major}.${minor ?? 0}` : null,
-      versionSource: full ? `jar: ${full.jar}` : major !== null && major !== undefined ? 'JDBC Driver (major.minor)' : null,
+      versionSource: full ? (full.source || `jar: ${full.jar}`) : major !== null && major !== undefined ? 'JDBC Driver (major.minor)' : null,
       jdbcCompliant: pick('jdbc-compliant'),
     };
   });

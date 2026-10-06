@@ -14,6 +14,7 @@ const collectors = require('./src/collectors');
 const threadAnalyzer = require('./src/thread-analyzer');
 const { HeapDumpManager } = require('./src/heapdump');
 const discovery = require('./src/discovery');
+const { BUILD } = require('./src/build');
 const xlog = require('./src/xlog');
 const { UserStore, requireLogin, requireAdmin, publicUser, validatePassword } = require('./src/auth');
 
@@ -164,7 +165,7 @@ app.post('/api/auth/logout', (req, res) => {
 const api = express.Router();
 api.use(requireLogin(users));
 
-api.get('/auth/me', (req, res) => res.json({ user: publicUser(req.user), mock: cfg.mock }));
+api.get('/auth/me', (req, res) => res.json({ user: publicUser(req.user), mock: cfg.mock, build: BUILD }));
 api.post('/auth/password', (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   try {
@@ -435,7 +436,7 @@ if (require.main === module) {
   runDiscovery();
   if (cfg.discovery.enabled && !cfg.mock) setInterval(runDiscovery, cfg.discovery.intervalSeconds * 1000).unref();
   app.listen(cfg.port, cfg.host, () => {
-    console.log(`WildFly Dashboard: http://${cfg.host === '0.0.0.0' ? 'localhost' : cfg.host}:${cfg.port}${cfg.mock ? '  (MOCK 모드)' : ''}`);
+    console.log(`WildFly Dashboard (build ${BUILD}): http://${cfg.host === '0.0.0.0' ? 'localhost' : cfg.host}:${cfg.port}${cfg.mock ? '  (MOCK 모드)' : ''}`);
     for (const s of allServers()) {
       console.log(`  - ${s.name} <${s.url}>${s.discovered ? `  (자동 탐지, PID ${s.pid}, ${s.user})` : ''}`);
     }

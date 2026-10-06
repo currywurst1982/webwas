@@ -18,7 +18,7 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 
 // Must match <meta name="dashboard-build"> in app.html; a mismatch means the two files come from different versions.
-const BUILD = '2026.10.06';
+const BUILD = '2026.10.06.2';
 const missingElements = [];
 /** addEventListener that tolerates a missing element (an out-of-date app.html must not stop the whole page). */
 function on(sel, ev, fn) {
@@ -446,7 +446,7 @@ async function loadOverview() {
       return `<tr><td class="muted">${i + 1}</td><td class="name">${esc(d.name)}</td><td><span class="badge ${cls}">${d.status === 'OK' ? '● ' : d.status === 'FAILED' ? '▲ ' : ''}${esc(d.status || (d.enabled ? 'enabled' : 'disabled'))}</span></td><td class="muted">${esc(fmtTime(d.enabledTime))}</td></tr>`;
     }).join('')}</tbody></table>` : '<div class="empty">배포된 애플리케이션이 없습니다</div>';
   $('#ov-args').textContent = (j.inputArguments || []).join('\n') || '-';
-  $('#footer-server').textContent = `${state.server.name} · ${state.server.url}`;
+  $('#footer-server').textContent = `${state.server.name} · ${state.server.url} · build ${BUILD}`;
 
   updateOverviewCharts(mem);
 }
@@ -1046,7 +1046,7 @@ async function loadDatasources() {
   }).join('') : '<div class="card empty">설정된 데이터소스가 없습니다</div>';
   $('#ds-drivers').innerHTML = `<table><thead><tr><th>이름</th><th>모듈</th><th>클래스</th><th>버전</th></tr></thead><tbody>${
     drivers.map((d) => `<tr><td>${esc(d.name)}</td><td class="mono">${esc(d.module || d.deployment || '-')}</td><td class="mono">${esc(d.className || '-')}</td>
-      <td title="${esc(d.versionSource || '')}">${esc(d.version || '-')}${d.jdbcCompliant === false ? ' <span class="muted">(JDBC 비호환)</span>' : ''}</td></tr>`).join('')
+      <td title="${esc(d.versionSource || '')}">${esc(d.version || '-')}</td></tr>`).join('')
   }</tbody></table>`;
 }
 
@@ -1396,6 +1396,16 @@ async function start() {
   checkBuild();
   const me = await api('/auth/me').catch(() => null);
   if (!me) return;
+  const foot = $('#footer-server');
+  if (me.build !== BUILD) {
+    // The page files are newer (or older) than the running server process: it was not restarted after an update.
+    const b = document.createElement('div');
+    b.className = 'banner error';
+    b.textContent = `대시보드 서버 프로세스가 화면 파일과 다른 버전으로 실행 중입니다 (서버 build ${me.build || '이전 버전'}, 화면 build ${BUILD}). `
+      + 'src, server.js 를 포함해 복사한 뒤 대시보드를 재시작하세요 (예: sudo systemctl restart wildfly-dashboard).';
+    ($('.content') || document.body).prepend(b);
+  }
+  if (foot) foot.dataset.build = `build ${me.build || '?'}`;
   state.user = me.user;
   $('#user-avatar').textContent = me.user.username.slice(0, 2);
   $('#user-name').textContent = me.user.username;

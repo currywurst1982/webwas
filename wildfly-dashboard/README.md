@@ -84,7 +84,7 @@ npm start
 
 ## 설정
 
-환경 변수 또는 `config/config.json` (`config/config.example.json` 참고). 여러 대의 WildFly 를 등록하면 상단에서 선택할 수 있습니다.
+환경 변수 또는 `config/config.json` (`config/config.example.json` 참고). 여러 인스턴스는 아래 [여러 인스턴스 모니터링](#여러-인스턴스-모니터링) 을 참고하세요.
 
 | 환경 변수 | 설명 | 기본값 |
 |---|---|---|
@@ -99,7 +99,30 @@ npm start
 | `DASHBOARD_SECURE_COOKIE` | HTTPS 리버스 프록시 뒤에서 `true` | `false` |
 | `DASHBOARD_MAX_UPLOAD_MB` | 업로드 최대 크기 | `8192` |
 | `DASHBOARD_JCMD` | jcmd 경로 | `jcmd` |
-| `DASHBOARD_MOCK` | 시뮬레이션 모드 | `false` |
+| `DASHBOARD_DISCOVERY` | 로컬 WildFly 프로세스 자동 탐지 | Linux 에서 `true` |
+| `DASHBOARD_DISCOVERY_USER` / `DASHBOARD_DISCOVERY_PASSWORD` | 자동 탐지한 인스턴스에 사용할 관리 계정 | - |
+| `DASHBOARD_MOCK` | 시뮬레이션 모드 (인스턴스 4개 시뮬레이션) | `false` |
+
+## 여러 인스턴스 모니터링
+
+**전체 인스턴스** 메뉴에서 모든 WildFly 인스턴스의 상태를 카드로 한눈에 보고, 카드를 누르면 해당 인스턴스의 상세 대시보드로 이동합니다.
+상단 드롭다운에서도 인스턴스를 바꿀 수 있습니다. 인스턴스가 2개 이상이면 로그인 후 첫 화면이 전체 인스턴스 화면입니다.
+
+인스턴스 목록은 두 곳에서 만들어집니다.
+
+1. **자동 탐지 (Linux, 기본 켜짐):** 대시보드가 있는 서버에서 실행 중인 WildFly **standalone** 프로세스를 `discovery.intervalSeconds`(기본 30초)마다 찾습니다.
+   - 각 프로세스의 실행 옵션에서 관리 주소와 포트를 계산합니다. 사용하는 옵션은 `-bmanagement`, `-Djboss.bind.address.management`, `-Djboss.management.http.port`, `-Djboss.socket.binding.port-offset`입니다.
+   - 새로 뜬 인스턴스는 자동으로 추가되고, 종료된 인스턴스는 다음 탐지 때 빠집니다.
+   - 관리 API 가 알려 주는 PID 와 실제 프로세스 PID 를 비교합니다. 다르면 카드에 경고가 표시됩니다. 포트 오프셋을 `standalone.xml` 에만 설정한 경우가 그렇습니다.
+   - 탐지한 인스턴스에는 `discovery.username` / `password` 관리 계정을 사용합니다. 비어 있으면 `servers` 에 등록한 로컬 서버의 계정을 씁니다.
+     인스턴스마다 `add-user.sh -sc <인스턴스 base dir>/configuration -u monitor -p '...'` 로 같은 계정을 만들어 두면 편합니다.
+   - domain 모드 서버는 자동 탐지하지 않습니다.
+2. **`servers` 설정:** 원격 서버나 자동 탐지가 안 되는 인스턴스를 직접 등록합니다. 자동 탐지된 인스턴스와 주소가 같으면 설정한 쪽이 우선이고, 중복으로 표시되지 않습니다.
+
+```json
+"discovery": { "enabled": true, "intervalSeconds": 30, "username": "monitor", "password": "change-me" }
+```
+자동 탐지를 끄려면 `"enabled": false` 또는 `DASHBOARD_DISCOVERY=false` 를 설정합니다.
 
 ## 힙 덤프 분석
 
@@ -154,7 +177,8 @@ npm run mock      # 시뮬레이션 모드 실행
 ```
 server.js                 Express 앱 (라우팅, 세션, 권한)
 src/wildfly-client.js     WildFly 관리 API 클라이언트 (HTTP Digest, composite 요청)
-src/collectors.js         서버/메모리/데이터소스/쓰레드 정보 수집
+src/collectors.js         서버/메모리/데이터소스/쓰레드 정보 수집, 인스턴스 요약
+src/discovery.js          로컬 WildFly 프로세스 자동 탐지 (/proc)
 src/thread-analyzer.js    쓰레드 덤프 분석, jstack 형식 출력
 src/hprof/parser.js       HPROF 스트리밍 파서, 클래스 히스토그램 파서
 src/heapdump.js           힙 덤프 저장/생성(jcmd)/분석 작업 관리

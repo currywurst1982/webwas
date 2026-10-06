@@ -4,7 +4,6 @@
 // same DMR JSON shape as a real server so the collectors are exercised as-is.
 
 const MB = 1024 * 1024;
-const started = Date.now() - 3 * 24 * 3600 * 1000 - 5 * 3600 * 1000;
 
 function key(address) {
   return (address || []).map((a) => Object.entries(a).map(([k, v]) => `${k}=${v}`).join('')).join('/');
@@ -90,16 +89,37 @@ function threads() {
   return list;
 }
 
-let heapUsed = 620 * MB;
-let youngGcs = 4210;
-let oldGcs = 380;
-function heapNow() {
+/**
+ * Per-instance simulated state. `profile` comes from the server entry's `mock`
+ * object so several mock instances can show different numbers.
+ */
+function createState(profile = {}) {
+  const heapMax = (profile.heapMaxMB || 2048) * MB;
+  return {
+    name: profile.name || 'wildfly-prod-01',
+    host: profile.host || 'wildfly-prod-01.example.com',
+    pid: profile.pid || 24816,
+    state: profile.state || 'running',
+    threads: profile.threads || 63,
+    heapMax,
+    heapLow: heapMax * (profile.heapLow || 0.27),
+    heapHigh: heapMax * (profile.heapHigh || 0.73),
+    heapUsed: heapMax * (profile.heapLow || 0.27) + 100 * MB,
+    metaBaseMB: profile.metaBaseMB || 214,
+    started: Date.now() - (profile.uptimeHours || 77) * 3600 * 1000,
+    youngGcs: 4210,
+    oldGcs: 380,
+    down: Boolean(profile.down),
+  };
+}
+
+function heapNow(m) {
   // Saw-tooth: allocation grows until a GC drops it again.
-  heapUsed += (15 + Math.random() * 40) * MB;
-  youngGcs += Math.floor(Math.random() * 4);
-  if (Math.random() < 0.15) oldGcs += 1;
-  if (heapUsed > 1500 * MB) { heapUsed = (520 + Math.random() * 120) * MB; oldGcs += 1; }
-  return heapUsed;
+  m.heapUsed += (15 + Math.random() * 40) * MB * (m.heapMax / (2048 * MB));
+  m.youngGcs += Math.floor(Math.random() * 4);
+  if (Math.random() < 0.15) m.oldGcs += 1;
+  if (m.heapUsed > m.heapHigh) { m.heapUsed = m.heapLow + Math.random() * 0.06 * m.heapMax; m.oldGcs += 1; }
+  return m.heapUsed;
 }
 
 const ds = (jndi, url, driver, stats, extra = {}) => ({
@@ -118,20 +138,22 @@ const ds = (jndi, url, driver, stats, extra = {}) => ({
   } : { pool: {}, jdbc: {} },
 });
 
-const handlers = {
+function makeHandlers(m) {
+  const started = m.started;
+  return {
   'read-resource:'() {
     return {
-      name: 'wildfly-prod-01', 'product-name': 'WildFly', 'product-version': '37.0.1.Final', 'release-version': '29.0.1.Final',
-      'release-codename': '', 'server-state': 'running', 'running-mode': 'NORMAL', 'suspend-state': 'RUNNING',
+      name: m.name, 'product-name': 'WildFly', 'product-version': '37.0.1.Final', 'release-version': '29.0.1.Final',
+      'release-codename': '', 'server-state': m.state, 'running-mode': 'NORMAL', 'suspend-state': 'RUNNING',
       'launch-type': 'STANDALONE', 'process-type': 'Server', 'management-major-version': 29, 'management-minor-version': 0,
       'management-micro-version': 0, uuid: '7f1d2c3b-aaaa-4b2c-9e1f-0123456789ab', 'profile-name': null,
     };
   },
   'read-resource:core-service=platform-mbean/type=runtime'() {
     return {
-      name: '24816@wildfly-prod-01', pid: 24816, 'vm-name': 'OpenJDK 64-Bit Server VM', 'vm-vendor': 'Eclipse Adoptium',
+      name: `${m.pid}@${m.name}`, pid: m.pid, 'vm-name': 'OpenJDK 64-Bit Server VM', 'vm-vendor': 'Eclipse Adoptium',
       'vm-version': '21.0.8+9-LTS', 'spec-version': '21', uptime: Date.now() - started, 'start-time': started,
-      'input-arguments': ['-D[Standalone]', '-Xms1024m', '-Xmx2048m', '-XX:MetaspaceSize=96M', '-XX:MaxMetaspaceSize=512m',
+      'input-arguments': ['-D[Standalone]', '-Xms1024m', `-Xmx${Math.round(m.heapMax / MB)}m`, '-XX:MetaspaceSize=96M', '-XX:MaxMetaspaceSize=512m',
         '-XX:+UseG1GC', '-Djava.net.preferIPv4Stack=true', '-Djboss.modules.system.pkgs=org.jboss.byteman',
         '-Djava.awt.headless=true', '-XX:+HeapDumpOnOutOfMemoryError', '-XX:HeapDumpPath=/opt/wildfly/standalone/log'],
       'system-properties': {
@@ -143,7 +165,7 @@ const handlers = {
   'read-resource:core-service=server-environment'() {
     return {
       'base-dir': '/opt/wildfly/standalone', 'config-file': '/opt/wildfly/standalone/configuration/standalone-full.xml',
-      'log-dir': '/opt/wildfly/standalone/log', 'qualified-host-name': 'wildfly-prod-01.example.com', 'server-name': 'wildfly-prod-01',
+      'log-dir': '/opt/wildfly/standalone/log', 'qualified-host-name': m.host, 'server-name': m.name,
     };
   },
   'read-resource:core-service=platform-mbean/type=operating-system'() {
@@ -163,34 +185,34 @@ const handlers = {
     return { 'loaded-class-count': 31842 + Math.round(wave(20000, 40, 0)), 'total-loaded-class-count': 33012, 'unloaded-class-count': 1170 };
   },
   'read-resource:core-service=platform-mbean/type=memory'() {
-    const used = heapNow();
+    const used = heapNow(m);
     return {
-      'heap-memory-usage': { init: 1024 * MB, used, committed: 2048 * MB, max: 2048 * MB },
+      'heap-memory-usage': { init: m.heapMax / 2, used, committed: m.heapMax, max: m.heapMax },
       'non-heap-memory-usage': { init: 7 * MB, used: 312 * MB, committed: 336 * MB, max: -1 },
       'object-pending-finalization-count': 0,
     };
   },
   'read-children-resources:core-service=platform-mbean/type=memory-pool'() {
-    const meta = wave(30000, 6, 214) * MB;
-    const eden = heapUsed * 0.45;
+    const meta = wave(30000, 6, m.metaBaseMB) * MB;
+    const eden = m.heapUsed * 0.45;
     return {
       Metaspace: { name: 'Metaspace', type: 'NON_HEAP', usage: { init: 0, used: meta, committed: meta + 6 * MB, max: 512 * MB }, 'peak-usage': { init: 0, used: 221 * MB, committed: 226 * MB, max: 512 * MB }, 'memory-manager-names': ['Metaspace Manager'] },
       Compressed_Class_Space: { name: 'Compressed Class Space', type: 'NON_HEAP', usage: { init: 0, used: 27 * MB, committed: 29 * MB, max: 1024 * MB }, 'peak-usage': { init: 0, used: 27 * MB, committed: 29 * MB, max: 1024 * MB } },
       CodeHeap_non_profiled_nmethods: { name: "CodeHeap 'non-profiled nmethods'", type: 'NON_HEAP', usage: { init: 2.4 * MB, used: 41 * MB, committed: 42 * MB, max: 117 * MB } },
       G1_Eden_Space: { name: 'G1 Eden Space', type: 'HEAP', usage: { init: 54 * MB, used: eden, committed: 1100 * MB, max: -1 }, 'peak-usage': { init: 54 * MB, used: 1050 * MB, committed: 1100 * MB, max: -1 } },
-      G1_Old_Gen: { name: 'G1 Old Gen', type: 'HEAP', usage: { init: 970 * MB, used: heapUsed - eden, committed: 920 * MB, max: 2048 * MB }, 'peak-usage': { init: 970 * MB, used: 880 * MB, committed: 920 * MB, max: 2048 * MB } },
+      G1_Old_Gen: { name: 'G1 Old Gen', type: 'HEAP', usage: { init: 970 * MB, used: m.heapUsed - eden, committed: 920 * MB, max: m.heapMax }, 'peak-usage': { init: 970 * MB, used: 880 * MB, committed: 920 * MB, max: 2048 * MB } },
       G1_Survivor_Space: { name: 'G1 Survivor Space', type: 'HEAP', usage: { init: 0, used: 18 * MB, committed: 28 * MB, max: -1 } },
     };
   },
   'read-children-resources:core-service=platform-mbean/type=garbage-collector'() {
     return {
-      G1_Young_Generation: { name: 'G1 Young Generation', 'collection-count': youngGcs, 'collection-time': youngGcs * 14, 'memory-pool-names': ['G1 Eden Space', 'G1 Survivor Space', 'G1 Old Gen'] },
-      G1_Concurrent_GC: { name: 'G1 Concurrent GC', 'collection-count': oldGcs, 'collection-time': oldGcs * 6 },
+      G1_Young_Generation: { name: 'G1 Young Generation', 'collection-count': m.youngGcs, 'collection-time': m.youngGcs * 14, 'memory-pool-names': ['G1 Eden Space', 'G1 Survivor Space', 'G1 Old Gen'] },
+      G1_Concurrent_GC: { name: 'G1 Concurrent GC', 'collection-count': m.oldGcs, 'collection-time': m.oldGcs * 6 },
       G1_Old_Generation: { name: 'G1 Old Generation', 'collection-count': 2, 'collection-time': 1830 },
     };
   },
   'read-resource:core-service=platform-mbean/type=threading'() {
-    return { 'thread-count': 63, 'peak-thread-count': 88, 'daemon-thread-count': 58, 'total-started-thread-count': 412 };
+    return { 'thread-count': m.threads, 'peak-thread-count': m.threads + 25, 'daemon-thread-count': 58, 'total-started-thread-count': 412 };
   },
   'dump-all-threads:core-service=platform-mbean/type=threading': threads,
   'find-deadlocked-threads:core-service=platform-mbean/type=threading'() { return undefined; },
@@ -217,17 +239,38 @@ const handlers = {
   'test-connection-in-pool:subsystem=datasources/data-source=OrderDS'() { return [true]; },
   'test-connection-in-pool:subsystem=datasources/data-source=ExampleDS'() { return [true]; },
   'test-connection-in-pool:subsystem=datasources/xa-data-source=BillingXADS'() { return [true]; },
-};
+  };
+}
 
 class MockClient {
-  constructor(server) { this.server = server; }
+  constructor(server) {
+    this.server = server;
+    this.m = createState(server.mock);
+    this.handlers = makeHandlers(this.m);
+  }
 
   run(op) {
+    if (op.operation === 'read-attribute') {
+      // memory pools are registered by name under the pool list
+      const pool = (op.address || []).find((x) => x.name);
+      if (!pool) {
+        const res = this.run({ ...op, operation: 'read-resource' });
+        return res && res[op.name] !== undefined ? res[op.name] : null;
+      }
+      {
+        const parent = this.run({ operation: 'read-children-resources', address: (op.address || []).filter((x) => !x.name) });
+        return parent[pool.name] ? parent[pool.name][op.name] : null;
+      }
+    }
+    if (op.operation === 'read-children-names') {
+      return Object.keys(this.run({ ...op, operation: 'read-children-resources' }) || {});
+    }
     const atRoot = (op.address || []).length === 0;
     const k = op.operation === 'read-children-resources' && atRoot
       ? `${op.operation}:${op['child-type']}`
       : `${op.operation}:${key(op.address)}`;
-    const h = handlers[k];
+    if (this.m.down) throw Object.assign(new Error('WildFly 연결 실패: connect ECONNREFUSED'), { status: 502 });
+    const h = this.handlers[k];
     if (!h) throw new Error(`WFLYCTL0030: No resource definition is registered for address ${key(op.address)} (${op.operation})`);
     const v = h();
     return v === undefined ? null : JSON.parse(JSON.stringify(v));
@@ -240,6 +283,7 @@ class MockClient {
 
   async composite(steps) {
     await new Promise((r) => setTimeout(r, 30));
+    if (this.m.down) throw Object.assign(new Error('WildFly 연결 실패: connect ECONNREFUSED'), { status: 502 });
     return steps.map((s) => {
       try { const v = this.run(s); return v === null ? undefined : v; } catch (_) { return undefined; }
     });

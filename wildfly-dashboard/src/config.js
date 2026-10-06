@@ -39,6 +39,16 @@ function load() {
     servers: Array.isArray(file.servers) ? file.servers : [],
   };
 
+  // Automatic discovery of WildFly processes running on this host.
+  const disc = file.discovery || {};
+  cfg.discovery = {
+    enabled: bool(env.DASHBOARD_DISCOVERY, disc.enabled !== undefined ? Boolean(disc.enabled) : fs.existsSync('/proc/self/cmdline')),
+    intervalSeconds: Number(disc.intervalSeconds || 30),
+    username: env.DASHBOARD_DISCOVERY_USER || disc.username || '',
+    password: env.DASHBOARD_DISCOVERY_PASSWORD || disc.password || '',
+    allowLocalHeapDump: disc.allowLocalHeapDump !== false,
+  };
+
   // A single server can be configured purely through environment variables
   // (same variables as wildfly-mcp-server uses for its credentials).
   if (env.WILDFLY_URL || env.WILDFLY_HOST) {
@@ -54,7 +64,21 @@ function load() {
     });
   }
 
-  if (cfg.servers.length === 0) {
+  if (cfg.mock && cfg.servers.length === 0) {
+    // Several simulated instances so the multi-instance view can be tried out.
+    cfg.servers.push(
+      { id: 'local-9990', name: 'was01', url: 'http://127.0.0.1:9990/management', discovered: true, pid: 24816, user: 'wildfly',
+        mock: { name: 'was01', pid: 24816 } },
+      { id: 'local-10090', name: 'was02', url: 'http://127.0.0.1:10090/management', discovered: true, pid: 25120, user: 'wildfly',
+        mock: { name: 'was02', host: 'wildfly-prod-02.example.com', pid: 25120, heapMaxMB: 4096, heapLow: 0.55, heapHigh: 0.93, threads: 148, metaBaseMB: 388, uptimeHours: 30 } },
+      { id: 'local-10190', name: 'was03', url: 'http://127.0.0.1:10190/management', discovered: true, pid: 25544, user: 'wildfly',
+        mock: { name: 'was03', host: 'wildfly-prod-03.example.com', pid: 25544, state: 'reload-required', heapMaxMB: 1024, threads: 41, uptimeHours: 2 } },
+      { id: 'batch01', name: 'batch01 (원격)', url: 'http://10.0.12.40:9990/management',
+        mock: { name: 'batch01', down: true } },
+    );
+  }
+
+  if (cfg.servers.length === 0 && !cfg.discovery.enabled) {
     cfg.servers.push({
       id: 'local',
       name: 'Local WildFly',
@@ -73,7 +97,17 @@ function load() {
     password: s.password || '',
     allowLocalHeapDump: Boolean(s.allowLocalHeapDump),
     rejectUnauthorized: s.rejectUnauthorized !== false,
+    discovered: Boolean(s.discovered),
+    pid: s.pid || null,
+    user: s.user || null,
+    mock: s.mock,
   }));
+
+  // Discovered instances reuse these credentials unless discovery has its own.
+  if (!cfg.discovery.username) {
+    const local = cfg.servers.find((s) => /\/\/(127\.0\.0\.1|localhost)[:/]/.test(s.url) && s.username);
+    if (local) Object.assign(cfg.discovery, { username: local.username, password: local.password });
+  }
 
   fs.mkdirSync(cfg.dataDir, { recursive: true });
   fs.mkdirSync(path.join(cfg.dataDir, 'heapdumps'), { recursive: true });

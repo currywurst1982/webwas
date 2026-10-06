@@ -6,6 +6,13 @@
   "secureCookie": false,
   "sessionTimeoutMinutes": 30,
   "requestTimeoutMs": 15000,
+  "discovery": {
+    "enabled": true,
+    "intervalSeconds": 30,
+    "username": "monitor",
+    "password": "change-me",
+    "allowLocalHeapDump": true
+  },
   "heapDump": {
     "maxUploadMB": 8192,
     "jcmd": "/usr/lib/jvm/java-21/bin/jcmd"

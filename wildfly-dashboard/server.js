@@ -13,14 +13,70 @@ const { MockClient } = require('./src/mock');
 const collectors = require('./src/collectors');
 const threadAnalyzer = require('./src/thread-analyzer');
 const { HeapDumpManager } = require('./src/heapdump');
+const discovery = require('./src/discovery');
 const { UserStore, requireLogin, requireAdmin, publicUser, validatePassword } = require('./src/auth');
 
 const cfg = config.load();
 const users = new UserStore(cfg.dataDir);
 const heapDumps = new HeapDumpManager(cfg);
-const clients = new Map(cfg.servers.map((s) => [
-  s.id, cfg.mock ? new MockClient(s) : new WildFlyClient(s, { timeoutMs: cfg.requestTimeoutMs }),
-]));
+
+// ---- instance registry: servers from the config file + instances discovered on this host
+const staticServers = cfg.servers;
+let discoveredServers = [];
+let lastDiscovery = null;
+const clients = new Map(); // id -> { key, client }
+
+const sameEndpoint = (url) => url.replace('//localhost', '//127.0.0.1').toLowerCase();
+const allServers = () => [...staticServers, ...discoveredServers];
+const findServer = (id) => allServers().find((s) => s.id === id);
+
+function clientFor(server) {
+  const key = `${server.url}|${server.username}|${server.password}`;
+  const cached = clients.get(server.id);
+  if (cached && cached.key === key) return cached.client;
+  const client = cfg.mock ? new MockClient(server) : new WildFlyClient(server, { timeoutMs: cfg.requestTimeoutMs });
+  clients.set(server.id, { key, client });
+  return client;
+}
+
+function instanceName(p) {
+  if (p.serverName) return p.serverName;
+  const base = p.baseDir ? path.basename(p.baseDir) : '';
+  return base && base !== 'standalone' ? base : `WildFly :${p.port}`;
+}
+
+function runDiscovery() {
+  if (!cfg.discovery.enabled || cfg.mock) return;
+  const procs = discovery.scan();
+  const configured = new Map(staticServers.map((s) => [sameEndpoint(s.url), s]));
+  const next = [];
+  for (const p of procs) {
+    const known = configured.get(sameEndpoint(p.url));
+    if (known) {
+      // Already configured by hand: just remember which process answers there.
+      Object.assign(known, { pid: p.pid, user: p.user });
+      continue;
+    }
+    next.push({
+      id: `local-${p.port}`,
+      name: instanceName(p),
+      url: p.url,
+      username: cfg.discovery.username,
+      password: cfg.discovery.password,
+      allowLocalHeapDump: cfg.discovery.allowLocalHeapDump,
+      rejectUnauthorized: true,
+      discovered: true,
+      pid: p.pid,
+      user: p.user,
+      baseDir: p.baseDir,
+      configFile: p.configFile,
+      portOffset: p.offset,
+    });
+  }
+  discoveredServers = next;
+  lastDiscovery = Date.now();
+  for (const id of clients.keys()) if (!findServer(id)) clients.delete(id);
+}
 
 function sessionSecret() {
   if (process.env.DASHBOARD_SESSION_SECRET) return process.env.DASHBOARD_SESSION_SECRET;
@@ -133,16 +189,44 @@ api.delete('/users/:username', requireAdmin, (req, res) => {
 });
 
 // --- WildFly data -------------------------------------------------------------
-api.get('/servers', (req, res) => {
-  res.json(cfg.servers.map((s) => ({ id: s.id, name: s.name, url: s.url, allowLocalHeapDump: s.allowLocalHeapDump && !cfg.mock })));
+const publicServer = (s) => ({
+  id: s.id,
+  name: s.name,
+  url: s.url,
+  source: s.discovered ? 'discovered' : 'config',
+  pid: s.pid || null,
+  user: s.user || null,
+  baseDir: s.baseDir || null,
+  allowLocalHeapDump: s.allowLocalHeapDump && !cfg.mock,
+});
+
+api.get('/servers', (req, res) => res.json(allServers().map(publicServer)));
+
+// Status of every instance at once, for the multi-instance overview.
+api.get('/instances', async (req, res) => {
+  const timeout = (ms) => new Promise((_, reject) => setTimeout(() => reject(new Error('응답 시간 초과')), ms));
+  const list = await Promise.all(allServers().map(async (s) => {
+    const out = { ...publicServer(s), ok: false, error: null, warning: null, summary: null };
+    try {
+      out.summary = await Promise.race([collectors.summary(clientFor(s)), timeout(6000)]);
+      out.ok = true;
+      if (s.pid && out.summary.pid && s.pid !== out.summary.pid) {
+        out.warning = `관리 포트가 다른 JVM(PID ${out.summary.pid})에 연결됩니다. 포트 오프셋이 standalone.xml 에만 설정된 경우 config.json 에 직접 등록하세요.`;
+      }
+    } catch (e) {
+      out.error = e.message;
+    }
+    return out;
+  }));
+  res.json({ discoveryEnabled: cfg.discovery.enabled && !cfg.mock, lastDiscovery, instances: list });
 });
 
 function withServer(handler) {
   return async (req, res) => {
-    const server = cfg.servers.find((s) => s.id === req.params.id);
-    if (!server) return res.status(404).json({ error: '서버를 찾을 수 없습니다' });
+    const server = findServer(req.params.id);
+    if (!server) return res.status(404).json({ error: '서버를 찾을 수 없습니다 (인스턴스가 종료되었을 수 있습니다)' });
     try {
-      await handler(req, res, server, clients.get(server.id));
+      await handler(req, res, server, clientFor(server));
     } catch (e) {
       res.status(e.status && e.status >= 400 && e.status < 600 ? e.status : 502).json({ error: e.message });
     }
@@ -256,9 +340,16 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
 
 if (require.main === module) {
   const generated = users.ensureAdmin();
+  runDiscovery();
+  if (cfg.discovery.enabled && !cfg.mock) setInterval(runDiscovery, cfg.discovery.intervalSeconds * 1000).unref();
   app.listen(cfg.port, cfg.host, () => {
     console.log(`WildFly Dashboard: http://${cfg.host === '0.0.0.0' ? 'localhost' : cfg.host}:${cfg.port}${cfg.mock ? '  (MOCK 모드)' : ''}`);
-    console.log(`대상 서버: ${cfg.servers.map((s) => `${s.name} <${s.url}>`).join(', ')}`);
+    for (const s of allServers()) {
+      console.log(`  - ${s.name} <${s.url}>${s.discovered ? `  (자동 탐지, PID ${s.pid}, ${s.user})` : ''}`);
+    }
+    if (cfg.discovery.enabled && !cfg.mock) {
+      console.log(`WildFly 프로세스 자동 탐지: ${cfg.discovery.intervalSeconds}초마다${cfg.discovery.username ? '' : ' (관리 계정 미설정: config.json 의 discovery.username/password 설정 필요)'}`);
+    }
     if (generated) {
       console.log('='.repeat(64));
       console.log(` 초기 관리자 계정이 생성되었습니다.  ID: admin   PW: ${generated}`);

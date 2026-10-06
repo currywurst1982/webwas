@@ -74,7 +74,7 @@ function levelLabel(pct) {
 }
 function meter(label, used, total, valueText, noLevel = false) {
   const pct = total ? Math.min(100, (100 * used) / total) : 0;
-  return `<div class="meter"><div class="row"><span>${label}</span><span class="num">${valueText || `${fmtBytes(used)} / ${fmtBytes(total)}`} ${total ? `(${pct.toFixed(0)}%)` : ''}</span></div>
+  return `<div class="meter"><div class="row"><span>${label}</span><span class="num">${valueText || `${fmtBytes(used)} / ${fmtBytes(total)}`} ${total && !noLevel ? `(${pct.toFixed(0)}%)` : ''}</span></div>
     <div class="track" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct.toFixed(0)}" aria-label="${esc(label)}"><div class="fill ${noLevel ? '' : level(pct)}" style="width:${pct}%"></div></div></div>`;
 }
 function tile(label, value, sub = '', extra = '') {
@@ -107,6 +107,7 @@ const isAdmin = () => state.user && state.user.role === 'admin';
 
 // ---------------------------------------------------------------- navigation
 const TITLES = {
+  instances: '전체 인스턴스',
   overview: '대시보드', memory: '메모리 (Heap / Metaspace)', datasources: 'DB 데이터소스',
   threads: '쓰레드 덤프', heap: '힙 덤프 분석', users: '사용자 관리',
 };
@@ -129,9 +130,15 @@ function schedule() {
 }
 
 async function refresh(auto = false) {
-  if (!state.server) return;
   try {
     const v = state.view;
+    if (v === 'instances') {
+      await loadInstances();
+      showError(null);
+      $('#conn-status').innerHTML = '<span class="dot good"></span><span>연결됨</span>';
+      return;
+    }
+    if (!state.server) { showError('모니터링할 WildFly 인스턴스가 없습니다. "전체 인스턴스" 화면을 확인하세요.'); return; }
     if (v === 'overview') await loadOverview();
     else if (v === 'memory') await loadMemory();
     else if (v === 'datasources') await loadDatasources();
@@ -142,9 +149,119 @@ async function refresh(auto = false) {
     showError(null);
     $('#conn-status').innerHTML = '<span class="dot good"></span><span>연결됨</span>';
   } catch (e) {
-    showError(`${state.server.name}: ${e.message}`);
+    showError(state.server && state.view !== 'instances' ? `${state.server.name}: ${e.message}` : e.message);
   }
 }
+
+// ---------------------------------------------------------------- instances
+function fmtShortDuration(ms) {
+  if (!ms && ms !== 0) return '-';
+  const m = Math.floor(ms / 60000); const h = Math.floor(m / 60); const d = Math.floor(h / 24);
+  if (d) return `${d}일 ${h % 24}시간`;
+  if (h) return `${h}시간 ${m % 60}분`;
+  return `${m}분`;
+}
+
+/** Keeps the server drop-down in sync with the (possibly changing) instance list. */
+function syncServers(list) {
+  const ids = list.map((s) => s.id).join('|');
+  if (ids === state.servers.map((s) => s.id).join('|')) { state.servers = list; return; }
+  state.servers = list;
+  const current = state.server && list.find((s) => s.id === state.server.id);
+  $('#server-select').innerHTML = list.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
+  if (current) {
+    state.server = current;
+    $('#server-select').value = current.id;
+  } else if (list.length) {
+    selectServer(list[0].id, false);
+  } else {
+    state.server = null;
+  }
+}
+
+function selectServer(id, reload = true) {
+  const server = state.servers.find((s) => s.id === id);
+  if (!server) return;
+  state.server = server;
+  $('#server-select').value = id;
+  state.history = [];
+  state.dsHistory = {};
+  state.threads = null;
+  $('#thread-result').hidden = true;
+  $('#thread-empty').hidden = false;
+  resetCharts();
+  if (reload) refresh();
+}
+
+function instanceCard(inst) {
+  const s = inst.summary;
+  const current = state.server && state.server.id === inst.id ? ' current' : '';
+  const src = inst.source === 'discovered' ? '<span class="badge violet">자동 탐지</span>' : '<span class="badge blue">설정</span>';
+  const head = (badge, color) => `<div class="inst-head"><div class="kpi-icon ${color}">${ICONS.server}</div>
+      <div class="title"><b>${esc(inst.name)}</b><span>${esc(inst.url.replace(/\/management$/, ''))}</span></div>${badge}</div>`;
+  if (!inst.ok) {
+    return `<div class="card inst${current}" tabindex="0" role="button" data-inst="${esc(inst.id)}" aria-label="${esc(inst.name)} 상세 보기">
+      ${head('<span class="badge critical">▲ 연결 실패</span>', 'pink')}
+      <div class="inst-error">${esc(inst.error)}</div>
+      <div class="inst-foot">${src}${inst.pid ? `<span class="muted">PID ${inst.pid}${inst.user ? ` · ${esc(inst.user)}` : ''}</span>` : ''}</div>
+    </div>`;
+  }
+  const running = s.state === 'running';
+  const badge = running ? '<span class="badge good">● running</span>'
+    : `<span class="badge warning">▲ ${esc(s.state)}</span>`;
+  const meta = s.metaspace;
+  return `<div class="card inst${current}" tabindex="0" role="button" data-inst="${esc(inst.id)}" aria-label="${esc(inst.name)} 상세 보기">
+    ${head(badge, running ? 'blue' : 'orange')}
+    ${meter('Heap', s.heap.used, s.heap.max)}
+    ${meta ? (meta.max ? meter('Metaspace', meta.used, meta.max)
+    : meter('Metaspace (최대 무제한)', meta.used, meta.committed, `${fmtBytes(meta.used)} / committed ${fmtBytes(meta.committed)}`, true)) : ''}
+    <div class="inst-stats">
+      <div><span>쓰레드</span><b>${fmtNum(s.threads)}</b></div>
+      <div><span>가동 시간</span><b>${esc(fmtShortDuration(s.uptime))}</b></div>
+      <div><span>배포</span><b>${s.deployments ?? '-'}개</b></div>
+      <div><span>PID</span><b>${s.pid ?? inst.pid ?? '-'}</b></div>
+    </div>
+    ${inst.warning ? `<div class="inst-warn">▲ ${esc(inst.warning)}</div>` : ''}
+    <div class="inst-foot">${src}<span class="muted">${esc(s.name || '')} · WildFly ${esc((s.version || '').replace(/\.Final$/, ''))}${inst.user ? ` · ${esc(inst.user)}` : ''}</span>
+      <button class="btn sm primary" tabindex="-1">상세 보기</button></div>
+  </div>`;
+}
+
+async function loadInstances() {
+  const data = await api('/instances');
+  const list = data.instances;
+  syncServers(list.map(({ ok, error, warning, summary, ...server }) => server));
+  const okList = list.filter((i) => i.ok);
+  const healthy = okList.filter((i) => i.summary.state === 'running' && !i.warning && !(i.summary.heap.percent >= 90));
+  const failed = list.length - okList.length;
+  const attention = okList.length - healthy.length;
+  $('#inst-kpis').innerHTML = [
+    kpi('server', 'blue', '전체 인스턴스', fmtNum(list.length), `자동 탐지 ${list.filter((i) => i.source === 'discovered').length} · 설정 ${list.filter((i) => i.source === 'config').length}`),
+    kpi('heap', 'violet', '정상', fmtNum(healthy.length), 'running · Heap 90% 미만'),
+    kpi('meta', 'orange', '주의', fmtNum(attention), 'running 아님 · Heap 90% 이상 · 포트 확인', attention ? '<span class="badge warning">▲</span>' : ''),
+    kpi('threads', 'pink', '연결 실패', fmtNum(failed), '관리 API 응답 없음', failed ? '<span class="badge critical">▲</span>' : ''),
+  ].join('');
+  $('#inst-note').textContent = data.discoveryEnabled
+    ? `이 서버에서 실행 중인 WildFly(standalone) 프로세스를 자동으로 찾습니다${data.lastDiscovery ? ` · 마지막 탐지 ${fmtClock(data.lastDiscovery)}` : ''}. 카드를 누르면 해당 인스턴스의 상세 대시보드로 이동합니다.`
+    : 'config.json 에 등록된 인스턴스입니다. 카드를 누르면 해당 인스턴스의 상세 대시보드로 이동합니다.';
+  $('#inst-grid').innerHTML = list.length ? list.map(instanceCard).join('')
+    : `<div class="card empty" style="grid-column:1/-1">실행 중인 WildFly 인스턴스를 찾지 못했습니다.<br>
+       WildFly 가 standalone 모드로 실행 중인지 확인하거나, config.json 의 servers 에 직접 등록하세요.</div>`;
+}
+
+document.addEventListener('click', (e) => {
+  const card = e.target.closest('[data-inst]');
+  if (!card) return;
+  selectServer(card.dataset.inst, false);
+  setView('overview');
+});
+document.addEventListener('keydown', (e) => {
+  const card = e.target.closest && e.target.closest('[data-inst]');
+  if (!card || (e.key !== 'Enter' && e.key !== ' ')) return;
+  e.preventDefault();
+  selectServer(card.dataset.inst, false);
+  setView('overview');
+});
 
 // ---------------------------------------------------------------- overview
 const ICONS = {
@@ -867,16 +984,7 @@ $('#pw-form').addEventListener('submit', async (e) => {
 $$('.nav-item[data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
 $('#btn-refresh').addEventListener('click', () => refresh());
 $('#refresh-select').addEventListener('change', schedule);
-$('#server-select').addEventListener('change', (e) => {
-  state.server = state.servers.find((s) => s.id === e.target.value);
-  state.history = [];
-  state.dsHistory = {};
-  state.threads = null;
-  $('#thread-result').hidden = true;
-  $('#thread-empty').hidden = false;
-  resetCharts();
-  refresh();
-});
+$('#server-select').addEventListener('change', (e) => selectServer(e.target.value));
 $('#btn-thread-dump').addEventListener('click', takeThreadDump);
 $('#btn-quick-thread').addEventListener('click', () => { setView('threads'); takeThreadDump(); });
 $('#th-filter').addEventListener('input', renderThreadList);
@@ -923,10 +1031,9 @@ async function start() {
   $('#mock-banner').hidden = !me.mock;
   $('#nav-users').hidden = me.user.role !== 'admin';
   if (me.user.mustChangePassword) { openPasswordModal(true); return; }
-  state.servers = await api('/servers');
-  $('#server-select').innerHTML = state.servers.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('');
-  state.server = state.servers[0];
-  let view = 'overview';
+  syncServers(await api('/servers'));
+  // With several instances, start on the multi-instance overview.
+  let view = state.servers.length === 1 ? 'overview' : 'instances';
   try { view = sessionStorage.getItem('wfdash.view') || view; } catch (_) { /* storage unavailable */ }
   if (!TITLES[view] || (view === 'users' && me.user.role !== 'admin')) view = 'overview';
   setView(view);

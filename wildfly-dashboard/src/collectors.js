@@ -306,4 +306,32 @@ function normalizeThread(t) {
   };
 }
 
-module.exports = { serverInfo, memory, datasources, testConnection, threadDump, stripSecrets };
+/** Lightweight status of one instance for the multi-instance overview (single composite request). */
+async function summary(client) {
+  const attr = (path, name) => ({ operation: 'read-attribute', address: addr(path), name });
+  const [state, name, version, runtimeName, uptime, heap, meta, threads, deployments] = await client.composite([
+    attr('/', 'server-state'),
+    attr('/', 'name'),
+    attr('/', 'product-version'),
+    attr(`${PM}/type=runtime`, 'name'),
+    attr(`${PM}/type=runtime`, 'uptime'),
+    attr(`${PM}/type=memory`, 'heap-memory-usage'),
+    attr(`${PM}/type=memory-pool/name=Metaspace`, 'usage'),
+    attr(`${PM}/type=threading`, 'thread-count'),
+    { operation: 'read-children-names', address: [], 'child-type': 'deployment' },
+  ]);
+  if (state === undefined) throw new Error('서버 상태를 읽지 못했습니다');
+  return {
+    state,
+    name,
+    version,
+    pid: parsePid(runtimeName),
+    uptime,
+    heap: usage(heap),
+    metaspace: usage(meta),
+    threads,
+    deployments: Array.isArray(deployments) ? deployments.length : null,
+  };
+}
+
+module.exports = { summary, serverInfo, memory, datasources, testConnection, threadDump, stripSecrets };

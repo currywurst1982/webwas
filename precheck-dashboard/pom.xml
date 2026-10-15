@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.webwas</groupId>
+  <artifactId>precheck-dashboard</artifactId>
+  <version>1.0.0</version>
+  <packaging>war</packaging>
+  <name>Apache Precheck Dashboard</name>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- wildfly-ai-feature-pack 0.20.1 이 WildFly 40.0.0.Final 기준이므로 같은 40.x 계열을 사용 -->
+    <version.wildfly>40.0.1.Final</version.wildfly>
+    <version.wildfly.plugin>6.0.3.Final</version.wildfly.plugin>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>jakarta.servlet</groupId>
+      <artifactId>jakarta.servlet-api</artifactId>
+      <version>6.0.0</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.11.4</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>precheck</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-war-plugin</artifactId>
+        <version>3.4.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.2</version>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!--
+      mvn -Pprovision package
+        → target/server 에 이 앱이 배포된 최소 구성 WildFly 를 만들어 줌 (WildFly 가 없을 때)
+    -->
+    <profile>
+      <id>provision</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.wildfly.plugins</groupId>
+            <artifactId>wildfly-maven-plugin</artifactId>
+            <version>${version.wildfly.plugin}</version>
+            <configuration>
+              <feature-packs>
+                <feature-pack>
+                  <location>org.wildfly:wildfly-galleon-pack:${version.wildfly}</location>
+                </feature-pack>
+              </feature-packs>
+              <layers>
+                <layer>web-server</layer>
+              </layers>
+              <name>ROOT.war</name>
+            </configuration>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>package</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

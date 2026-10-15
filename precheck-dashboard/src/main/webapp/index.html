@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Apache 사전점검 대시보드</title>
+  <link rel="stylesheet" href="static/app.css">
+  <script src="static/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span>Apache 사전점검 대시보드
+      <span class="brand-sub">2.4.69 미만 서버 · apache_precheck.sh 결과</span></div>
+    <nav class="topnav">
+      <span class="who" id="who"></span>
+      <button class="btn admin-only" id="btn-upload" type="button">리포트 업로드</button>
+      <button class="btn admin-only" id="btn-users" type="button">사용자 관리</button>
+      <a class="btn" href="password">비밀번호 변경</a>
+      <form method="post" action="logout" id="logout-form">
+        <input type="hidden" name="_csrf" id="logout-csrf">
+        <button class="btn" type="submit">로그아웃</button>
+      </form>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <div id="alert" class="alert" role="alert" hidden></div>
+
+    <section id="empty" class="panel empty" hidden>
+      <h2>아직 등록된 점검 결과가 없습니다</h2>
+      <ol>
+        <li>점검할 Apache 서버에서 <code>sudo bash apache_precheck.sh</code> 를 실행합니다.</li>
+        <li>만들어진 <code>/tmp/apache_precheck_*.txt</code> 파일을 가져옵니다.</li>
+        <li>오른쪽 위 <b>리포트 업로드</b> 버튼으로 올리거나, 리포트 폴더에 직접 복사합니다.
+          <span class="muted admin-only" id="report-dir"></span></li>
+      </ol>
+    </section>
+
+    <section id="kpis" class="kpis" aria-label="핵심 지표"></section>
+
+    <section class="filters panel" aria-label="필터">
+      <label>검색 <input id="f-q" type="search" placeholder="호스트, 버전, CVE 번호"></label>
+      <label>판정
+        <select id="f-status">
+          <option value="">전체</option>
+          <option value="compromise">침해 의심</option>
+          <option value="risk">위험</option>
+          <option value="warn">주의</option>
+          <option value="ok">양호</option>
+        </select>
+      </label>
+      <label class="check"><input id="f-latest" type="checkbox" checked> 인스턴스별 최신 점검만</label>
+      <label class="check"><input id="f-dq" type="checkbox"> 데이터 경고 있는 것만</label>
+      <button class="btn" id="btn-refresh" type="button">새로고침</button>
+      <span class="muted" id="f-count"></span>
+    </section>
+
+    <section class="grid">
+      <div class="panel span-2">
+        <div class="panel-head"><h2>서버별 점검 결과</h2><span class="muted">행을 누르면 상세 결과가 열립니다</span></div>
+        <div class="table-scroll">
+          <table class="servers" id="servers">
+            <thead><tr>
+              <th data-sort="status">판정</th>
+              <th data-sort="host">호스트</th>
+              <th data-sort="version">버전</th>
+              <th>설치</th>
+              <th data-sort="checkedAt">점검 일시</th>
+              <th data-sort="risk" class="num">위험</th>
+              <th data-sort="warn" class="num">주의</th>
+              <th data-sort="ok" class="num">양호</th>
+              <th data-sort="cve" class="num" title="모듈 조건까지 충족하고 백포트 기록이 없는 CVE">미조치 CVE</th>
+              <th>데이터 경고</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel span-2">
+        <div class="panel-head"><h2>서버별 점검 항목 수</h2>
+          <div class="legend" id="legend-findings"></div></div>
+        <div id="chart-findings" class="hbars"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>CVE별 해당 서버 수</h2>
+          <div class="legend" id="legend-cve"></div></div>
+        <div id="chart-cve" class="hbars"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>설정 취약 항목별 서버 수</h2>
+          <div class="legend" id="legend-config"></div></div>
+        <div id="chart-config" class="hbars"></div>
+      </div>
+    </section>
+
+    <p class="footnote">※ 이 대시보드는 apache_precheck.sh 결과를 그대로 모아 보여 줄 뿐이며, 스크립트와 마찬가지로 '알려진 패턴' 기준입니다. 안전을 보증하지 않습니다.
+      침해 의심 서버는 설정 보완보다 침해사고 대응이 우선입니다. 근본 대책은 2.4.69 이상(또는 보안수정이 반영된 배포판 패키지)으로의 업그레이드입니다.</p>
+  </main>
+
+  <dialog id="detail" class="dialog wide" aria-labelledby="d-title">
+    <div class="dialog-head">
+      <div>
+        <h2 id="d-title"></h2>
+        <div class="muted" id="d-sub"></div>
+      </div>
+      <div class="dialog-actions">
+        <a class="btn" id="d-raw" download>원본 받기</a>
+        <button class="btn btn-danger admin-only" id="d-delete" type="button">삭제</button>
+        <button class="btn" data-close type="button">닫기</button>
+      </div>
+    </div>
+    <div class="dialog-body">
+      <div id="d-dq"></div>
+      <div class="kpis small" id="d-kpis"></div>
+      <div class="tabs" role="tablist">
+        <button role="tab" class="tab" data-tab="findings" aria-selected="true" type="button">점검 결과</button>
+        <button role="tab" class="tab" data-tab="cves" aria-selected="false" type="button">CVE 판정</button>
+        <button role="tab" class="tab" data-tab="history" aria-selected="false" type="button">점검 이력</button>
+        <button role="tab" class="tab" data-tab="raw" aria-selected="false" type="button">원본 리포트</button>
+      </div>
+      <div class="tabpanel" data-panel="findings"></div>
+      <div class="tabpanel" data-panel="cves" hidden></div>
+      <div class="tabpanel" data-panel="history" hidden></div>
+      <div class="tabpanel" data-panel="raw" hidden><pre class="raw" id="d-rawtext"></pre></div>
+    </div>
+  </dialog>
+
+  <dialog id="upload" class="dialog" aria-labelledby="u-title">
+    <div class="dialog-head"><h2 id="u-title">리포트 업로드</h2>
+      <button class="btn" data-close type="button">닫기</button></div>
+    <div class="dialog-body">
+      <p>apache_precheck.sh 가 만든 <code>apache_precheck_*.txt</code> 파일을 선택하세요. 여러 개를 한 번에 올릴 수 있습니다. (파일당 5MB 이하)</p>
+      <label class="drop" id="drop">
+        <input type="file" id="u-files" accept=".txt,text/plain" multiple>
+        <span>여기로 파일을 끌어다 놓거나 눌러서 선택</span>
+      </label>
+      <ul class="u-results" id="u-results"></ul>
+    </div>
+  </dialog>
+
+  <dialog id="users" class="dialog" aria-labelledby="us-title">
+    <div class="dialog-head"><h2 id="us-title">사용자 관리</h2>
+      <button class="btn" data-close type="button">닫기</button></div>
+    <div class="dialog-body">
+      <form id="user-form" class="inline-form">
+        <label>아이디 <input name="name" required pattern="[A-Za-z0-9._\-]{3,32}" placeholder="영문/숫자 3~32자"></label>
+        <label>역할
+          <select name="role">
+            <option value="viewer">조회 전용</option>
+            <option value="admin">관리자</option>
+          </select>
+        </label>
+        <button class="btn btn-primary" type="submit">추가</button>
+      </form>
+      <div id="user-temp" class="alert info" hidden></div>
+      <table class="servers"><thead><tr><th>아이디</th><th>역할</th><th>상태</th><th></th></tr></thead>
+        <tbody id="user-rows"></tbody></table>
+      <p class="muted">새 사용자와 비밀번호 초기화는 임시 비밀번호가 한 번만 표시됩니다. 사용자는 첫 로그인 때 비밀번호를 바꿔야 합니다.</p>
+    </div>
+  </dialog>
+
+  <div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+</body>
+</html>

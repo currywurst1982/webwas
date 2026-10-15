@@ -35,6 +35,18 @@
 
   <build>
     <finalName>precheck</finalName>
+    <resources>
+      <!-- 에이전트 설치 파일(scripts/*.sh)을 WAR 에 넣어 /agent-api/files/ 로 내려받을 수 있게 함 -->
+      <resource>
+        <directory>scripts</directory>
+        <targetPath>agent</targetPath>
+        <includes>
+          <include>install.sh</include>
+          <include>precheck-agent.sh</include>
+          <include>apache_precheck.sh</include>
+        </includes>
+      </resource>
+    </resources>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

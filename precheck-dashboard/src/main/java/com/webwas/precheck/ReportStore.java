@@ -95,6 +95,44 @@ public class ReportStore {
         return base;
     }
 
+    /** 에이전트 1대가 보관하는 최근 리포트 수 (이보다 오래된 것은 자동 삭제) */
+    public static final int KEEP_PER_AGENT = 30;
+    private static final Pattern AGENT_REPORT = Pattern.compile("^apache_precheck_[A-Za-z0-9._-]{1,150}\\.txt$");
+
+    /**
+     * 에이전트가 보낸 리포트 저장. 파일명은 agent-<에이전트>__<원래 파일명> 이 되어
+     * 화면에 "어느 에이전트가 보냈는지"가 표시되고, 다른 에이전트 파일을 덮어쓸 수 없음.
+     */
+    public synchronized String saveAgentReport(String agent, String originalName, byte[] bytes) throws IOException {
+        if (!AgentStore.validName(agent)) throw new IllegalArgumentException("잘못된 에이전트 이름");
+        if (originalName == null || !AGENT_REPORT.matcher(originalName).matches()) {
+            throw new IllegalArgumentException("리포트 파일명은 apache_precheck_*.txt 형식이어야 합니다.");
+        }
+        String saved = save("agent-" + agent + "__" + originalName, bytes);
+        prune("agent-" + agent + "__", KEEP_PER_AGENT);
+        return saved;
+    }
+
+    /** 접두어가 같은 파일 중 최근 keep 개만 남기고 삭제 (수정 시각 기준). */
+    private void prune(String prefix, int keep) throws IOException {
+        List<Path> files = new ArrayList<>();
+        try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir, prefix + "*.txt")) {
+            ds.forEach(files::add);
+        }
+        if (files.size() <= keep) return;
+        files.sort(Comparator.comparing((Path p) -> {
+            try {
+                return Files.getLastModifiedTime(p).toMillis();
+            } catch (IOException e) {
+                return 0L;
+            }
+        }).reversed().thenComparing(Comparator.<Path>naturalOrder().reversed()));
+        for (Path p : files.subList(keep, files.size())) {
+            cache.remove(p.getFileName().toString());
+            Files.deleteIfExists(p);
+        }
+    }
+
     public synchronized boolean delete(String id) throws IOException {
         if (!isSafeName(id)) return false;
         cache.remove(id);

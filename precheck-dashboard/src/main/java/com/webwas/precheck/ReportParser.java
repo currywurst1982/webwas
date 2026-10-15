@@ -18,7 +18,8 @@ public final class ReportParser {
     public static final String HEADER_MARK = "Apache 패치 전 보안 사전 점검";
 
     private static final Pattern HEADER = Pattern.compile("호스트:\\s*(.*?)\\s*\\|\\s*일시:\\s*(.+?)\\s*$");
-    private static final Pattern FILE_NAME = Pattern.compile("^apache_precheck_(.+)_(\\d{8})_(\\d{6})(?:_pid(\\d+))?\\.txt$");
+    private static final Pattern FILE_NAME = Pattern.compile(
+            "^(?:agent-([A-Za-z0-9.-]+)__)?apache_precheck_(.+)_(\\d{8})_(\\d{6})(?:_pid(\\d+))?\\.txt$");
     private static final Pattern SECTION = Pattern.compile("^ \\[(\\d)\\] ");
     private static final Pattern FINDING = Pattern.compile("^\\[(위험|주의|양호|정보)\\] (.*)$");
     private static final Pattern NOT_APPLICABLE = Pattern.compile("^\\[미해당\\] (CVE-\\d+-\\d+) \\((\\w+)\\) - 필요 모듈\\((.*)\\) 미사용");
@@ -53,11 +54,12 @@ public final class ReportParser {
 
         Matcher fm = FILE_NAME.matcher(fileName);
         if (fm.matches()) {
-            r.host = fm.group(1);
-            String d = fm.group(2), t = fm.group(3);
+            r.source = fm.group(1);
+            r.host = fm.group(2);
+            String d = fm.group(3), t = fm.group(4);
             r.checkedAt = d.substring(0, 4) + "-" + d.substring(4, 6) + "-" + d.substring(6) + " "
                     + t.substring(0, 2) + ":" + t.substring(2, 4) + ":" + t.substring(4);
-            r.pid = fm.group(4);
+            r.pid = fm.group(5);
         }
 
         String section = "0";

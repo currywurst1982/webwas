@@ -32,7 +32,8 @@ public class AuthFilter extends HttpFilter {
                         + "object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
 
         String path = req.getRequestURI().substring(req.getContextPath().length());
-        if (PUBLIC.contains(path)) {
+        // 에이전트 API 는 로그인 세션 대신 에이전트 토큰으로 인증 (AgentApiServlet)
+        if (PUBLIC.contains(path) || path.startsWith("/agent-api/")) {
             chain.doFilter(req, resp);
             return;
         }

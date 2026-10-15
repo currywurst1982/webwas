@@ -258,3 +258,15 @@ pre.raw { margin: 0; padding: 12px; background: var(--surface-2); border-radius:
 @media (forced-colors: active) {
   .hbar .seg, .dot { forced-color-adjust: none; border: 1px solid CanvasText; }
 }
+
+/* 에이전트 */
+.small-note { font-size: 12.5px; margin: 10px 0 0; }
+.b-running { background: var(--s-info-bg); color: var(--accent); border-color: var(--accent); }
+.steps { margin: 0; padding-left: 20px; display: grid; gap: 14px; }
+.steps li > p { margin: 0 0 6px; }
+.codebox { display: flex; gap: 8px; align-items: flex-start; }
+.codebox pre { flex: 1; margin: 0; padding: 10px 12px; background: var(--surface-2); border-radius: 8px; overflow-x: auto; white-space: pre; }
+.token { word-break: break-all; }
+.row-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.row-actions select { height: 26px; font-size: 12.5px; padding: 0 6px; }
+.msg { color: var(--ink-2); font-size: 12px; max-width: 360px; }

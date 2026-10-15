@@ -5,6 +5,10 @@ import jakarta.servlet.ServletContextEvent;
 import jakarta.servlet.ServletContextListener;
 import jakarta.servlet.annotation.WebListener;
 import java.io.IOException;
+import java.io.InputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,6 +25,9 @@ public class AppInit implements ServletContextListener {
     public static final String ATTR_USERS = "precheck.users";
     public static final String ATTR_REPORTS = "precheck.reports";
     public static final String ATTR_THROTTLE = "precheck.throttle";
+    public static final String ATTR_AGENTS = "precheck.agents";
+    /** WAR 에 들어 있는 apache_precheck.sh 의 SHA-256 (에이전트 쪽 스크립트가 같은지 비교용) */
+    public static final String ATTR_SCRIPT_SHA = "precheck.scriptSha";
     public static final String INITIAL_PASSWORD_FILE = "initial-admin-password.txt";
 
     public static Path dataDir() {
@@ -42,6 +49,14 @@ public class AppInit implements ServletContextListener {
             ctx.setAttribute(ATTR_USERS, users);
             ctx.setAttribute(ATTR_REPORTS, new ReportStore(reports));
             ctx.setAttribute(ATTR_THROTTLE, new LoginThrottle());
+            ctx.setAttribute(ATTR_AGENTS, new AgentStore(data.resolve("agents.properties")));
+            try (InputStream in = AppInit.class.getResourceAsStream("/agent/apache_precheck.sh")) {
+                if (in != null) {
+                    ctx.setAttribute(ATTR_SCRIPT_SHA, HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(in.readAllBytes())));
+                }
+            } catch (NoSuchAlgorithmException e) {
+                throw new IllegalStateException(e);
+            }
             LOG.info("[precheck-dashboard] 데이터 폴더: " + data + " / 리포트 폴더: " + reports);
         } catch (IOException e) {
             throw new IllegalStateException("데이터 폴더 초기화 실패", e);

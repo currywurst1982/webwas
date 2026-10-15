@@ -28,6 +28,10 @@ final class Web {
         return (ReportStore) c.getAttribute(AppInit.ATTR_REPORTS);
     }
 
+    static AgentStore agents(ServletContext c) {
+        return (AgentStore) c.getAttribute(AppInit.ATTR_AGENTS);
+    }
+
     static LoginThrottle throttle(ServletContext c) {
         return (LoginThrottle) c.getAttribute(AppInit.ATTR_THROTTLE);
     }

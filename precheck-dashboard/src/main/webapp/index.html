@@ -29,14 +29,34 @@
     <section id="empty" class="panel empty" hidden>
       <h2>아직 등록된 점검 결과가 없습니다</h2>
       <ol>
-        <li>점검할 Apache 서버에서 <code>sudo bash apache_precheck.sh</code> 를 실행합니다.</li>
-        <li>만들어진 <code>/tmp/apache_precheck_*.txt</code> 파일을 가져옵니다.</li>
-        <li>오른쪽 위 <b>리포트 업로드</b> 버튼으로 올리거나, 리포트 폴더에 직접 복사합니다.
+        <li>아래 <b>점검 에이전트</b>에서 <b>에이전트 추가</b>를 누르고, 안내되는 명령으로 점검할 웹서버에 에이전트를 설치합니다.</li>
+        <li>설치되면 에이전트가 점검 스크립트를 실행해 결과를 자동으로 보내고, 이 화면에 표시됩니다. (<b>지금 점검</b>으로 바로 실행 가능)</li>
+        <li>에이전트를 설치할 수 없는 서버는 <code>sudo bash apache_precheck.sh</code> 결과 파일을 <b>리포트 업로드</b>로 올려도 됩니다.
           <span class="muted admin-only" id="report-dir"></span></li>
       </ol>
     </section>
 
     <section id="kpis" class="kpis" aria-label="핵심 지표"></section>
+
+    <section class="panel" aria-labelledby="agents-title">
+      <div class="panel-head">
+        <h2 id="agents-title">점검 에이전트</h2>
+        <div class="dialog-actions">
+          <span class="muted" id="agents-summary"></span>
+          <button class="btn admin-only" id="btn-run-all" type="button">전체 지금 점검</button>
+          <button class="btn btn-primary admin-only" id="btn-add-agent" type="button">에이전트 추가</button>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table class="servers" id="agents">
+          <thead><tr>
+            <th>상태</th><th>에이전트</th><th>마지막 접속</th><th>마지막 점검</th><th>다음 자동 점검</th><th>주기</th><th>스크립트</th><th class="admin-only"></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="muted small-note">에이전트는 1분마다 대시보드에 점검 차례인지 묻습니다. [지금 점검]을 누르면 1분 안에 시작하며, 점검 시간은 서버에 따라 수 분 걸릴 수 있습니다. 화면은 30초마다 자동으로 갱신됩니다. <span id="last-refresh"></span></p>
+    </section>
 
     <section class="filters panel" aria-label="필터">
       <label>검색 <input id="f-q" type="search" placeholder="호스트, 버전, CVE 번호"></label>
@@ -138,6 +158,28 @@
         <span>여기로 파일을 끌어다 놓거나 눌러서 선택</span>
       </label>
       <ul class="u-results" id="u-results"></ul>
+    </div>
+  </dialog>
+
+  <dialog id="agent-dlg" class="dialog wide" aria-labelledby="ag-title">
+    <div class="dialog-head"><h2 id="ag-title">에이전트 추가</h2>
+      <button class="btn" data-close type="button">닫기</button></div>
+    <div class="dialog-body">
+      <form id="agent-form" class="inline-form">
+        <label>에이전트 이름 <input name="name" required pattern="[A-Za-z0-9][A-Za-z0-9.\-]{1,39}" placeholder="예: web01 (영문/숫자/.-)"></label>
+        <label>자동 점검 주기
+          <select name="intervalHours">
+            <option value="24" selected>24시간마다</option>
+            <option value="12">12시간마다</option>
+            <option value="6">6시간마다</option>
+            <option value="72">3일마다</option>
+            <option value="168">7일마다</option>
+            <option value="0">자동 점검 안 함 (지금 점검만)</option>
+          </select>
+        </label>
+        <button class="btn btn-primary" type="submit">등록</button>
+      </form>
+      <div id="agent-install" hidden></div>
     </div>
   </dialog>
 

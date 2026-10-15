@@ -55,6 +55,7 @@ public class Report {
     }
 
     public String id;            // 파일명
+    public String source;        // 리포트를 보낸 에이전트 이름 (수동 업로드면 null)
     public long fileSize;
     public long fileModified;
     public String host;
@@ -107,6 +108,7 @@ public class Report {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", id);
         m.put("host", host);
+        m.put("source", source);
         m.put("checkedAt", checkedAt);
         m.put("pid", pid);
         m.put("binary", binary);

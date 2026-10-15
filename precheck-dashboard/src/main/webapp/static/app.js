@@ -171,7 +171,8 @@
       const tr = h('tr', { class: 'row', tabindex: '0', onclick: () => openDetail(r.id),
         onkeydown: e => { if (e.key === 'Enter') openDetail(r.id); } },
         h('td', null, badge(r.status)),
-        h('td', null, h('div', null, r.host), h('div', { class: 'sub mono' }, (r.binary || '') + (r.pid ? ` · PID ${r.pid}` : ''))),
+        h('td', null, h('div', null, r.host), h('div', { class: 'sub mono' }, (r.binary || '') + (r.pid ? ` · PID ${r.pid}` : '')),
+          h('div', { class: 'sub' }, r.source ? `에이전트 ${r.source} 수집` : '수동 업로드')),
         h('td', null, h('div', null, r.version || '확인 불가'),
           r.eol ? h('div', { class: 'sub' }, 'EOL') : r.below2469 ? h('div', { class: 'sub' }, '2.4.69 미만') : h('div', { class: 'sub' }, '2.4.69 이상')),
         h('td', null, r.installType || '-'),
@@ -425,7 +426,144 @@
     catch (e) { alert(e.message); }
   }
 
+  // ---------------------------------------------------------------- 에이전트
+  const AGENT_STATE = {
+    online: { label: '온라인', cls: 'b-ok', icon: '✔' },
+    running: { label: '점검 중', cls: 'b-running', icon: '↻' },
+    requested: { label: '점검 요청됨', cls: 'b-warn', icon: '◆' },
+    offline: { label: '오프라인', cls: 'b-risk', icon: '✖' },
+    never: { label: '설치 대기', cls: 'b-info', icon: '…' }
+  };
+  const INTERVALS = [[24, '24시간'], [12, '12시간'], [6, '6시간'], [72, '3일'], [168, '7일'], [0, '수동만']];
+
+  function rel(ms, now) {
+    if (!ms) return '-';
+    const d = Math.round(((now || Date.now()) - ms) / 1000);
+    if (d < 0) { const f = -d; return f < 3600 ? `${Math.ceil(f / 60)}분 후` : f < 86400 ? `${Math.round(f / 3600)}시간 후` : `${Math.round(f / 86400)}일 후`; }
+    if (d < 60) return '방금';
+    if (d < 3600) return `${Math.floor(d / 60)}분 전`;
+    if (d < 86400) return `${Math.floor(d / 3600)}시간 전`;
+    return `${Math.floor(d / 86400)}일 전`;
+  }
+  function abs(ms) { return ms ? new Date(ms).toLocaleString('ko-KR') : ''; }
+
+  async function loadAgents() {
+    let data;
+    try { data = await api('agents'); } catch (e) { $('#agents tbody').replaceChildren(h('tr', null, h('td', { colspan: '8', class: 'muted' }, '에이전트 목록을 불러오지 못했습니다: ' + e.message))); return; }
+    state.agents = data;
+    const now = data.now;
+    const count = {};
+    data.agents.forEach(a => { count[a.state] = (count[a.state] || 0) + 1; });
+    $('#agents-summary').textContent = data.agents.length
+      ? Object.entries(AGENT_STATE).filter(([k]) => count[k]).map(([k, v]) => `${v.label} ${count[k]}`).join(' · ')
+      : '';
+    const rows = data.agents.map(a => {
+      const st = AGENT_STATE[a.state] || AGENT_STATE.never;
+      const next = a.intervalHours === 0 ? '수동만' : a.lastReportAt ? rel(a.nextRunAt, now) : '설치 후 바로';
+      const scriptCell = a.scriptMatches === null || a.scriptMatches === undefined ? h('span', { class: 'zero' }, '-')
+        : a.scriptMatches ? h('span', { class: 'badge b-ok' }, '대시보드와 같음')
+          : h('span', { class: 'badge b-warn', title: `에이전트: ${a.scriptSha256}\n대시보드: ${data.expectedScriptSha256}` }, h('span', { class: 'ic' }, '!'), '다름');
+      const lastRun = a.lastRunAt
+        ? h('div', null, h('span', { title: abs(a.lastRunAt) }, rel(a.lastRunAt, now)), ' ',
+          a.lastExit === 0 || (a.lastReportCount > 0 && a.lastExit !== 124) ? null : h('span', { class: 'badge b-risk' }, `실패(exit ${a.lastExit})`),
+          a.lastMessage ? h('div', { class: 'msg' }, a.lastMessage) : null)
+        : h('span', { class: 'zero' }, '아직 없음');
+      const actions = h('td', { class: 'admin-only' }, h('div', { class: 'row-actions' },
+        h('button', { class: 'btn small', type: 'button', disabled: a.state === 'running' || a.state === 'requested' || null, onclick: () => agentRun(a.name) }, '지금 점검'),
+        h('select', { 'aria-label': `${a.name} 점검 주기`, onchange: e => agentInterval(a.name, e.target.value) },
+          ...INTERVALS.map(([v, l]) => h('option', { value: String(v), selected: v === a.intervalHours || null }, l))),
+        h('button', { class: 'btn small', type: 'button', onclick: () => agentToken(a.name) }, '토큰 재발급'),
+        h('button', { class: 'btn small btn-danger', type: 'button', onclick: () => agentDelete(a.name) }, '삭제')));
+      return h('tr', null,
+        h('td', null, h('span', { class: 'badge ' + st.cls }, h('span', { class: 'ic', 'aria-hidden': 'true' }, st.icon), st.label)),
+        h('td', null, h('div', null, a.name), h('div', { class: 'sub mono' }, [a.hostname, a.ip].filter(Boolean).join(' · ') || '아직 접속 안 함')),
+        h('td', { title: abs(a.lastSeen) }, rel(a.lastSeen, now)),
+        h('td', null, lastRun),
+        h('td', null, next),
+        h('td', null, (INTERVALS.find(([v]) => v === a.intervalHours) || [0, `${a.intervalHours}시간`])[1]),
+        h('td', null, scriptCell),
+        actions);
+    });
+    if (!rows.length) rows.push(h('tr', null, h('td', { colspan: '8', class: 'muted' },
+      state.me.admin ? '등록된 에이전트가 없습니다. [에이전트 추가]로 웹서버에 에이전트를 설치하세요.' : '등록된 에이전트가 없습니다.')));
+    $('#agents tbody').replaceChildren(...rows);
+  }
+
+  function dashboardUrl() {
+    return new URL('.', location.href).href.replace(/\/$/, '');
+  }
+
+  function codeBox(text) {
+    const pre = h('pre', { class: 'mono' }, text);
+    const btn = h('button', { class: 'btn small', type: 'button' }, '복사');
+    btn.addEventListener('click', async () => {
+      try { await navigator.clipboard.writeText(text); btn.textContent = '복사됨'; }
+      catch (e) { // http 접속 등으로 클립보드 API 를 못 쓰면 텍스트를 선택해 줌
+        const r = document.createRange(); r.selectNodeContents(pre);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+        btn.textContent = 'Ctrl+C 로 복사';
+      }
+    });
+    return h('div', { class: 'codebox' }, pre, btn);
+  }
+
+  function showInstall(name, token, rotated) {
+    const url = dashboardUrl();
+    const box = $('#agent-install');
+    box.replaceChildren(
+      h('div', { class: 'alert info' }, h('b', null, rotated ? `${name} 토큰을 재발급했습니다. ` : `${name} 에이전트를 등록했습니다. `),
+        '토큰은 이 창을 닫으면 다시 볼 수 없습니다. (잃어버리면 [토큰 재발급])'),
+      h('ol', { class: 'steps' },
+        rotated
+          ? h('li', null, h('p', null, '웹서버에서 아래 명령으로 설정 파일의 토큰만 바꿉니다. (또는 아래 2~3단계로 다시 설치)'),
+            codeBox(`sudo sed -i "s|^AGENT_TOKEN=.*|AGENT_TOKEN='${token}'|" /etc/precheck-agent.conf && sudo /opt/precheck-agent/precheck-agent.sh test`))
+          : null,
+        h('li', null, h('p', null, '점검할 웹서버에 root 권한이 있는 계정으로 접속해 설치 파일을 받습니다.'),
+          codeBox(`curl -fsSo /tmp/precheck-install.sh ${url}/agent-api/files/install.sh`)),
+        h('li', null, h('p', null, '설치를 실행합니다. 토큰을 물어보면 아래 3번의 토큰을 붙여 넣고 Enter 를 누릅니다.'),
+          codeBox(`sudo bash /tmp/precheck-install.sh ${url} ${name}`)),
+        h('li', null, h('p', null, '에이전트 토큰'), codeBox(token)),
+        h('li', null, h('p', null, '"설치 완료"가 나오면 1~2분 안에 이 화면의 상태가 "온라인"이 되고, 첫 점검이 자동으로 시작됩니다.'))),
+      h('p', { class: 'muted' }, `※ 웹서버에서 ${url} 로 접속할 수 있어야 합니다(방화벽 확인). 웹서버에서 보이는 주소가 다르면 명령의 주소를 바꿔서 실행하세요. `
+        + '인터넷이 안 되는 서버는 precheck-agent.sh, apache_precheck.sh, install.sh 세 파일을 같은 폴더에 복사한 뒤 그 폴더에서 install.sh 를 실행하면 됩니다.'));
+    box.hidden = false;
+  }
+
+  async function agentRun(name) {
+    try { await api('agents/' + encodeURIComponent(name) + '/run', { method: 'POST' }); await loadAgents(); }
+    catch (e) { alert(e.message); }
+  }
+  async function agentInterval(name, hours) {
+    try { await api('agents/' + encodeURIComponent(name) + '/interval', { method: 'POST', body: new URLSearchParams({ hours }) }); await loadAgents(); }
+    catch (e) { alert(e.message); }
+  }
+  async function agentToken(name) {
+    if (!confirm(`${name} 토큰을 재발급할까요? 기존 토큰은 바로 사용할 수 없게 되어, 웹서버 설정을 바꾸기 전까지 에이전트가 접속하지 못합니다.`)) return;
+    try {
+      const r = await api('agents/' + encodeURIComponent(name) + '/token', { method: 'POST' });
+      $('#ag-title').textContent = '토큰 재발급';
+      $('#agent-form').hidden = true;
+      showInstall(r.name, r.token, true);
+      $('#agent-dlg').showModal();
+    } catch (e) { alert(e.message); }
+  }
+  async function agentDelete(name) {
+    if (!confirm(`${name} 에이전트를 삭제할까요? 이미 받은 리포트는 남습니다. 웹서버의 에이전트는 'sudo bash /tmp/precheck-install.sh --uninstall' 로 따로 삭제하세요.`)) return;
+    try { await api('agents/' + encodeURIComponent(name), { method: 'DELETE' }); await loadAgents(); }
+    catch (e) { alert(e.message); }
+  }
+
   // ---------------------------------------------------------------- 시작
+  let refreshing = false;
+  async function refreshAll() {
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      await Promise.all([load(), loadAgents()]);
+      $('#last-refresh').textContent = `마지막 갱신: ${new Date().toLocaleTimeString('ko-KR')}`;
+    } finally { refreshing = false; }
+  }
+
   async function load() {
     try {
       state.reports = await api('reports');
@@ -450,7 +588,7 @@
     if (state.me.reportDir) $('#report-dir').textContent = `(리포트 폴더: ${state.me.reportDir})`;
 
     ['#f-q', '#f-status', '#f-latest', '#f-dq'].forEach(s => $(s).addEventListener('input', render));
-    $('#btn-refresh').addEventListener('click', load);
+    $('#btn-refresh').addEventListener('click', refreshAll);
     $$('#servers th[data-sort]').forEach(th => th.addEventListener('click', () => {
       const k = th.dataset.sort;
       state.sort = { key: k, asc: state.sort.key === k ? !state.sort.asc : k === 'status' || k === 'host' };
@@ -485,7 +623,35 @@
       } catch (err) { alert(err.message); }
     });
 
-    await load();
+    $('#btn-add-agent').addEventListener('click', () => {
+      $('#ag-title').textContent = '에이전트 추가';
+      $('#agent-form').hidden = false;
+      $('#agent-form').reset();
+      $('#agent-install').hidden = true;
+      $('#agent-dlg').showModal();
+    });
+    $('#agent-form').addEventListener('submit', async e => {
+      e.preventDefault();
+      try {
+        const r = await api('agents', { method: 'POST', body: new URLSearchParams(new FormData(e.target)) });
+        e.target.hidden = true;
+        showInstall(r.name, r.token, false);
+        await loadAgents();
+      } catch (err) { alert(err.message); }
+    });
+    $('#agent-dlg').addEventListener('close', () => { $('#agent-install').replaceChildren(); });
+    $('#btn-run-all').addEventListener('click', async () => {
+      if (!confirm('등록된 모든 에이전트에 지금 점검을 요청할까요?')) return;
+      try { const r = await api('agents-run', { method: 'POST' }); await loadAgents(); showAlert(''); alert(`${r.requested}대에 점검을 요청했습니다. 1분 안에 시작됩니다.`); }
+      catch (err) { alert(err.message); }
+    });
+
+    await refreshAll();
+    // 30초마다 자동 갱신 (열린 창이 있거나 탭이 숨겨져 있으면 건너뜀)
+    setInterval(() => {
+      if (document.hidden || $$('dialog').some(d => d.open)) return;
+      refreshAll();
+    }, 30000);
   }
 
   init();

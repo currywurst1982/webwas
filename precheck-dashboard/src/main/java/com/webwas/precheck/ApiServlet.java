@@ -27,6 +27,13 @@ import java.util.logging.Logger;
  *  POST   /api/users                 사용자 추가 (관리자) → 임시 비밀번호 반환
  *  POST   /api/users/{아이디}/reset   비밀번호 초기화 (관리자) → 임시 비밀번호 반환
  *  DELETE /api/users/{아이디}         사용자 삭제 (관리자)
+ *  GET    /api/agents                에이전트 목록·상태
+ *  POST   /api/agents                에이전트 등록 (관리자) → 토큰 반환(한 번만)
+ *  POST   /api/agents-run            전체 에이전트 "지금 점검" 요청 (관리자)
+ *  POST   /api/agents/{이름}/run      "지금 점검" 요청 (관리자)
+ *  POST   /api/agents/{이름}/token    토큰 재발급 (관리자)
+ *  POST   /api/agents/{이름}/interval 점검 주기 변경 (관리자, hours)
+ *  DELETE /api/agents/{이름}          에이전트 삭제 (관리자)
  */
 @WebServlet("/api/*")
 @MultipartConfig(maxFileSize = ReportStore.MAX_FILE_BYTES, maxRequestSize = 60L * 1024 * 1024, fileSizeThreshold = 1024 * 1024)
@@ -60,6 +67,15 @@ public class ApiServlet extends HttpServlet {
             } else {
                 Web.json(resp, 200, r.toDetail());
             }
+        } else if (p.length == 1 && p[0].equals("agents")) {
+            long now = System.currentTimeMillis();
+            Object sha = getServletContext().getAttribute(AppInit.ATTR_SCRIPT_SHA);
+            String expected = sha == null ? null : sha.toString();
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("now", now);
+            out.put("expectedScriptSha256", expected);
+            out.put("agents", Web.agents(getServletContext()).list().stream().map(a -> a.toMap(now, expected)).toList());
+            Web.json(resp, 200, out);
         } else if (p.length == 1 && p[0].equals("users")) {
             if (!requireAdmin(req, resp)) return;
             List<Map<String, Object>> out = new ArrayList<>();
@@ -76,7 +92,9 @@ public class ApiServlet extends HttpServlet {
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException, ServletException {
         String[] p = parts(req);
         if (!requireAdmin(req, resp)) return;
-        if (p.length == 1 && p[0].equals("reports")) {
+        if (p.length >= 1 && (p[0].equals("agents") || p[0].equals("agents-run"))) {
+            agentAction(req, resp, p);
+        } else if (p.length == 1 && p[0].equals("reports")) {
             upload(req, resp);
         } else if (p.length == 1 && p[0].equals("users")) {
             String name = trim(req.getParameter("name"));
@@ -118,6 +136,10 @@ public class ApiServlet extends HttpServlet {
             boolean ok = Web.reports(getServletContext()).delete(p[1]);
             if (ok) LOG.info("[precheck-dashboard] 리포트 삭제: " + p[1] + " by " + Web.user(req));
             Web.json(resp, ok ? 200 : 404, Map.of("deleted", ok));
+        } else if (p.length == 2 && p[0].equals("agents")) {
+            boolean ok = Web.agents(getServletContext()).remove(p[1]);
+            if (ok) LOG.info("[precheck-dashboard] 에이전트 삭제: " + p[1] + " by " + Web.user(req));
+            Web.json(resp, ok ? 200 : 404, Map.of("deleted", ok));
         } else if (p.length == 2 && p[0].equals("users")) {
             UserStore users = Web.users(getServletContext());
             UserStore.User u = users.find(p[1]);
@@ -134,6 +156,47 @@ public class ApiServlet extends HttpServlet {
             }
         } else {
             Web.json(resp, 404, Map.of("error", "없는 주소입니다."));
+        }
+    }
+
+    private void agentAction(HttpServletRequest req, HttpServletResponse resp, String[] p) throws IOException {
+        AgentStore agents = Web.agents(getServletContext());
+        String by = Web.user(req);
+        try {
+            if (p.length == 1 && p[0].equals("agents-run")) {
+                int n = agents.requestRun(null);
+                LOG.info("[precheck-dashboard] 전체 에이전트 점검 요청 (" + n + "대) by " + by);
+                Web.json(resp, 200, Map.of("requested", n));
+            } else if (p.length == 1) {
+                String name = req.getParameter("name");
+                name = name == null ? null : name.trim();
+                String token = agents.create(name, parseHours(req.getParameter("intervalHours")));
+                LOG.info("[precheck-dashboard] 에이전트 등록: " + name + " by " + by);
+                Web.json(resp, 200, Map.of("name", name, "token", token));
+            } else if (p.length == 3 && p[2].equals("run")) {
+                agents.requestRun(p[1]);
+                LOG.info("[precheck-dashboard] 에이전트 점검 요청: " + p[1] + " by " + by);
+                Web.json(resp, 200, Map.of("requested", 1));
+            } else if (p.length == 3 && p[2].equals("token")) {
+                String token = agents.rotateToken(p[1]);
+                LOG.info("[precheck-dashboard] 에이전트 토큰 재발급: " + p[1] + " by " + by);
+                Web.json(resp, 200, Map.of("name", p[1], "token", token));
+            } else if (p.length == 3 && p[2].equals("interval")) {
+                agents.setInterval(p[1], parseHours(req.getParameter("hours")));
+                Web.json(resp, 200, Map.of("ok", true));
+            } else {
+                Web.json(resp, 404, Map.of("error", "없는 주소입니다."));
+            }
+        } catch (IllegalArgumentException e) {
+            Web.json(resp, 400, Map.of("error", e.getMessage()));
+        }
+    }
+
+    private static int parseHours(String s) {
+        try {
+            return Integer.parseInt(s == null ? "24" : s.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("점검 주기는 숫자(시간)로 입력하세요.");
         }
     }
 

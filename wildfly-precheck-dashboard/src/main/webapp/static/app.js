@@ -226,7 +226,8 @@
     const dq = list.filter(r => r.dataQuality.length).length;
     const comp = count('compromise');
     $('#kpis').replaceChildren(
-      statCard({ ico: 'server', label: '점검 서버', value: n, unit: '대', hint: state.sourceFilter ? `에이전트 ${state.sourceFilter} 수집분` : '서버별 최신 점검 기준',
+      statCard({ ico: 'server', label: '점검 인스턴스', value: n, unit: '개',
+        hint: `서버 ${new Set(list.map(r => r.host + '|' + (r.ip || ''))).size}대` + (state.sourceFilter ? ` · 에이전트 ${state.sourceFilter} 수집분` : ' · 인스턴스별 최신 점검'),
         onclick: () => { $('#f-status').value = ''; render(); showView('servers'); } }),
       statCard({ ico: 'shield', tone: 'critical', label: '침해 의심', value: comp, unit: '대',
         hint: comp ? '사고 대응 우선 — [4] 침해 흔적 [위험]' : '침해 흔적 [위험] 없음', hintTone: comp ? 'up' : 'good', onclick: () => setStatusFilter('compromise') }),
@@ -880,9 +881,24 @@
   function renderHeroMap(list) {
     const box = $('#hero-map');
     legend('#legend-hero', [['c-critical', '침해 의심'], ['c-serious', '위험'], ['c-warning', '주의'], ['c-good', '양호']]);
-    const MAX = 24;
-    const items = list.slice().sort((a, b) => STATUS[a.status].rank - STATUS[b.status].rank || a.host.localeCompare(b.host)).slice(0, MAX);
-    const n = items.length;
+    const MAX = 24;    // 표시할 서버(호스트·IP) 최대 수
+    const STACK = 6;   // 서버 상자 하나에 쌓는 인스턴스 최대 수
+    // 같은 서버(호스트 + IP)의 WildFly 인스턴스를 상자 하나로 묶음
+    const byServer = new Map();
+    list.forEach(r => {
+      const key = r.host + '|' + (r.ip || '');
+      if (!byServer.has(key)) byServer.set(key, { host: r.host, ip: r.ip, ipFromAgent: r.ipFromAgent, inst: [] });
+      byServer.get(key).inst.push(r);
+    });
+    const rankOf = r => STATUS[r.status].rank;
+    const allServers = Array.from(byServer.values());
+    allServers.forEach(g => {
+      // 아래층 → 위층 순서. 가장 나쁜 판정을 맨 위층에 두어 윗면 색 = 서버의 최악 판정
+      g.inst.sort((a, b) => rankOf(b) - rankOf(a) || (a.binary || '').localeCompare(b.binary || '') || (a.confArg || '').localeCompare(b.confArg || ''));
+      g.worst = g.inst[g.inst.length - 1];
+    });
+    const servers = allServers.sort((a, b) => rankOf(a.worst) - rankOf(b.worst) || a.host.localeCompare(b.host)).slice(0, MAX);
+    const n = servers.length;
     const cols = Math.max(2, Math.ceil(Math.sqrt(n || 1)));
     const rows = Math.max(2, Math.ceil((n || 1) / cols));
     const W = 132, H = 66;                       // 바닥 칸 하나의 폭·높이 (2:1 등각)
@@ -892,7 +908,7 @@
     const agentsByName = new Map(((state.agents && state.agents.agents) || []).map(a => [a.name, a]));
 
     // 바닥판: 서버 칸 + 뒤쪽에 대시보드 자리
-    const g0 = -2.3, gx1 = (cols - 1) * SP + 0.9, gy1 = (rows - 1) * SP + 0.9;
+    const g0 = -3.1, gx1 = (cols - 1) * SP + 0.9, gy1 = (rows - 1) * SP + 0.9;
     const floor = [P(g0, g0), P(gx1, g0), P(gx1, gy1), P(g0, gy1)];
     const T = 14; // 바닥판 두께
     const els = [];
@@ -910,7 +926,7 @@
     for (let y = Math.ceil(g0); y <= gy1; y++) els.push(svg('line', { class: 'iso-grid', x1: P(g0, y)[0], y1: P(g0, y)[1], x2: P(gx1, y)[0], y2: P(gx1, y)[1] }));
 
     // 등각 상자 (서버 랙 모양): 바닥 중심 c, 반폭 w·반높이 h, 높이 z
-    function cube(c, w, h, z, topFill, slots) { // 옆면 색은 CSS(--rack-l/r, --hub-l/r)가 화면 모드별로 지정
+    function cube(c, w, h, z, topFill, slots, withTop = true) { // 옆면 색은 CSS(--rack-l/r, --hub-l/r)가 화면 모드별로 지정
       const [x, y] = c;
       const top = [[x, y - z - h], [x + w, y - z], [x, y - z + h], [x - w, y - z]];
       const left = [[x - w, y - z], [x, y - z + h], [x, y + h], [x - w, y]];
@@ -923,18 +939,19 @@
         g.push(svg('line', { class: 'slot', x1: x - w + 4, y1: ly - h + 2 - (h - 2) * 0, x2: x - 3, y2: ly + 0 - 1 }));
         g.push(svg('line', { class: 'slot', x1: x + 3, y1: ly - 1, x2: x + w - 4, y2: ry + 2 }));
       }
-      g.push(svg('polygon', { class: 'top', points: pts(top), fill: topFill, filter: topFill.startsWith('url') ? null : 'url(#isoGlow)' }));
+      if (withTop) g.push(svg('polygon', { class: 'top', points: pts(top), fill: topFill, filter: topFill.startsWith('url') ? null : 'url(#isoGlow)' }));
       return g;
     }
 
     // 대시보드(허브) 위치와 연결선
-    const hub = P(-1.45, -1.45);
-    const cells = items.map((r, i) => ({ r, c: P((i % cols) * SP, Math.floor(i / cols) * SP) }));
+    const hub = P(-2.2, -2.2); // 인스턴스가 쌓인 앞 서버 상자(최대 높이 84)에 가리지 않을 만큼 뒤로
+    const cells = servers.map((g, i) => ({ g, c: P((i % cols) * SP, Math.floor(i / cols) * SP) }));
     const labels = []; // 이름표는 상자에 가리지 않도록 맨 위 층에 따로 그림
-    cells.forEach(({ r, c }) => {
-      if (!r.source) return;
-      const ag = agentsByName.get(r.source);
-      els.push(svg('path', { class: 'iso-link' + (ag && ag.state !== 'offline' && ag.state !== 'never' ? ' live' : ''),
+    cells.forEach(({ g, c }) => {
+      const srcs = g.inst.filter(r => r.source).map(r => agentsByName.get(r.source));
+      if (!srcs.length) return;
+      const live = srcs.some(ag => ag && ag.state !== 'offline' && ag.state !== 'never');
+      els.push(svg('path', { class: 'iso-link' + (live ? ' live' : ''),
         d: `M${hub[0]},${hub[1] - 20} Q${(hub[0] + c[0]) / 2},${Math.min(hub[1], c[1]) - 50} ${c[0]},${c[1] - 40}` }));
     });
     const hubG = svg('g', { class: 'iso-box iso-hub', 'aria-hidden': 'true' }, cube(hub, W * 0.42, H * 0.42, 34, 'url(#hubTop)', 2));
@@ -942,33 +959,54 @@
     labels.push(svg('text', { class: 'iso-label', x: hub[0], y: hub[1] - 34 - H * 0.42 - 12 }, '점검 대시보드'));
 
     // 서버 상자: 뒤 → 앞 순서로 그려야 겹침이 자연스러움 (이미 행·열 순)
-    cells.forEach(({ r, c }) => {
-      const tone = TONE[r.status] || TONE.none;
-      const g = svg('g', { class: 'iso-box', tabindex: '0', role: 'button', 'aria-label': `${r.host} ${STATUS[r.status].label}, 상세 보기`,
-        onclick: () => openDetail(r.id), onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(r.id); } } });
-      if (r.status === 'compromise') g.append(svg('ellipse', { class: 'iso-ring', cx: c[0], cy: c[1], rx: W * 0.42, ry: H * 0.42 }));
-      cube(c, W * 0.3, H * 0.3, 52, tone, 3).forEach(x => g.append(x));
-      // 앞면 표시등 (상태색)
-      g.append(svg('circle', { class: 'led', cx: c[0] + W * 0.21, cy: c[1] - 12, r: 2.6, fill: tone }));
-      g.append(svg('circle', { class: 'led', cx: c[0] + W * 0.21, cy: c[1] - 30, r: 2.6, fill: tone }));
-      labels.push(svg('text', { class: 'iso-label', x: c[0], y: c[1] + H * 0.3 + 18 }, r.host.length > 16 ? r.host.slice(0, 15) + '…' : r.host));
-      // 이름표 3줄: 호스트 / 서버 IP / WildFly 버전 (SP=2.0 이면 셋째 줄까지 대각선 앞 상자와 겹치지 않음)
-      labels.push(svg('text', { class: 'iso-sub', x: c[0], y: c[1] + H * 0.3 + 31 }, r.ip ? r.ip + (r.ipFromAgent ? ' (접속 IP)' : '') : 'IP 미확인'));
-      labels.push(svg('text', { class: 'iso-sub', x: c[0], y: c[1] + H * 0.3 + 44 }, r.version ? 'WildFly ' + r.version.replace(/\.Final$/, '') : '버전 미확인'));
-      tip(g, () => [hostLabel(r), { level: r.status === 'compromise' ? 'compromise' : r.status, text: `WildFly ${r.version || '?'}${r.belowLatest ? ' (최신 미만)' : ''}` },
-        `점검 ${r.checkedAt || '-'} · ${r.source ? '에이전트 ' + r.source : '수동 업로드'}`,
-        `위험 ${r.counts.risk} · 주의 ${r.counts.warn} · 해당 CVE ${cveTotal(r)}`,
-        ...r.intrusionFindings.slice(0, 2).map(f => ({ level: f.level, text: f.text }))]);
-      els.push(g);
+    // 인스턴스마다 한 층. 전체 높이는 84 이하로 맞춰 뒤 서버 이름표를 가리지 않게 함
+    const w = W * 0.3, h = H * 0.3;
+    cells.forEach(({ g: srv, c }) => {
+      const total = srv.inst.length;
+      const stack = srv.inst.slice(-STACK); // 넘치면 위쪽(판정이 나쁜) 인스턴스를 우선 표시
+      const k = stack.length;
+      const bh = k === 1 ? 52 : Math.min(26, 84 / k);
+      if (srv.inst.some(r => r.status === 'compromise')) els.push(svg('ellipse', { class: 'iso-ring', cx: c[0], cy: c[1], rx: W * 0.42, ry: H * 0.42 }));
+      stack.forEach((r, i) => {
+        const tone = TONE[r.status] || TONE.none;
+        const cb = [c[0], c[1] - i * bh];
+        const top = i === k - 1;
+        const g = svg('g', { class: 'iso-box' + (k > 1 ? ' iso-blade' : ''), tabindex: '0', role: 'button',
+          'aria-label': `${srv.host} ${k > 1 ? `인스턴스 ${i + 1}/${total} ` : ''}WildFly ${r.version || '?'} ${STATUS[r.status].label}, 상세 보기`,
+          onclick: () => openDetail(r.id), onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(r.id); } } });
+        cube(cb, w, h, bh, tone, k === 1 ? 3 : 0, top).forEach(x => g.append(x));
+        if (k > 1) { // 층 구분: 오른쪽 면을 그 인스턴스 판정색으로 옅게 칠함
+          const [x, y] = cb;
+          g.append(svg('polygon', { class: 'tint', fill: tone, points: pts([[x, y - bh + h], [x + w, y - bh], [x + w, y], [x, y + h]]) }));
+          g.append(svg('circle', { class: 'led', cx: x + W * 0.21, cy: y + h * 0.3 - bh / 2, r: 2.6, fill: tone }));
+        } else {
+          g.append(svg('circle', { class: 'led', cx: c[0] + W * 0.21, cy: c[1] - 12, r: 2.6, fill: tone }));
+          g.append(svg('circle', { class: 'led', cx: c[0] + W * 0.21, cy: c[1] - 30, r: 2.6, fill: tone }));
+        }
+        tip(g, () => [
+          k > 1 ? `서버 ${srv.host}${srv.ip ? ' (' + srv.ip + ')' : ''} · 인스턴스 ${total}개 중` : hostLabel(r),
+          ...(k > 1 ? [`설치 폴더 ${r.binary || '?'}${r.confArg ? ' · ' + r.confArg : ''}`] : []),
+          { level: r.status === 'compromise' ? 'compromise' : r.status, text: `WildFly ${r.version || '?'}${r.belowLatest ? ' (최신 미만)' : ''}` },
+          `점검 ${r.checkedAt || '-'} · ${r.source ? '에이전트 ' + r.source : '수동 업로드'}`,
+          `위험 ${r.counts.risk} · 주의 ${r.counts.warn} · 해당 CVE ${cveTotal(r)}`,
+          ...r.intrusionFindings.slice(0, 2).map(f => ({ level: f.level, text: f.text }))]);
+        els.push(g);
+      });
+      // 이름표 3줄: 호스트 / 서버 IP / WildFly 버전(인스턴스가 여러 개면 개수)
+      labels.push(svg('text', { class: 'iso-label', x: c[0], y: c[1] + h + 18 }, srv.host.length > 16 ? srv.host.slice(0, 15) + '…' : srv.host));
+      labels.push(svg('text', { class: 'iso-sub', x: c[0], y: c[1] + h + 31 }, srv.ip ? srv.ip + (srv.ipFromAgent ? ' (접속 IP)' : '') : 'IP 미확인'));
+      const vers = Array.from(new Set(srv.inst.map(r => (r.version || '?').replace(/\.Final$/, ''))));
+      labels.push(svg('text', { class: 'iso-sub', x: c[0], y: c[1] + h + 44 },
+        total === 1 ? 'WildFly ' + vers[0] : `WildFly 인스턴스 ${total}개` + (vers.length === 1 ? ` · ${vers[0]}` : '') + (total > k ? ` (위 ${k}개 표시)` : '')));
     });
     els.push(svg('g', { class: 'iso-labels', 'pointer-events': 'none' }, labels));
     if (!n) {
       const mid = P((cols - 1) * SP / 2, (rows - 1) * SP / 2);
       els.push(svg('text', { class: 'iso-empty', x: mid[0], y: mid[1] }, state.reports.length ? '조건에 맞는 서버가 없습니다' : '점검 결과가 아직 없습니다'));
     }
-    if (list.length > MAX) {
+    if (allServers.length > MAX) {
       const p = P(gx1, gy1);
-      els.push(svg('text', { class: 'iso-sub', x: p[0], y: p[1] + T + 18 }, `위험도 높은 순 ${MAX}대만 표시 (전체 ${list.length}대)`));
+      els.push(svg('text', { class: 'iso-sub', x: p[0], y: p[1] + T + 18 }, `위험도 높은 순 ${MAX}대만 표시 (전체 서버 ${allServers.length}대)`));
     }
 
     // 보이는 범위에 맞춰 viewBox 계산
@@ -976,7 +1014,7 @@
     const ys = [Math.min(floor[0][1] - 40, hub[1] - 34 - H * 0.42 - 30), floor[2][1] + T + 30];
     const minX = Math.min(...xs) - 20, maxX = Math.max(...xs) + 20;
     box.replaceChildren(svg('svg', { viewBox: `${minX} ${ys[0]} ${maxX - minX} ${ys[1] - ys[0]}`, role: 'img',
-      'aria-label': `서버 배치도: 서버 ${n}대` }, els));
+      'aria-label': `서버 배치도: 서버 ${n}대, 인스턴스 ${list.length}개` }, els));
   }
 
   // ---------------------------------------------------------------- 일자별 점검 건수 (막대)
@@ -1059,7 +1097,7 @@
     const cls = { compromise: 'c-critical', risk: 'c-serious', warn: 'c-warning', ok: 'c-good' };
     const segs = keys.map(k => ({ key: k, value: list.filter(r => r.status === k).length, color: TONE[k], label: STATUS[k].label }));
     $('#status-donut').replaceChildren(
-      donut(segs, [String(list.length), '점검 서버']),
+      donut(segs, [String(list.length), '인스턴스']),
       h('ul', { class: 'donut-legend' }, ...segs.map(sg => h('li', null,
         h('button', { type: 'button', onclick: () => setStatusFilter(sg.key), title: `${sg.label} 서버만 서버 목록에서 보기` },
           h('i', { class: 'dot ' + cls[sg.key] }), sg.label, h('b', null, `${sg.value}대`))))));

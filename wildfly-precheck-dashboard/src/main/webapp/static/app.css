@@ -338,6 +338,8 @@ select option { background: var(--bg2); }
 .axis-strong { fill: var(--ink); font-size: 10.5px; stroke: none; }
 .iso-box .slot { stroke: var(--rack-line); stroke-width: 1.2; fill: none; }
 .iso-box .led { stroke: none; }
+.iso-box .tint { opacity: .28; stroke: none; pointer-events: none; }
+.iso-blade:hover .left, .iso-blade:hover .right, .iso-blade:focus .left, .iso-blade:focus .right { filter: brightness(1.35); }
 .iso-box:hover .top, .iso-box:focus .top { filter: brightness(1.25); }
 .iso-box:focus .top { stroke: #fff; stroke-width: 1.6; }
 .iso-label { fill: var(--ink); font-size: 12px; font-weight: 600; text-anchor: middle; stroke: none; }

@@ -63,30 +63,51 @@ mvn package
 
 ## 3. 배포 (대시보드를 WildFly 에 올리기)
 
-1. 리포트와 계정을 저장할 폴더를 만듭니다. WildFly 실행 계정만 읽게 합니다.
+1. WildFly 를 **어떤 계정으로 실행하는지** 확인합니다. (아래 예시는 `was`. 서버마다 다르니 꼭 확인)
+   ```bash
+   ps -eo user,args | grep '[j]boss-modules' | awk '{print $1}'
+   ```
+2. 리포트와 계정을 저장할 폴더를 만들고, **위에서 확인한 실행 계정**만 쓰게 합니다.
    ```bash
    sudo mkdir -p /data/wfprecheck
-   sudo chown wildfly: /data/wfprecheck      # wildfly = WildFly 실행 계정
+   sudo chown was: /data/wfprecheck      # was 자리에 1번에서 확인한 실행 계정
    sudo chmod 700 /data/wfprecheck
    ```
-2. WildFly 가 그 폴더를 쓰도록 알려 줍니다. `<WildFly설치경로>/bin/standalone.conf` 맨 아래에 한 줄 추가:
-   ```bash
-   JAVA_OPTS="$JAVA_OPTS -Dwfprecheck.data.dir=/data/wfprecheck"
-   ```
-   (또는 환경변수 `WFPRECHECK_DATA_DIR=/data/wfprecheck`. 아무것도 안 하면 실행 계정 홈 폴더의 `wfprecheck-dashboard`)
-3. WildFly 를 다시 시작한 뒤, war 파일을 배포 폴더에 복사합니다.
+3. WildFly 가 그 폴더를 쓰도록 알려 줍니다. **방법 A 를 권장합니다.**
+   - **방법 A (권장, 시작 스크립트와 관계없이 적용)**: WildFly 가 켜진 상태에서 관리 CLI 로 한 번 실행합니다. 값은 WildFly 설정 파일(standalone.xml)에 저장됩니다.
+     ```bash
+     <WildFly설치경로>/bin/jboss-cli.sh --connect --controller=127.0.0.1:9990 \
+       --command='/system-property=wfprecheck.data.dir:add(value=/data/wfprecheck)'
+     ```
+     (`9990` 은 관리 포트. 포트 오프셋을 쓰면 9990+오프셋. `{"outcome" => "success"}` 가 나오면 성공)
+   - 방법 B: `<WildFly설치경로>/bin/standalone.conf` 맨 아래에 `JAVA_OPTS="$JAVA_OPTS -Dwfprecheck.data.dir=/data/wfprecheck"` 추가.
+     ⚠️ 회사 자체 시작 스크립트로 띄우는 서버는 이 파일을 읽지 않을 수 있습니다. 그럴 때는 방법 A 를 쓰세요.
+   - 아무것도 안 하면 **실행 계정 홈 폴더의 `wfprecheck-dashboard`**(예: `/home/was/wfprecheck-dashboard`)를 씁니다.
+4. WildFly 를 다시 시작한 뒤, war 파일을 배포 폴더에 복사합니다.
    ```bash
    cp target/wfprecheck.war <WildFly설치경로>/standalone/deployments/
    ```
-4. 브라우저에서 `http://<서버주소>:8080/wfprecheck/` 로 접속합니다.
+5. **데이터 폴더가 제대로 적용됐는지 꼭 확인합니다.** (server.log 위치는 서버 구성에 따라 다름)
+   ```bash
+   sudo grep "데이터 폴더" <server.log 경로> | tail -1
+   ```
+   `데이터 폴더: /data/wfprecheck` 가 나와야 합니다. 다른 경로가 나오면 3번 설정이 적용되지 않은 것이고,
+   **초기 비밀번호 파일도 그 다른 경로에 있습니다.**
+6. 브라우저에서 `http://<서버주소>:8080/wfprecheck/` 로 접속합니다.
 
 ## 4. 첫 로그인
 
 1. 처음 시작하면 관리자 계정 `admin` 이 자동으로 만들어집니다.
-2. 초기 비밀번호 확인:
+2. 초기 비밀번호 확인 (경로는 3-5번에서 확인한 데이터 폴더):
    ```bash
    sudo cat /data/wfprecheck/initial-admin-password.txt
    ```
+   어느 파일인지 헷갈리면 server.log 에서 확인하는 것이 가장 정확합니다.
+   ```bash
+   sudo grep "초기 관리자 계정" <server.log 경로> | tail -1     # → "초기 비밀번호는 <경로> 파일에 있습니다"
+   ```
+   로그인할 때는 한/영 키가 **영문**, Caps Lock 이 꺼진 상태인지, 복사할 때 앞뒤 공백이 따라오지 않았는지 확인하세요.
+   5번 연속 틀리면 5분 동안 로그인이 차단됩니다.
    (직접 정하려면 첫 시작 전에 환경변수 `WFPRECHECK_ADMIN_PASSWORD` 설정)
 3. 로그인하면 **비밀번호 변경 화면이 먼저 나옵니다.** 바꾸면 위 파일은 자동으로 지워집니다.
 

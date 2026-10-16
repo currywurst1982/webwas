@@ -45,6 +45,35 @@
     return el;
   }
 
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  /** SVG 요소 생성: svg('rect', {x:1}, 자식...) */
+  function svg(tag, attrs, ...children) {
+    const el = document.createElementNS(SVGNS, tag);
+    if (attrs) {
+      for (const [k, v] of Object.entries(attrs)) {
+        if (v === null || v === undefined || v === false) continue;
+        if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+        else el.setAttribute(k, v);
+      }
+    }
+    for (const c of children.flat()) {
+      if (c === null || c === undefined || c === false) continue;
+      el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    }
+    return el;
+  }
+  /** 아이콘: index.html 의 <symbol id="i-이름"> 사용 */
+  function icon(name) {
+    const el = document.createElementNS(SVGNS, 'svg');
+    el.setAttribute('aria-hidden', 'true');
+    const u = document.createElementNS(SVGNS, 'use');
+    u.setAttribute('href', '#i-' + name);
+    el.append(u);
+    return el;
+  }
+  /** 상태색 (화면 위젯용, CSS 토큰과 같은 값) */
+  const TONE = { compromise: '#e5484d', risk: '#ec835a', warn: '#fab219', ok: '#22c55e', none: '#7088ab' };
+
   /** "호스트 (IP)" — IP 기록이 없는 이전 리포트는 에이전트 접속 IP 를 "접속 IP"로 표시 */
   function hostLabel(r) {
     const s = r.ip ? `${r.host} (${r.ip}${r.ipFromAgent ? ', 접속 IP' : ''})` : r.host;
@@ -128,22 +157,39 @@
   }
 
   // ---------------------------------------------------------------- 렌더링
+  /** 개요 화면용: 인스턴스별 최신 리포트 (에이전트를 고르면 그 에이전트 것만) */
+  function overviewList() {
+    const seen = new Set();
+    return state.reports.filter(r => {
+      if (seen.has(r.instanceKey)) return false;
+      seen.add(r.instanceKey);
+      return !state.sourceFilter || r.source === state.sourceFilter;
+    });
+  }
+
   function render() {
     const list = sortList(filtered());
+    const ov = overviewList();
     $('#empty').hidden = state.reports.length > 0;
     $('#f-count').textContent = state.reports.length ? `${list.length}건 표시 / 전체 리포트 ${state.reports.length}건` : '';
-    renderKpis(list);
-    renderSuspects();
     const chip = $('#f-source');
     chip.hidden = !state.sourceFilter;
     if (state.sourceFilter) {
       chip.replaceChildren(`에이전트: ${state.sourceFilter} `,
         h('button', { class: 'btn-link', type: 'button', 'aria-label': '에이전트 필터 해제', onclick: () => { state.sourceFilter = null; render(); renderSideAgents(); } }, '✕'));
     }
+    // 개요
+    renderKpis(ov);
+    renderHeroMap(ov);
+    renderTrend();
+    renderLatestDonut(ov);
+    renderStatusDonut(ov);
+    renderSuspects();
+    renderCveChart(ov);
+    renderConfigChart(ov);
+    // 서버 목록
     renderTable(list);
     renderFindingsChart(list);
-    renderCveChart(list);
-    renderConfigChart(list);
   }
 
   function kpi(label, value, unit, hint, kind, onclick) {
@@ -153,9 +199,21 @@
       hint ? h('div', { class: 'hint' }, hint) : null);
   }
 
+  /** 개요 상단 카드: 아이콘 타일 + 이름 + 큰 숫자 + 설명 */
+  function statCard({ ico, tone, label, value, unit, hint, hintTone, onclick }) {
+    return h('div', { class: 'kpi' + (tone ? ' t-' + tone : '') + (onclick ? ' clickable' : ''), onclick,
+      role: onclick ? 'button' : null, tabindex: onclick ? '0' : null,
+      onkeydown: onclick ? e => { if (e.key === 'Enter') onclick(); } : null },
+      h('div', { class: 'ico' }, icon(ico)),
+      h('div', { class: 'label' }, label),
+      h('div', { class: 'value' }, String(value), unit ? h('small', null, unit) : null),
+      hint ? h('div', { class: 'hint' + (hintTone ? ' ' + hintTone : '') }, hint) : null);
+  }
+
   function setStatusFilter(v) {
     $('#f-status').value = v;
     render();
+    showView('servers');
   }
 
   function renderKpis(list) {
@@ -165,14 +223,24 @@
     const eol = list.filter(r => r.eol).length;
     const unpatched = list.filter(r => cveTotal(r) > 0).length;
     const dq = list.filter(r => r.dataQuality.length).length;
+    const comp = count('compromise');
     $('#kpis').replaceChildren(
-      kpi('점검 인스턴스', n, '개', '필터 조건 기준'),
-      kpi('', count('compromise'), '대', '[4] 침해 흔적에 [위험] 있음 → 사고 대응 우선', 'compromise', () => setStatusFilter('compromise')),
-      kpi('', count('risk'), '대', '침해 흔적 외 [위험] 항목 보유', 'risk', () => setStatusFilter('risk')),
-      kpi(`최신(${latestVer()}) 미만`, below, '대', eol ? `이 중 EOL(2.2 이하) ${eol}대` : '업그레이드 대상'),
-      kpi('미조치 CVE 보유', unpatched, '대', '모듈 조건 충족 + 백포트 기록 없음'),
-      kpi('데이터 경고', dq, '대', '점검이 불완전해 수동 확인 필요', null, dq ? () => { $('#f-dq').checked = true; render(); } : null)
+      statCard({ ico: 'server', label: '점검 서버', value: n, unit: '대', hint: state.sourceFilter ? `에이전트 ${state.sourceFilter} 수집분` : '서버별 최신 점검 기준',
+        onclick: () => { $('#f-status').value = ''; render(); showView('servers'); } }),
+      statCard({ ico: 'shield', tone: 'critical', label: '침해 의심', value: comp, unit: '대',
+        hint: comp ? '사고 대응 우선 — [4] 침해 흔적 [위험]' : '침해 흔적 [위험] 없음', hintTone: comp ? 'up' : 'good', onclick: () => setStatusFilter('compromise') }),
+      statCard({ ico: 'alert', tone: 'serious', label: '위험', value: count('risk'), unit: '대', hint: '침해 흔적 외 [위험] 항목 보유', onclick: () => setStatusFilter('risk') }),
+      statCard({ ico: 'up', tone: 'warning', label: `최신(${latestVer()}) 미만`, value: below, unit: '대',
+        hint: eol ? `이 중 EOL(2.2 이하) ${eol}대` : (n ? `${n - below}대 최신 버전` : '업그레이드 대상') }),
+      statCard({ ico: 'bug', tone: 'serious', label: '미조치 CVE 보유', value: unpatched, unit: '대', hint: '모듈 조건 충족 + 백포트 기록 없음' }),
+      statCard({ ico: 'data', tone: 'warning', label: '데이터 경고', value: dq, unit: '대', hint: dq ? '점검 불완전 — 수동 확인 필요' : '이상 없음', hintTone: dq ? '' : 'good',
+        onclick: dq ? () => { $('#f-dq').checked = true; render(); showView('servers'); } : null })
     );
+    // 머리글 알림 종: 침해 의심 수 (에이전트 필터와 관계없이 전체)
+    const allComp = (() => { const seen = new Set(); return state.reports.filter(r => { if (seen.has(r.instanceKey)) return false; seen.add(r.instanceKey); return r.intrusion === 'compromise'; }).length; })();
+    const bell = $('#bell-count');
+    bell.hidden = !allComp;
+    bell.textContent = String(allComp);
   }
 
   function renderTable(list) {
@@ -211,7 +279,7 @@
 
   /** 가로 막대 1줄: segs = [{cls, value, label}] */
   /** extraLines: 툴팁에 덧붙일 줄 (문자열, 또는 {text, level, head}) */
-  function hbar(name, segs, max, tipTitle, onclick, extraLines) {
+  function hbar(name, segs, max, tipTitle, onclick, extraLines, valText) {
     const total = segs.reduce((a, s) => a + s.value, 0);
     const track = h('div', { class: 'track' });
     segs.filter(s => s.value > 0).forEach(s => {
@@ -220,7 +288,7 @@
       track.append(seg);
     });
     const row = h('div', { class: 'hbar', role: onclick ? 'button' : null, tabindex: onclick ? '0' : null, onclick },
-      h('div', { class: 'name', title: name }, name), track, h('div', { class: 'val' }, String(total)));
+      h('div', { class: 'name', title: name }, name), track, h('div', { class: 'val' }, valText || String(total)));
     tip(row, () => [tipTitle || name, ...segs.map(s => `${s.label}: ${s.value}`), ...(extraLines ? extraLines() : [])]);
     return row;
   }
@@ -242,6 +310,7 @@
   function renderCveChart(list) {
     legend('#legend-cve', [['c-critical', '미조치 추정(막대 색=등급)'], ['c-backport', '백포트 추정']]);
     $('#btn-cve-pdf').href = 'api/cve.pdf' + (state.sourceFilter ? '?source=' + encodeURIComponent(state.sourceFilter) : '');
+    $('#chart-cve').dataset.total = list.length;
     const agg = new Map();
     list.forEach(r => r.cveList.forEach(c => {
       const a = agg.get(c.id) || { id: c.id, open: 0, bp: 0, sev: SEVERITY[c.severity] ? c.severity : 'low', desc: c.description,
@@ -256,7 +325,7 @@
       .sort((a, b) => (b.open - a.open) || SEVERITY[a.sev].rank - SEVERITY[b.sev].rank || (b.bp - a.bp)).slice(0, 15);
     const el = $('#chart-cve');
     if (!rows.length) { el.replaceChildren(h('div', { class: 'none' }, '해당 CVE 없음')); return; }
-    const max = Math.max(1, ...rows.map(a => a.open + a.bp));
+    const max = Math.max(1, list.length);
     const LIMIT = 12;
     el.replaceChildren(...rows.map(a => hbar(`${a.id} · ${a.sev}`, [
       { cls: SEVERITY[a.sev].color, value: a.open, label: '미조치 추정 서버' },
@@ -267,7 +336,7 @@
         ? { level: 'bp', label: '백포트', text: serverLabel(s.r) }
         : { level: 'risk', label: '미조치', text: serverLabel(s.r) }),
       ...(a.servers.length > LIMIT ? [`외 ${a.servers.length - LIMIT}대 — 눌러서 전체 보기`] : [])
-    ])));
+    ], `${a.open + a.bp}/${list.length}대`)));
   }
 
   /** CVE 1건의 대상 서버 목록 창 */
@@ -287,7 +356,7 @@
           h('td', { class: 'nowrap' }, s.r.checkedAt || '-'),
           h('td', null, s.r.source ? `에이전트 ${s.r.source}` : '수동 업로드'))))),
       h('p', { class: 'dialog-actions' },
-        h('button', { class: 'btn small', type: 'button', onclick: () => { $('#cfg-dlg').close(); $('#f-q').value = a.id; render(); } }, '이 CVE로 표 거르기'),
+        h('button', { class: 'btn small', type: 'button', onclick: () => { $('#cfg-dlg').close(); $('#f-q').value = a.id; render(); showView('servers'); } }, '이 CVE로 서버 목록 거르기'),
         h('span', { class: 'muted' }, '서버를 누르면 그 서버의 상세 결과가 열립니다. "백포트 추정"은 패키지 changelog 에 CVE 번호가 있다는 뜻이므로 배포판 보안 공지로 최종 확인하세요.')));
     $('#cfg-dlg').showModal();
   }
@@ -313,7 +382,7 @@
     const rows = Array.from(agg.values()).sort((a, b) => (b.risk + b.warn) - (a.risk + a.warn) || b.risk - a.risk).slice(0, 12);
     const el = $('#chart-config');
     if (!rows.length) { el.replaceChildren(h('div', { class: 'none' }, '위험·주의 설정 없음')); return; }
-    const max = Math.max(1, ...rows.map(a => a.risk + a.warn));
+    const max = Math.max(1, list.length);
     const LIMIT = 12;
     el.replaceChildren(...rows.map(a => hbar(a.key, [
       { cls: 'c-critical', value: a.risk, label: '위험 서버' },
@@ -322,7 +391,7 @@
       { head: true, text: '대상 서버' },
       ...a.servers.slice(0, LIMIT).map(s => ({ level: s.level, text: serverLabel(s.r) })),
       ...(a.servers.length > LIMIT ? [`외 ${a.servers.length - LIMIT}대 — 눌러서 전체 보기`] : [])
-    ])));
+    ], `${a.risk + a.warn}/${list.length}대`)));
   }
 
   function serverLabel(r) {
@@ -531,6 +600,7 @@
     try { state.latest = await api('latest-version'); } catch (e) { return; }
     const l = state.latest;
     $('#latest-ver').textContent = l.version;
+    $('#latest-ver-pill').textContent = l.version;
     $('#brand-sub').textContent = `Apache 최신 ${l.version} 미만 서버 · apache_precheck.sh 결과`;
     const host = (() => { try { return new URL(l.source).host; } catch (e) { return l.source; } })();
     let origin;
@@ -568,34 +638,43 @@
     const ul = $('#side-agents');
     if (!state.agents) return;
     const list = state.agents.agents;
+    const now = state.agents.now;
     $('#side-agents-count').textContent = list.length ? `${list.length}대` : '';
     if (!list.length) {
-      ul.replaceChildren(h('li', { class: 'muted side-empty' }, state.me.admin ? '등록된 에이전트가 없습니다. [에이전트 관리]에서 추가하세요.' : '등록된 에이전트가 없습니다.'));
+      ul.replaceChildren(h('li', { class: 'side-empty' }, state.me.admin ? '등록된 에이전트가 없습니다. [에이전트 관리]에서 추가하세요.' : '등록된 에이전트가 없습니다.'));
       return;
     }
+    // 침해 의심 → 문제 상태 → 다음 점검이 빠른 순
     const order = { offline: 0, running: 1, requested: 2, online: 3, never: 4 };
+    const nextAt = a => a.intervalHours === 0 || a.autoSkipped ? Infinity : (a.nextRunAt || 0);
     const sorted = list.slice().sort((a, b) => {
       const ra = latestReportOf(a.name), rb = latestReportOf(b.name);
       const ca = ra && ra.intrusion === 'compromise' ? 0 : 1, cb = rb && rb.intrusion === 'compromise' ? 0 : 1;
-      return ca - cb || (order[a.state] ?? 9) - (order[b.state] ?? 9) || a.name.localeCompare(b.name);
+      return ca - cb || (order[a.state] ?? 9) - (order[b.state] ?? 9) || nextAt(a) - nextAt(b) || a.name.localeCompare(b.name);
     });
     ul.replaceChildren(...sorted.map(a => {
       const st = AGENT_STATE[a.state] || AGENT_STATE.never;
       const rep = latestReportOf(a.name);
       const selected = state.sourceFilter === a.name;
-      const item = h('li', null, h('button', {
-        class: 'side-item' + (selected ? ' selected' : ''), type: 'button', 'aria-pressed': String(selected),
-        title: '누르면 이 에이전트의 점검 결과만 표시',
+      let when;
+      if (a.state === 'running') when = '점검 중';
+      else if (a.state === 'requested') when = '곧 시작';
+      else if (a.intervalHours === 0) when = '수동';
+      else if (a.autoSkipped) when = '제외';
+      else if (!a.lastReportAt) when = '설치 후';
+      else when = new Date(a.nextRunAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+      const meta = [a.hostname, a.ip].filter(Boolean).join(' · ') || '아직 접속 안 함';
+      return h('li', null, h('button', {
+        class: 'sched-item' + (selected ? ' selected' : ''), type: 'button', 'aria-pressed': String(selected),
+        title: `다음 자동 점검: ${a.intervalHours === 0 ? '수동만' : a.autoSkipped ? '최신 버전이라 제외' : a.lastReportAt ? abs(a.nextRunAt) + ' (' + rel(a.nextRunAt, now) + ')' : '설치 후 바로'}\n누르면 이 에이전트 결과만 표시`,
         onclick: () => { state.sourceFilter = selected ? null : a.name; render(); renderSideAgents(); }
       },
-        h('span', { class: 'side-row' },
-          h('span', { class: 'badge ' + st.cls }, h('span', { class: 'ic', 'aria-hidden': 'true' }, st.icon), st.label),
-          rep && rep.intrusion === 'compromise' ? badge('compromise') : null),
-        h('span', { class: 'side-name' }, a.name),
-        h('span', { class: 'side-meta mono' }, a.hostname || '아직 접속 안 함'),
-        h('span', { class: 'side-meta' }, a.apacheVersion ? `Apache ${a.apacheVersion} · ${a.upToDate ? '최신' : '최신 미만'}` : 'Apache 버전 미확인',
-          rep ? ` · 점검 ${rel(rep.fileModified)}` : '')));
-      return item;
+        h('span', { class: 'sched-time' }, when),
+        h('span', { class: 'sched-ico' }, icon('server')),
+        h('span', { class: 'sched-name' }, a.name,
+          h('span', { class: 'sched-meta' }, meta + (a.apacheVersion ? ` · Apache ${a.apacheVersion}` : '') + (rep ? ` · 점검 ${rel(rep.fileModified, now)}` : ''))),
+        rep && rep.intrusion === 'compromise' ? badge('compromise')
+          : h('span', { class: 'badge ' + st.cls }, h('span', { class: 'ic', 'aria-hidden': 'true' }, st.icon), st.label)));
     }));
   }
 
@@ -606,6 +685,14 @@
     const comp = latest.filter(r => r.intrusion === 'compromise');
     const check = latest.filter(r => r.intrusion === 'check');
     $('#btn-suspects-pdf').hidden = comp.length === 0;
+    const last = state.reports[0];
+    $('#intrusion-status').className = 'istatus ' + (comp.length ? 'bad' : 'ok');
+    $('#intrusion-status').replaceChildren(
+      h('div', { class: 'i-ico' }, icon(comp.length ? 'shield' : 'activity')),
+      h('div', null,
+        h('div', { class: 'i-main' }, comp.length ? `침해 의심 ${comp.length}대` : (state.reports.length ? '안정' : '점검 전')),
+        h('div', { class: 'i-sub' }, `확인 필요 ${check.length}대 · 서버 ${latest.length}대 기준` + (last ? ` · 마지막 수신 ${rel(last.fileModified)}` : ''))));
+    renderIntrusionArea();
     const row = r => h('div', { class: 'suspect' },
       h('div', { class: 'suspect-main' },
         h('div', { class: 'suspect-title' }, badge(r.intrusion === 'compromise' ? 'compromise' : 'warn', r.intrusion === 'compromise' ? '침해 의심' : '확인 필요'),
@@ -618,7 +705,7 @@
         h('button', { class: 'btn small', type: 'button', onclick: () => openDetail(r.id) }, '상세'),
         h('a', { class: 'btn small' + (r.intrusion === 'compromise' ? ' btn-danger' : ''), href: 'api/reports/' + encodeURIComponent(r.id) + '/intrusion.pdf', download: '' }, 'PDF')));
     const out = [];
-    if (!comp.length) out.push(h('p', { class: 'muted none-msg' }, state.reports.length ? '침해 의심 서버가 없습니다.' : '점검 결과가 아직 없습니다.'));
+    if (!comp.length) out.push(h('p', { class: 'muted none-msg' }, state.reports.length ? '침해 의심 서버가 없습니다. (서버별 최신 점검 기준)' : '점검 결과가 아직 없습니다.'));
     out.push(...comp.map(row));
     if (check.length) {
       out.push(h('details', { class: 'check-group' }, h('summary', null, `확인 필요 ${check.length}대 — [4]에 [주의] 항목(스캔 시도, 최근 변경 파일 등)`), ...check.map(row)));
@@ -689,6 +776,7 @@
       state.me.admin ? '등록된 에이전트가 없습니다. [에이전트 추가]로 웹서버에 에이전트를 설치하세요.' : '등록된 에이전트가 없습니다.')));
     $('#agents tbody').replaceChildren(...rows);
     renderSideAgents();
+    renderAgentTiles();
   }
 
   function dashboardUrl() {
@@ -753,6 +841,275 @@
     if (!confirm(`${name} 에이전트를 삭제할까요? 이미 받은 리포트는 남습니다. 웹서버의 에이전트는 'sudo bash /tmp/precheck-install.sh --uninstall' 로 따로 삭제하세요.`)) return;
     try { await api('agents/' + encodeURIComponent(name), { method: 'DELETE' }); await loadAgents(); }
     catch (e) { alert(e.message); }
+  }
+
+  // ---------------------------------------------------------------- 화면 전환 · 시계
+  const VIEWS = ['overview', 'servers', 'agents', 'settings'];
+  function showView(name, fromHash) {
+    if (!VIEWS.includes(name)) name = 'overview';
+    $$('section.view').forEach(v => { v.hidden = v.dataset.view !== name; });
+    $$('.rail-btn, .tab-btn').forEach(b => {
+      if (b.dataset.view === name) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    $('#tooltip').hidden = true;
+    if (!fromHash && location.hash.slice(1) !== name) history.replaceState(null, '', '#' + name);
+    if (!fromHash) window.scrollTo({ top: 0 });
+  }
+
+  function tickClock() {
+    const d = new Date();
+    $('#clock-date').textContent = d.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
+    $('#clock-time').textContent = d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+
+  /** 최근 n일 날짜 키 (YYYY-MM-DD, 오래된 날 → 오늘) */
+  function dayKeys(n) {
+    const out = [];
+    const d = new Date();
+    for (let i = n - 1; i >= 0; i--) {
+      const x = new Date(d.getFullYear(), d.getMonth(), d.getDate() - i);
+      out.push(`${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`);
+    }
+    return out;
+  }
+  function reportsInScope() {
+    return state.reports.filter(r => !state.sourceFilter || r.source === state.sourceFilter);
+  }
+
+  // ---------------------------------------------------------------- 서버 배치도 (등각 투영)
+  function renderHeroMap(list) {
+    const box = $('#hero-map');
+    legend('#legend-hero', [['c-critical', '침해 의심'], ['c-serious', '위험'], ['c-warning', '주의'], ['c-good', '양호']]);
+    const MAX = 24;
+    const items = list.slice().sort((a, b) => STATUS[a.status].rank - STATUS[b.status].rank || a.host.localeCompare(b.host)).slice(0, MAX);
+    const n = items.length;
+    const cols = Math.max(2, Math.ceil(Math.sqrt(n || 1)));
+    const rows = Math.max(2, Math.ceil((n || 1) / cols));
+    const W = 132, H = 66;                       // 바닥 칸 하나의 폭·높이 (2:1 등각)
+    const SP = 1.55;                             // 서버 사이 간격 (칸 단위)
+    const P = (gx, gy) => [(gx - gy) * W / 2, (gx + gy) * H / 2];
+    const pts = a => a.map(p => p.join(',')).join(' ');
+    const agentsByName = new Map(((state.agents && state.agents.agents) || []).map(a => [a.name, a]));
+
+    // 바닥판: 서버 칸 + 뒤쪽에 대시보드 자리
+    const g0 = -2.3, gx1 = (cols - 1) * SP + 0.9, gy1 = (rows - 1) * SP + 0.9;
+    const floor = [P(g0, g0), P(gx1, g0), P(gx1, gy1), P(g0, gy1)];
+    const T = 14; // 바닥판 두께
+    const els = [];
+    const defs = svg('defs', null,
+      svg('linearGradient', { id: 'hubTop', x1: '0', y1: '0', x2: '1', y2: '1' },
+        svg('stop', { offset: '0', 'stop-color': '#60a5fa' }), svg('stop', { offset: '1', 'stop-color': '#22d3ee' })),
+      svg('filter', { id: 'isoGlow', x: '-50%', y: '-50%', width: '200%', height: '200%' },
+        svg('feGaussianBlur', { stdDeviation: '5', result: 'b' }),
+        svg('feMerge', null, svg('feMergeNode', { in: 'b' }), svg('feMergeNode', { in: 'SourceGraphic' }))));
+    els.push(defs);
+    els.push(svg('polygon', { class: 'iso-edge', points: pts([floor[3], floor[2], [floor[2][0], floor[2][1] + T], [floor[3][0], floor[3][1] + T]]) }));
+    els.push(svg('polygon', { class: 'iso-edge', points: pts([floor[2], floor[1], [floor[1][0], floor[1][1] + T], [floor[2][0], floor[2][1] + T]]) }));
+    els.push(svg('polygon', { class: 'iso-floor', points: pts(floor) }));
+    for (let x = Math.ceil(g0); x <= gx1; x++) els.push(svg('line', { class: 'iso-grid', x1: P(x, g0)[0], y1: P(x, g0)[1], x2: P(x, gy1)[0], y2: P(x, gy1)[1] }));
+    for (let y = Math.ceil(g0); y <= gy1; y++) els.push(svg('line', { class: 'iso-grid', x1: P(g0, y)[0], y1: P(g0, y)[1], x2: P(gx1, y)[0], y2: P(gx1, y)[1] }));
+
+    // 등각 상자 (서버 랙 모양): 바닥 중심 c, 반폭 w·반높이 h, 높이 z
+    function cube(c, w, h, z, topFill, sideL, sideR, slots) {
+      const [x, y] = c;
+      const top = [[x, y - z - h], [x + w, y - z], [x, y - z + h], [x - w, y - z]];
+      const left = [[x - w, y - z], [x, y - z + h], [x, y + h], [x - w, y]];
+      const right = [[x, y - z + h], [x + w, y - z], [x + w, y], [x, y + h]];
+      const g = [svg('polygon', { class: 'left', points: pts(left), fill: sideL }),
+        svg('polygon', { class: 'right', points: pts(right), fill: sideR })];
+      for (let i = 1; i <= slots; i++) { // 랙 칸 선 + 표시등
+        const t = i / (slots + 1);
+        const ly = y - z + h + (z) * t, ry = y - z + (z) * t;
+        g.push(svg('line', { class: 'slot', x1: x - w + 4, y1: ly - h + 2 - (h - 2) * 0, x2: x - 3, y2: ly + 0 - 1 }));
+        g.push(svg('line', { class: 'slot', x1: x + 3, y1: ly - 1, x2: x + w - 4, y2: ry + 2 }));
+      }
+      g.push(svg('polygon', { class: 'top', points: pts(top), fill: topFill, filter: topFill.startsWith('url') ? null : 'url(#isoGlow)' }));
+      return g;
+    }
+
+    // 대시보드(허브) 위치와 연결선
+    const hub = P(-1.45, -1.45);
+    const cells = items.map((r, i) => ({ r, c: P((i % cols) * SP, Math.floor(i / cols) * SP) }));
+    const labels = []; // 이름표는 상자에 가리지 않도록 맨 위 층에 따로 그림
+    cells.forEach(({ r, c }) => {
+      if (!r.source) return;
+      const ag = agentsByName.get(r.source);
+      els.push(svg('path', { class: 'iso-link' + (ag && ag.state !== 'offline' && ag.state !== 'never' ? ' live' : ''),
+        d: `M${hub[0]},${hub[1] - 20} Q${(hub[0] + c[0]) / 2},${Math.min(hub[1], c[1]) - 50} ${c[0]},${c[1] - 40}` }));
+    });
+    const hubG = svg('g', { class: 'iso-box iso-hub', 'aria-hidden': 'true' }, cube(hub, W * 0.42, H * 0.42, 34, 'url(#hubTop)', '#1d3c6e', '#152e57', 2));
+    els.push(hubG);
+    labels.push(svg('text', { class: 'iso-label', x: hub[0], y: hub[1] - 34 - H * 0.42 - 12 }, '점검 대시보드'));
+
+    // 서버 상자: 뒤 → 앞 순서로 그려야 겹침이 자연스러움 (이미 행·열 순)
+    cells.forEach(({ r, c }) => {
+      const tone = TONE[r.status] || TONE.none;
+      const g = svg('g', { class: 'iso-box', tabindex: '0', role: 'button', 'aria-label': `${r.host} ${STATUS[r.status].label}, 상세 보기`,
+        onclick: () => openDetail(r.id), onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(r.id); } } });
+      if (r.status === 'compromise') g.append(svg('ellipse', { class: 'iso-ring', cx: c[0], cy: c[1], rx: W * 0.42, ry: H * 0.42 }));
+      cube(c, W * 0.3, H * 0.3, 52, tone, '#16305a', '#0f2346', 3).forEach(x => g.append(x));
+      // 앞면 표시등 (상태색)
+      g.append(svg('circle', { class: 'led', cx: c[0] + W * 0.21, cy: c[1] - 12, r: 2.6, fill: tone }));
+      g.append(svg('circle', { class: 'led', cx: c[0] + W * 0.21, cy: c[1] - 30, r: 2.6, fill: tone }));
+      labels.push(svg('text', { class: 'iso-label', x: c[0], y: c[1] + H * 0.3 + 18 }, r.host.length > 16 ? r.host.slice(0, 15) + '…' : r.host));
+      labels.push(svg('text', { class: 'iso-sub', x: c[0], y: c[1] + H * 0.3 + 32 }, r.ip || (r.version ? 'Apache ' + r.version : '')));
+      tip(g, () => [hostLabel(r), { level: r.status === 'compromise' ? 'compromise' : r.status, text: `Apache ${r.version || '?'}${r.belowLatest ? ' (최신 미만)' : ''}` },
+        `점검 ${r.checkedAt || '-'} · ${r.source ? '에이전트 ' + r.source : '수동 업로드'}`,
+        `위험 ${r.counts.risk} · 주의 ${r.counts.warn} · 미조치 CVE ${cveTotal(r)}`,
+        ...r.intrusionFindings.slice(0, 2).map(f => ({ level: f.level, text: f.text }))]);
+      els.push(g);
+    });
+    els.push(svg('g', { class: 'iso-labels', 'pointer-events': 'none' }, labels));
+    if (!n) {
+      const mid = P((cols - 1) * SP / 2, (rows - 1) * SP / 2);
+      els.push(svg('text', { class: 'iso-empty', x: mid[0], y: mid[1] }, state.reports.length ? '조건에 맞는 서버가 없습니다' : '점검 결과가 아직 없습니다'));
+    }
+    if (list.length > MAX) {
+      const p = P(gx1, gy1);
+      els.push(svg('text', { class: 'iso-sub', x: p[0], y: p[1] + T + 18 }, `위험도 높은 순 ${MAX}대만 표시 (전체 ${list.length}대)`));
+    }
+
+    // 보이는 범위에 맞춰 viewBox 계산
+    const xs = [floor[0][0], floor[1][0], floor[2][0], floor[3][0]];
+    const ys = [Math.min(floor[0][1] - 40, hub[1] - 34 - H * 0.42 - 30), floor[2][1] + T + 30];
+    const minX = Math.min(...xs) - 20, maxX = Math.max(...xs) + 20;
+    box.replaceChildren(svg('svg', { viewBox: `${minX} ${ys[0]} ${maxX - minX} ${ys[1] - ys[0]}`, role: 'img',
+      'aria-label': `서버 배치도: 서버 ${n}대` }, els));
+  }
+
+  // ---------------------------------------------------------------- 일자별 점검 건수 (막대)
+  function renderTrend() {
+    const days = dayKeys(14);
+    const rs = reportsInScope();
+    const cnt = days.map(d => rs.filter(r => (r.checkedAt || '').startsWith(d)).length);
+    const comp = days.map(d => rs.filter(r => (r.checkedAt || '').startsWith(d) && r.intrusion === 'compromise').length);
+    const Wd = 360, Ht = 170, L = 24, B = 22, Tp = 14;
+    const max = Math.max(1, ...cnt);
+    const slot = (Wd - L) / days.length, bw = Math.max(4, slot * 0.5);
+    const y = v => Tp + (Ht - Tp - B) * (1 - v / max);
+    const els = [svg('defs', null,
+      svg('linearGradient', { id: 'barGrad', x1: '0', y1: '0', x2: '0', y2: '1' },
+        svg('stop', { offset: '0', 'stop-color': '#22d3ee' }), svg('stop', { offset: '1', 'stop-color': '#2563eb', 'stop-opacity': '0.55' })),
+      svg('linearGradient', { id: 'barGradHi', x1: '0', y1: '0', x2: '0', y2: '1' },
+        svg('stop', { offset: '0', 'stop-color': '#a5f3fc' }), svg('stop', { offset: '1', 'stop-color': '#38bdf8' })))];
+    [0, 0.5, 1].forEach(t => {
+      const v = Math.round(max * t);
+      els.push(svg('line', { class: 'gridline', x1: L, x2: Wd, y1: y(v), y2: y(v) }));
+      els.push(svg('text', { class: 'axis-label', x: L - 6, y: y(v) + 3, 'text-anchor': 'end' }, String(v)));
+    });
+    const maxIdx = cnt.indexOf(Math.max(...cnt));
+    days.forEach((d, i) => {
+      const x = L + slot * i + (slot - bw) / 2;
+      const top = y(cnt[i]), base = Ht - B;
+      const r = Math.min(4, bw / 2, base - top);
+      const hit = svg('rect', { class: 'bar-hit', x: L + slot * i, y: Tp, width: slot, height: Ht - Tp - B });
+      const bar = cnt[i] ? svg('path', { class: 'bar', d: `M${x},${base} V${top + r} Q${x},${top} ${x + r},${top} H${x + bw - r} Q${x + bw},${top} ${x + bw},${top + r} V${base} Z` })
+        : svg('rect', { class: 'bar', x, y: base - 1, width: bw, height: 1, opacity: '0.4' });
+      els.push(hit, bar);
+      tip(hit, () => [`${d.slice(5).replace('-', '/')} 점검 ${cnt[i]}건`, ...(comp[i] ? [{ level: 'compromise', label: '침해 의심', text: `${comp[i]}건` }] : [])]);
+      if (i % 3 === 1 || i === days.length - 1) els.push(svg('text', { class: 'axis-label', x: L + slot * i + slot / 2, y: Ht - 6, 'text-anchor': 'middle' }, d.slice(5).replace('-', '/')));
+      if (i === maxIdx && cnt[i]) els.push(svg('text', { class: 'axis-label', x: x + bw / 2, y: top - 4, 'text-anchor': 'middle', fill: '#e8f1ff' }, String(cnt[i])));
+    });
+    $('#trend-bars').replaceChildren(svg('svg', { viewBox: `0 0 ${Wd} ${Ht}`, role: 'img', 'aria-label': `최근 14일 점검 ${cnt.reduce((a, b) => a + b, 0)}건` }, els));
+  }
+
+  // ---------------------------------------------------------------- 도넛
+  /** segs: [{value, color, label, key}] / center: [큰 글자, 작은 글자] */
+  function donut(segs, center, gradientId) {
+    const R = 48, C = 2 * Math.PI * R, total = segs.reduce((a, s) => a + s.value, 0);
+    const els = [svg('circle', { class: 'donut-track', cx: 60, cy: 60, r: R, 'stroke-width': 12, fill: 'none' })];
+    if (gradientId) {
+      els.push(svg('defs', null, svg('linearGradient', { id: gradientId, x1: '0', y1: '0', x2: '1', y2: '1' },
+        svg('stop', { offset: '0', 'stop-color': '#22d3ee' }), svg('stop', { offset: '1', 'stop-color': '#3b82f6' }))));
+    }
+    let off = 0;
+    const gap = segs.filter(s => s.value > 0).length > 1 ? 2 : 0;
+    segs.forEach(s => {
+      if (!s.value || !total) return;
+      const len = C * s.value / total;
+      els.push(svg('circle', { cx: 60, cy: 60, r: R, fill: 'none', stroke: s.color, 'stroke-width': 12,
+        'stroke-dasharray': `${Math.max(0, len - gap)} ${C}`, 'stroke-dashoffset': -off, transform: 'rotate(-90 60 60)' }));
+      off += len;
+    });
+    els.push(svg('text', { class: 'donut-num', x: 60, y: 62 }, center[0]));
+    els.push(svg('text', { class: 'donut-cap', x: 60, y: 80 }, center[1]));
+    return svg('svg', { viewBox: '0 0 120 120', role: 'img', 'aria-label': `${center[1]} ${center[0]}` }, els);
+  }
+
+  function renderLatestDonut(list) {
+    const known = list.filter(r => r.version);
+    const up = known.filter(r => !r.belowLatest && !r.eol).length;
+    const eol = known.filter(r => r.eol).length;
+    const below = known.length - up - eol;
+    const pct = known.length ? Math.round(up / known.length * 100) : 0;
+    const seg = [{ value: up, color: 'url(#latestGrad)' }, { value: below, color: 'transparent' }, { value: eol, color: 'transparent' }];
+    $('#latest-donut').replaceChildren(
+      donut(seg, [`${pct}%`, '최신 적용'], 'latestGrad'),
+      h('ul', { class: 'donut-legend' },
+        h('li', null, h('i', { class: 'dot c-accent' }), `최신(${latestVer()}) 이상`, h('b', null, `${up}대`)),
+        h('li', null, h('i', { class: 'dot c-warning' }), '최신 미만', h('b', null, `${below}대`)),
+        h('li', null, h('i', { class: 'dot c-critical' }), 'EOL (2.2 이하)', h('b', null, `${eol}대`)),
+        list.length - known.length ? h('li', null, h('i', { class: 'dot c-info' }), '버전 미확인', h('b', null, `${list.length - known.length}대`)) : null));
+  }
+
+  function renderStatusDonut(list) {
+    const keys = ['compromise', 'risk', 'warn', 'ok'];
+    const cls = { compromise: 'c-critical', risk: 'c-serious', warn: 'c-warning', ok: 'c-good' };
+    const segs = keys.map(k => ({ key: k, value: list.filter(r => r.status === k).length, color: TONE[k], label: STATUS[k].label }));
+    $('#status-donut').replaceChildren(
+      donut(segs, [String(list.length), '점검 서버']),
+      h('ul', { class: 'donut-legend' }, ...segs.map(sg => h('li', null,
+        h('button', { type: 'button', onclick: () => setStatusFilter(sg.key), title: `${sg.label} 서버만 서버 목록에서 보기` },
+          h('i', { class: 'dot ' + cls[sg.key] }), sg.label, h('b', null, `${sg.value}대`))))));
+  }
+
+  // ---------------------------------------------------------------- 침해 의심 추이 (영역)
+  function renderIntrusionArea() {
+    const days = dayKeys(14);
+    const rs = reportsInScope();
+    const v = days.map(d => rs.filter(r => (r.checkedAt || '').startsWith(d) && r.intrusion === 'compromise').length);
+    const Wd = 360, Ht = 110, L = 20, B = 20, Tp = 10;
+    const max = Math.max(1, ...v);
+    const x = i => L + (Wd - L - 6) * i / (days.length - 1);
+    const y = t => Tp + (Ht - Tp - B) * (1 - t / max);
+    const line = v.map((t, i) => `${i ? 'L' : 'M'}${x(i)},${y(t)}`).join(' ');
+    const els = [svg('defs', null, svg('linearGradient', { id: 'areaGrad', x1: '0', y1: '0', x2: '0', y2: '1' },
+      svg('stop', { offset: '0', 'stop-color': '#ec835a', 'stop-opacity': '0.55' }), svg('stop', { offset: '1', 'stop-color': '#ec835a', 'stop-opacity': '0' })))];
+    els.push(svg('line', { class: 'gridline', x1: L, x2: Wd, y1: y(0), y2: y(0) }));
+    els.push(svg('path', { class: 'area-fill', d: `${line} L${x(days.length - 1)},${y(0)} L${x(0)},${y(0)} Z` }));
+    els.push(svg('path', { class: 'area-line', d: line }));
+    v.forEach((t, i) => {
+      if (t) els.push(svg('circle', { class: 'area-dot', cx: x(i), cy: y(t), r: 3 }));
+      const hit = svg('rect', { x: x(i) - 10, y: Tp, width: 20, height: Ht - Tp - B, fill: 'transparent' });
+      tip(hit, () => [`${days[i].slice(5).replace('-', '/')} 침해 의심 리포트 ${t}건`]);
+      els.push(hit);
+      if (i % 4 === 1 || i === days.length - 1) els.push(svg('text', { class: 'axis-label', x: x(i), y: Ht - 5, 'text-anchor': 'middle' }, days[i].slice(5).replace('-', '/')));
+    });
+    els.push(svg('text', { class: 'axis-label', x: L - 4, y: y(max) + 3, 'text-anchor': 'end' }, String(max)));
+    $('#intrusion-area').replaceChildren(svg('svg', { viewBox: `0 0 ${Wd} ${Ht}`, role: 'img', 'aria-label': '최근 14일 침해 의심 리포트 추이' }, els));
+  }
+
+  // ---------------------------------------------------------------- 에이전트 상태 타일
+  function renderAgentTiles() {
+    const el = $('#agent-tiles');
+    const list = (state.agents && state.agents.agents) || [];
+    if (!list.length) { el.replaceChildren(h('p', { class: 'muted none-msg' }, '등록된 에이전트가 없습니다.')); return; }
+    const now = state.agents.now;
+    const n = list.length;
+    const online = list.filter(a => ['online', 'running', 'requested'].includes(a.state)).length;
+    const known = list.filter(a => a.scriptMatches !== null && a.scriptMatches !== undefined);
+    const same = known.filter(a => a.scriptMatches).length;
+    const recent = list.filter(a => a.lastReportAt && now - a.lastReportAt < 24 * 3600 * 1000).length;
+    const tile = (ico, num, label, ratio, bad, title) => {
+      const fill = h('i');
+      fill.style.width = Math.round(ratio * 100) + '%';
+      return h('div', { class: 'tile' + (bad ? ' bad' : ''), title },
+        h('div', { class: 't-ico' }, icon(ico)), h('div', { class: 't-num' }, num), h('div', { class: 't-label' }, label), h('div', { class: 't-bar' }, fill));
+    };
+    el.replaceChildren(
+      tile('agent', `${online}/${n}`, '온라인', online / n, online < n, '최근 3분 안에 접속한 에이전트'),
+      tile('code', known.length ? `${same}/${known.length}` : '-', '스크립트 최신', known.length ? same / known.length : 0, same < known.length, '대시보드에 들어 있는 apache_precheck.sh 와 같은 에이전트 (다르면 install.sh 재실행)'),
+      tile('clock', `${recent}/${n}`, '24시간 내 점검', recent / n, false, '최근 24시간 안에 리포트를 보낸 에이전트'));
   }
 
   // ---------------------------------------------------------------- 시작
@@ -827,7 +1184,18 @@
       } catch (err) { alert(err.message); }
     });
 
-    $('#btn-agents').addEventListener('click', () => { $('#agents-dlg').showModal(); loadAgents(); });
+    $('#btn-agents').addEventListener('click', () => { showView('agents'); loadAgents(); });
+    $$('[data-view]').forEach(b => { if (b.tagName === 'BUTTON') b.addEventListener('click', () => showView(b.dataset.view)); });
+    $$('[data-goto]').forEach(b => b.addEventListener('click', () => showView(b.dataset.goto)));
+    $$('[data-click]').forEach(b => b.addEventListener('click', () => $('#' + b.dataset.click).click()));
+    $('#btn-bell').addEventListener('click', () => {
+      showView('overview');
+      $('#intrusion-card').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    window.addEventListener('hashchange', () => showView(location.hash.slice(1), true));
+    showView(location.hash.slice(1) || 'overview', true);
+    tickClock();
+    setInterval(tickClock, 15000);
     $('#btn-latest-refresh').addEventListener('click', () => latestAction({ action: 'refresh' }));
     $('#btn-latest-auto').addEventListener('click', () => latestAction({ action: 'auto' }));
     $('#btn-latest-manual').addEventListener('click', () => {
@@ -861,8 +1229,7 @@
     await refreshAll();
     // 30초마다 자동 갱신 (열린 창이 있거나 탭이 숨겨져 있으면 건너뜀)
     setInterval(() => {
-      // 에이전트 관리 창은 열려 있어도 갱신, 다른 창이 열려 있으면 건너뜀
-      if (document.hidden || $$('dialog').some(d => d.open && d.id !== 'agents-dlg')) return;
+      if (document.hidden || $$('dialog').some(d => d.open)) return;
       refreshAll();
     }, 30000);
   }

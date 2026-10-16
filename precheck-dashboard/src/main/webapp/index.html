@@ -3,150 +3,268 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Apache 사전점검 대시보드</title>
+  <title>Apache 보안 점검 현황</title>
   <link rel="stylesheet" href="static/app.css">
   <script src="static/app.js" defer></script>
 </head>
-<body>
-  <header class="topbar">
-    <div class="brand"><span class="brand-mark" aria-hidden="true"></span>Apache 사전점검 대시보드
-      <span class="brand-sub" id="brand-sub">Apache 최신 버전 미만 서버 · apache_precheck.sh 결과</span></div>
-    <nav class="topnav">
-      <span class="who" id="who"></span>
-      <button class="btn admin-only" id="btn-upload" type="button">리포트 업로드</button>
-      <button class="btn admin-only" id="btn-users" type="button">사용자 관리</button>
-      <a class="btn" href="password">비밀번호 변경</a>
-      <form method="post" action="logout" id="logout-form">
-        <input type="hidden" name="_csrf" id="logout-csrf">
-        <button class="btn" type="submit">로그아웃</button>
-      </form>
+<body class="app">
+  <!-- 아이콘 모음 (직접 그린 선 아이콘) -->
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11 12 4l9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/></symbol>
+    <symbol id="i-agent" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M4.9 19.1a10 10 0 0 1 0-14.2M19.1 4.9a10 10 0 0 1 0 14.2M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6z"/><path d="M12 8v5M12 16h.01"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2 20h20z"/><path d="M12 9v5M12 17h.01"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16V8M8 12l4-4 4 4"/></symbol>
+    <symbol id="i-bug" viewBox="0 0 24 24"><path d="M8 9a4 4 0 0 1 8 0v5a4 4 0 0 1-8 0z"/><path d="M4 11h4M16 11h4M4 17h4M16 17h4M9 4l1.5 2M15 4l-1.5 2"/></symbol>
+    <symbol id="i-data" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3"/><path d="M19 15v3M19 21h.01"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 16v-5a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14a5 5 0 0 1 5.5 5"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 16l-4-4 4-4M6 12h10"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 13h6M9 17h6"/></symbol>
+    <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></symbol>
+    <symbol id="i-code" viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="14" r="4"/><path d="M11 11l9-9M16 6l3 3M14 8l2 2"/></symbol>
+  </svg>
+
+  <div class="shell">
+    <nav class="rail" aria-label="주 메뉴">
+      <div class="rail-logo" aria-hidden="true"><svg><use href="#i-shield"/></svg></div>
+      <button class="rail-btn" data-view="overview" type="button" title="개요"><svg><use href="#i-home"/></svg><span>개요</span></button>
+      <button class="rail-btn" data-view="servers" type="button" title="서버 목록"><svg><use href="#i-server"/></svg><span>서버</span></button>
+      <button class="rail-btn" data-view="agents" type="button" title="에이전트"><svg><use href="#i-agent"/></svg><span>에이전트</span></button>
+      <button class="rail-btn" data-view="settings" type="button" title="설정"><svg><use href="#i-settings"/></svg><span>설정</span></button>
     </nav>
-  </header>
 
-  <div class="layout">
-  <aside class="sidebar" aria-label="최신 버전과 에이전트 서버">
-    <section class="side-box" id="latest-box" aria-labelledby="latest-title">
-      <h2 id="latest-title">Apache 최신 버전</h2>
-      <div class="latest-ver" id="latest-ver">-</div>
-      <div class="muted side-sub" id="latest-origin"></div>
-      <div id="latest-warn"></div>
-      <div class="side-actions admin-only">
-        <button class="btn small" id="btn-latest-refresh" type="button">지금 확인</button>
-        <button class="btn small" id="btn-latest-manual" type="button">직접 지정</button>
-        <button class="btn small" id="btn-latest-auto" type="button" hidden>자동으로 되돌리기</button>
-      </div>
-      <label class="check side-check admin-only"><input type="checkbox" id="latest-skip"> 최신 버전 서버는 자동 점검 제외</label>
-    </section>
-
-    <section class="side-box" aria-labelledby="side-agents-title">
-      <div class="side-head">
-        <h2 id="side-agents-title">에이전트 서버</h2>
-        <span class="muted" id="side-agents-count"></span>
-      </div>
-      <ul class="side-list" id="side-agents"></ul>
-      <button class="btn small side-manage" id="btn-agents" type="button">에이전트 관리</button>
-    </section>
-    <p class="muted side-foot" id="last-refresh"></p>
-  </aside>
-
-  <main class="wrap">
-    <div id="alert" class="alert" role="alert" hidden></div>
-
-    <section id="empty" class="panel empty" hidden>
-      <h2>아직 등록된 점검 결과가 없습니다</h2>
-      <ol>
-        <li>왼쪽 <b>에이전트 서버 → 에이전트 관리 → 에이전트 추가</b>를 누르고, 안내되는 명령으로 점검할 웹서버에 에이전트를 설치합니다.</li>
-        <li>설치되면 에이전트가 점검 스크립트를 실행해 결과를 자동으로 보내고, 이 화면에 표시됩니다. (<b>지금 점검</b>으로 바로 실행 가능)</li>
-        <li>에이전트를 설치할 수 없는 서버는 <code>sudo bash apache_precheck.sh</code> 결과 파일을 <b>리포트 업로드</b>로 올려도 됩니다.
-          <span class="muted admin-only" id="report-dir"></span></li>
-      </ol>
-    </section>
-
-    <section id="kpis" class="kpis" aria-label="핵심 지표"></section>
-
-    <section class="panel suspects" aria-labelledby="suspects-title">
-      <div class="panel-head">
-        <h2 id="suspects-title">침해 의심 서버</h2>
-        <div class="dialog-actions">
-          <span class="muted">인스턴스별 최신 점검 · [4] 침해 흔적 기준</span>
-          <a class="btn btn-danger" id="btn-suspects-pdf" href="api/suspects.pdf" download hidden>의심 서버 전체 PDF</a>
+    <div class="main">
+      <header class="top">
+        <div class="title">
+          <h1>Apache 보안 점검 현황</h1>
+          <p id="brand-sub">Apache 최신 버전 미만 서버 · apache_precheck.sh 결과</p>
         </div>
-      </div>
-      <div id="suspects"></div>
-    </section>
-
-    <section class="filters panel" aria-label="필터">
-      <label>검색 <input id="f-q" type="search" placeholder="호스트, IP, 버전, CVE 번호"></label>
-      <label>판정
-        <select id="f-status">
-          <option value="">전체</option>
-          <option value="compromise">침해 의심</option>
-          <option value="risk">위험</option>
-          <option value="warn">주의</option>
-          <option value="ok">양호</option>
-        </select>
-      </label>
-      <label class="check"><input id="f-latest" type="checkbox" checked> 인스턴스별 최신 점검만</label>
-      <span class="chip" id="f-source" hidden></span>
-      <label class="check"><input id="f-dq" type="checkbox"> 데이터 경고 있는 것만</label>
-      <button class="btn" id="btn-refresh" type="button">새로고침</button>
-      <span class="muted" id="f-count"></span>
-    </section>
-
-    <section class="grid">
-      <div class="panel span-2">
-        <div class="panel-head"><h2>서버별 점검 결과</h2><span class="muted">행을 누르면 상세 결과가 열립니다</span></div>
-        <div class="table-scroll">
-          <table class="servers" id="servers">
-            <thead><tr>
-              <th data-sort="status">판정</th>
-              <th data-sort="host">호스트 / IP</th>
-              <th data-sort="version">버전</th>
-              <th>설치</th>
-              <th data-sort="checkedAt">점검 일시</th>
-              <th data-sort="risk" class="num">위험</th>
-              <th data-sort="warn" class="num">주의</th>
-              <th data-sort="ok" class="num">양호</th>
-              <th data-sort="cve" class="num" title="모듈 조건까지 충족하고 백포트 기록이 없는 CVE">미조치 CVE</th>
-              <th>데이터 경고</th>
-            </tr></thead>
-            <tbody></tbody>
-          </table>
+        <div class="top-right">
+          <button class="pill latest-pill" type="button" data-goto="settings" title="최신 버전 설정 보기">
+            <svg><use href="#i-up"/></svg><span>최신 Apache</span><b id="latest-ver-pill">-</b></button>
+          <div class="clock" aria-live="off"><span id="clock-date"></span><b id="clock-time"></b></div>
+          <button class="icon-btn bell" id="btn-bell" type="button" aria-label="침해 의심 서버 보기">
+            <svg><use href="#i-bell"/></svg><span class="bell-count" id="bell-count" hidden></span></button>
+          <div class="user">
+            <span class="who" id="who"></span>
+            <button class="icon-btn admin-only" id="btn-upload" type="button" title="리포트 업로드" aria-label="리포트 업로드"><svg><use href="#i-upload"/></svg></button>
+            <button class="icon-btn admin-only" id="btn-users" type="button" title="사용자 관리" aria-label="사용자 관리"><svg><use href="#i-users"/></svg></button>
+            <form method="post" action="logout" id="logout-form">
+              <input type="hidden" name="_csrf" id="logout-csrf">
+              <button class="icon-btn" type="submit" title="로그아웃" aria-label="로그아웃"><svg><use href="#i-logout"/></svg></button>
+            </form>
+          </div>
         </div>
-      </div>
+      </header>
 
-      <div class="panel span-2">
-        <div class="panel-head"><h2>서버별 점검 항목 수</h2>
-          <div class="legend" id="legend-findings"></div></div>
-        <div id="chart-findings" class="hbars"></div>
-      </div>
+      <div id="alert" class="alert" role="alert" hidden></div>
 
-      <div class="panel">
-        <div class="panel-head"><h2>CVE별 해당 서버 수</h2>
-          <div class="head-right">
-            <div class="legend" id="legend-cve"></div>
-            <a class="btn small" id="btn-cve-pdf" href="api/cve.pdf" download
-               title="CVE별 설명·영향 버전·필요 모듈과 대상 서버(미조치/백포트 추정)를 PDF로 받습니다. 인스턴스별 최신 점검 기준이며, 왼쪽에서 고른 에이전트 필터가 반영됩니다.">CVE PDF</a>
-          </div></div>
-        <p class="muted chart-hint">막대에 마우스를 올리면 대상 서버가, 누르면 서버 목록 창이 열립니다.</p>
-        <div id="chart-cve" class="hbars"></div>
-      </div>
+      <section id="empty" class="card empty" hidden>
+        <h2>아직 등록된 점검 결과가 없습니다</h2>
+        <ol>
+          <li>아래 <b>에이전트</b> 메뉴에서 <b>에이전트 추가</b>를 누르고, 안내되는 명령으로 점검할 웹서버에 에이전트를 설치합니다.</li>
+          <li>설치되면 에이전트가 점검 스크립트를 실행해 결과를 자동으로 보내고, 이 화면에 표시됩니다. (<b>지금 점검</b>으로 바로 실행 가능)</li>
+          <li>에이전트를 설치할 수 없는 서버는 <code>sudo bash apache_precheck.sh</code> 결과 파일을 <b>리포트 업로드</b>로 올려도 됩니다.
+            <span class="muted admin-only" id="report-dir"></span></li>
+        </ol>
+      </section>
 
-      <div class="panel">
-        <div class="panel-head"><h2>설정 취약 항목별 서버 수</h2>
-          <div class="head-right">
-            <div class="legend" id="legend-config"></div>
-            <a class="btn small" id="btn-config-pdf" href="api/config.pdf" download
-               title="항목별 점검 문구와 대상 서버, 서버별 설정 위치(파일:줄)를 PDF로 받습니다. 인스턴스별 최신 점검 기준이며, 왼쪽에서 고른 에이전트 필터가 반영됩니다.">설정 취약 PDF</a>
-          </div></div>
-        <p class="muted chart-hint">막대에 마우스를 올리면 대상 서버가, 누르면 서버 목록 창이 열립니다.</p>
-        <div id="chart-config" class="hbars"></div>
-      </div>
-    </section>
+      <!-- ===================== 개요 ===================== -->
+      <section class="view" data-view="overview" aria-label="개요">
+        <div id="kpis" class="kpis" aria-label="핵심 지표"></div>
 
-    <p class="footnote">※ 이 대시보드는 apache_precheck.sh 결과를 그대로 모아 보여 줄 뿐이며, 스크립트와 마찬가지로 '알려진 패턴' 기준입니다. 안전을 보증하지 않습니다.
-      침해 의심 서버는 설정 보완보다 침해사고 대응이 우선입니다. 근본 대책은 2.4.69 이상(또는 보안수정이 반영된 배포판 패키지)으로의 업그레이드입니다.</p>
-  </main>
+        <div class="dash">
+          <article class="card hero" aria-labelledby="hero-title">
+            <div class="card-head">
+              <h2 id="hero-title">서버 배치도</h2>
+              <div class="legend" id="legend-hero"></div>
+            </div>
+            <p class="card-hint">서버별 최신 점검 결과입니다. 상자를 누르면 상세 결과가 열립니다.</p>
+            <div id="hero-map" class="hero-map"></div>
+          </article>
+
+          <article class="card trend" aria-labelledby="trend-title">
+            <div class="card-head"><h2 id="trend-title">일자별 점검 건수</h2><span class="card-meta">최근 14일</span></div>
+            <div id="trend-bars" class="trend-bars"></div>
+          </article>
+
+          <article class="card donut-card" aria-labelledby="latest-donut-title">
+            <div class="card-head"><h2 id="latest-donut-title">최신 버전 적용률</h2></div>
+            <div id="latest-donut" class="donut-wrap"></div>
+          </article>
+
+          <article class="card config" aria-labelledby="config-title">
+            <div class="card-head">
+              <h2 id="config-title">설정 취약 항목</h2>
+              <div class="head-right">
+                <div class="legend" id="legend-config"></div>
+                <a class="btn small" id="btn-config-pdf" href="api/config.pdf" download
+                   title="항목별 점검 문구와 대상 서버, 서버별 설정 위치(파일:줄)를 PDF로 받습니다. 인스턴스별 최신 점검 기준이며, 고른 에이전트 필터가 반영됩니다."><svg><use href="#i-file"/></svg>PDF</a>
+              </div>
+            </div>
+            <p class="card-hint">막대 = 전체 서버 중 해당 서버 비율. 마우스를 올리면 대상 서버, 누르면 목록 창</p>
+            <div id="chart-config" class="hbars"></div>
+          </article>
+
+          <article class="card res" aria-labelledby="res-title">
+            <div class="card-head"><h2 id="res-title">에이전트 상태</h2></div>
+            <div id="agent-tiles" class="tiles"></div>
+          </article>
+
+          <article class="card staff" aria-labelledby="status-title">
+            <div class="card-head"><h2 id="status-title">판정 분포</h2></div>
+            <div id="status-donut" class="donut-wrap"></div>
+          </article>
+
+          <article class="card appt" aria-labelledby="side-agents-title">
+            <div class="card-head">
+              <h2 id="side-agents-title">에이전트 서버 · 다음 점검</h2>
+              <span class="card-meta" id="side-agents-count"></span>
+            </div>
+            <ul class="sched" id="side-agents"></ul>
+            <button class="btn small wide-btn" id="btn-agents" type="button"><svg><use href="#i-agent"/></svg>에이전트 관리</button>
+          </article>
+
+          <article class="card emerg" id="intrusion-card" aria-labelledby="suspects-title">
+            <div class="card-head">
+              <h2 id="suspects-title">침해 상태</h2>
+              <a class="btn small btn-danger" id="btn-suspects-pdf" href="api/suspects.pdf" download hidden><svg><use href="#i-file"/></svg>의심 서버 PDF</a>
+            </div>
+            <div id="intrusion-status" class="istatus"></div>
+            <div id="intrusion-area" class="area"></div>
+            <div id="suspects" class="suspects"></div>
+          </article>
+
+          <article class="card cve" aria-labelledby="cve-title">
+            <div class="card-head">
+              <h2 id="cve-title">CVE별 해당 서버</h2>
+              <div class="head-right">
+                <div class="legend" id="legend-cve"></div>
+                <a class="btn small" id="btn-cve-pdf" href="api/cve.pdf" download
+                   title="CVE별 설명·영향 버전·필요 모듈과 대상 서버(미조치/백포트 추정)를 PDF로 받습니다. 인스턴스별 최신 점검 기준이며, 고른 에이전트 필터가 반영됩니다."><svg><use href="#i-file"/></svg>PDF</a>
+              </div>
+            </div>
+            <p class="card-hint">막대 = 전체 서버 중 해당 서버 비율. 마우스를 올리면 대상 서버, 누르면 목록 창</p>
+            <div id="chart-cve" class="hbars"></div>
+          </article>
+        </div>
+      </section>
+
+      <!-- ===================== 서버 목록 ===================== -->
+      <section class="view" data-view="servers" aria-label="서버 목록" hidden>
+        <div class="card filters" aria-label="필터">
+          <label>검색 <input id="f-q" type="search" placeholder="호스트, IP, 버전, CVE 번호"></label>
+          <label>판정
+            <select id="f-status">
+              <option value="">전체</option>
+              <option value="compromise">침해 의심</option>
+              <option value="risk">위험</option>
+              <option value="warn">주의</option>
+              <option value="ok">양호</option>
+            </select>
+          </label>
+          <label class="check"><input id="f-latest" type="checkbox" checked> 인스턴스별 최신 점검만</label>
+          <span class="chip" id="f-source" hidden></span>
+          <label class="check"><input id="f-dq" type="checkbox"> 데이터 경고 있는 것만</label>
+          <button class="btn" id="btn-refresh" type="button"><svg><use href="#i-refresh"/></svg>새로고침</button>
+          <span class="muted" id="f-count"></span>
+        </div>
+
+        <article class="card">
+          <div class="card-head"><h2>서버별 점검 결과</h2><span class="card-meta">행을 누르면 상세 결과가 열립니다</span></div>
+          <div class="table-scroll">
+            <table class="servers" id="servers">
+              <thead><tr>
+                <th data-sort="status">판정</th>
+                <th data-sort="host">호스트 / IP</th>
+                <th data-sort="version">버전</th>
+                <th>설치</th>
+                <th data-sort="checkedAt">점검 일시</th>
+                <th data-sort="risk" class="num">위험</th>
+                <th data-sort="warn" class="num">주의</th>
+                <th data-sort="ok" class="num">양호</th>
+                <th data-sort="cve" class="num" title="모듈 조건까지 충족하고 백포트 기록이 없는 CVE">미조치 CVE</th>
+                <th>데이터 경고</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><h2>서버별 점검 항목 수</h2><div class="legend" id="legend-findings"></div></div>
+          <div id="chart-findings" class="hbars"></div>
+        </article>
+      </section>
+
+      <!-- ===================== 에이전트 ===================== -->
+      <section class="view" data-view="agents" aria-label="에이전트" hidden>
+        <article class="card">
+          <div class="card-head">
+            <div><h2 id="agents-title">에이전트 관리</h2><div class="card-meta" id="agents-summary"></div></div>
+            <div class="head-right">
+              <button class="btn admin-only" id="btn-run-all" type="button"><svg><use href="#i-refresh"/></svg>전체 지금 점검</button>
+              <button class="btn btn-primary admin-only" id="btn-add-agent" type="button">에이전트 추가</button>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="servers" id="agents">
+              <thead><tr>
+                <th>상태</th><th>에이전트</th><th>마지막 접속</th><th>마지막 점검</th><th>Apache</th><th>다음 자동 점검</th><th>주기</th><th>스크립트</th><th class="admin-only"></th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="muted small-note">에이전트는 1분마다 대시보드에 점검 차례인지 묻습니다. [지금 점검]을 누르면 1분 안에 시작하며, 점검 시간은 서버에 따라 수 분 걸릴 수 있습니다. 화면은 30초마다 자동으로 갱신됩니다.</p>
+        </article>
+      </section>
+
+      <!-- ===================== 설정 ===================== -->
+      <section class="view" data-view="settings" aria-label="설정" hidden>
+        <div class="settings-grid">
+          <article class="card" id="latest-box" aria-labelledby="latest-title">
+            <div class="card-head"><h2 id="latest-title">Apache 최신 버전</h2></div>
+            <div class="latest-ver" id="latest-ver">-</div>
+            <div class="muted side-sub" id="latest-origin"></div>
+            <div id="latest-warn"></div>
+            <div class="side-actions admin-only">
+              <button class="btn small" id="btn-latest-refresh" type="button"><svg><use href="#i-refresh"/></svg>지금 확인</button>
+              <button class="btn small" id="btn-latest-manual" type="button">직접 지정</button>
+              <button class="btn small" id="btn-latest-auto" type="button" hidden>자동으로 되돌리기</button>
+            </div>
+            <label class="check side-check admin-only"><input type="checkbox" id="latest-skip"> 최신 버전 서버는 자동 점검 제외</label>
+          </article>
+
+          <article class="card" aria-labelledby="acct-title">
+            <div class="card-head"><h2 id="acct-title">계정 · 데이터</h2></div>
+            <div class="link-list">
+              <a class="btn" href="password"><svg><use href="#i-key"/></svg>비밀번호 변경</a>
+              <button class="btn admin-only" type="button" data-click="btn-users"><svg><use href="#i-users"/></svg>사용자 관리</button>
+              <button class="btn admin-only" type="button" data-click="btn-upload"><svg><use href="#i-upload"/></svg>리포트 업로드</button>
+            </div>
+            <p class="muted small-note">에이전트를 설치할 수 없는 서버는 <code>sudo bash apache_precheck.sh</code> 결과 파일을 리포트 업로드로 올릴 수 있습니다.</p>
+          </article>
+        </div>
+        <p class="footnote">※ 이 대시보드는 apache_precheck.sh 결과를 그대로 모아 보여 줄 뿐이며, 스크립트와 마찬가지로 '알려진 패턴' 기준입니다. 안전을 보증하지 않습니다.
+          침해 의심 서버는 설정 보완보다 침해사고 대응이 우선입니다. 근본 대책은 최신 버전(또는 보안수정이 반영된 배포판 패키지)으로의 업그레이드입니다.</p>
+      </section>
+
+      <p class="refresh-note muted" id="last-refresh"></p>
+
+      <nav class="tabbar" aria-label="화면 전환">
+        <button class="tab-btn" data-view="overview" type="button"><svg><use href="#i-home"/></svg><span>개요</span></button>
+        <button class="tab-btn" data-view="servers" type="button"><svg><use href="#i-server"/></svg><span>서버 목록</span></button>
+        <button class="tab-btn" data-view="agents" type="button"><svg><use href="#i-agent"/></svg><span>에이전트</span></button>
+        <button class="tab-btn" data-view="settings" type="button"><svg><use href="#i-settings"/></svg><span>설정</span></button>
+      </nav>
+    </div>
   </div>
 
   <dialog id="detail" class="dialog wide" aria-labelledby="d-title">
@@ -191,27 +309,7 @@
     </div>
   </dialog>
 
-    <dialog id="agents-dlg" class="dialog wide" aria-labelledby="agents-title">
-      <div class="dialog-head">
-        <div><h2 id="agents-title">에이전트 관리</h2><div class="muted" id="agents-summary"></div></div>
-        <div class="dialog-actions">
-          <button class="btn admin-only" id="btn-run-all" type="button">전체 지금 점검</button>
-          <button class="btn btn-primary admin-only" id="btn-add-agent" type="button">에이전트 추가</button>
-          <button class="btn" data-close type="button">닫기</button>
-        </div>
-      </div>
-      <div class="dialog-body">
-      <div class="table-scroll">
-        <table class="servers" id="agents">
-          <thead><tr>
-            <th>상태</th><th>에이전트</th><th>마지막 접속</th><th>마지막 점검</th><th>Apache</th><th>다음 자동 점검</th><th>주기</th><th>스크립트</th><th class="admin-only"></th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <p class="muted small-note">에이전트는 1분마다 대시보드에 점검 차례인지 묻습니다. [지금 점검]을 누르면 1분 안에 시작하며, 점검 시간은 서버에 따라 수 분 걸릴 수 있습니다. 화면은 30초마다 자동으로 갱신됩니다. </p>
-      </div>
-    </dialog>
+
 
 
   <dialog id="agent-dlg" class="dialog wide" aria-labelledby="ag-title">

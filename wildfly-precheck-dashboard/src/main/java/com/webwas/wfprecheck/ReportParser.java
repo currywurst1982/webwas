@@ -204,6 +204,8 @@ public final class ReportParser {
             r.dataQuality.add("root 권한 없이 실행되어 로그/설정/프로세스 점검이 불완전할 수 있습니다.");
         } else if (body.startsWith("접근 로그 파일을 찾지 못했습니다")) {
             r.dataQuality.add("접근 로그가 없어(WildFly 기본값은 접근 로그 꺼짐) 로그 기반 침해 흔적 점검이 수행되지 않았습니다.");
+        } else if (body.startsWith("server.log 를 찾지 못했습니다")) {
+            r.dataQuality.add("server.log 를 찾지 못해 WildFly 로그 기반 공격 흔적 점검이 수행되지 않았습니다.");
         } else if (body.startsWith("배포 폴더를 찾지 못했습니다")) {
             r.dataQuality.add("배포 폴더를 찾지 못해 웹쉘 JSP 점검이 수행되지 않았습니다.");
         } else if (body.startsWith("unzip/python3 이 없어")) {

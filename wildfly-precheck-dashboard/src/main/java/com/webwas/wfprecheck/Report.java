@@ -138,7 +138,7 @@ public class Report {
      */
     static boolean coverageGap(Finding f) {
         return f.text.startsWith("접근 로그 파일을 찾지 못했습니다") || f.text.startsWith("배포 폴더를 찾지 못했습니다")
-                || f.text.startsWith("unzip/python3 이 없어");
+                || f.text.startsWith("unzip/python3 이 없어") || f.text.startsWith("server.log 를 찾지 못했습니다");
     }
 
     /** [4] 침해 흔적의 판정: compromise(위험 있음) | check(주의 있음) | clean | none(점검 안 됨) */

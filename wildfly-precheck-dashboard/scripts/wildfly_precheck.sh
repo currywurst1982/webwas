@@ -735,7 +735,7 @@ else
     [ -z "$AD" ] && AD="$LOG_DIR"
     find "$AD" -maxdepth 1 -type f -name "${AP}*" 2>/dev/null >> "$LOGS"
   fi
-  find "$LOG_DIR" -maxdepth 1 -type f -name 'access_log*' 2>/dev/null >> "$LOGS"
+  find "$LOG_DIR" -maxdepth 3 -type f -name 'access_log*' 2>/dev/null >> "$LOGS"
 fi
 sort -u "$LOGS" | while read -r f; do [ -f "$f" ] && [[ "$f" != "$REPORT" ]] && echo "$f"; done > "$WORK/logs2.txt"; mv "$WORK/logs2.txt" "$LOGS"
 
@@ -848,9 +848,32 @@ fi
 WC="$(find "$JBOSS_HOME/welcome-content" -type f \( -iname '*.jsp' -o -iname '*.jspx' -o -iname '*.sh' -o -iname '*.class' \) 2>/dev/null | head -n 10)"
 [ -n "$WC" ] && { warn "환영 페이지 폴더(welcome-content)에 스크립트/클래스 파일 존재 → 원래 정적 파일만 있는 폴더"; printf '%s\n' "$WC" | show; }
 
-# 4-3 server.log 의 공격·침해 흔적
-SLOGS="$(find "$LOG_DIR" -maxdepth 1 -type f -name 'server.log*' 2>/dev/null)"
-if [ -n "$SLOGS" ]; then
+# 4-3 WildFly 로그(server.log 등)의 공격·침해 흔적
+#   대상: standalone.xml 로깅 설정의 파일 핸들러 경로(<file relative-to=... path=.../>, 회전된 파일 포함)
+#         + 로그 폴더 아래 3단계까지의 server.log*  (예: logs/stdlog/server.log 같은 회사별 구조)
+SLOGS_F="$WORK/slogs.txt"; : > "$SLOGS_F"
+awk '/<subsystem xmlns="urn:jboss:domain:logging/{f=1} f && /<file /{print} f && /<\/subsystem>/{exit}' "$CFG" | while read -r line; do
+  rel="$(printf '%s' "$line" | sed -n 's/.*relative-to="\([^"]*\)".*/\1/p')"
+  pth="$(resolve "$(printf '%s' "$line" | sed -n 's/.*path="\([^"]*\)".*/\1/p')")"
+  [ -z "$pth" ] && continue
+  case "$rel" in
+    "") base="" ;;
+    jboss.server.log.dir|jboss.domain.log.dir) base="$LOG_DIR" ;;
+    jboss.server.base.dir|jboss.domain.base.dir) base="$BASE_DIR" ;;
+    jboss.home.dir) base="$JBOSS_HOME" ;;
+    *) base="$(sysprop "$rel")" ;;
+  esac
+  case "$pth" in /*) f="$pth" ;; *) [ -n "$base" ] || continue; f="$base/$pth" ;; esac
+  ls -d -- "$f" "$f".* 2>/dev/null
+done >> "$SLOGS_F"
+find "$LOG_DIR" -maxdepth 3 -type f -name 'server.log*' 2>/dev/null >> "$SLOGS_F"
+SLOGS="$(sort -u "$SLOGS_F" | while read -r f; do [ -f "$f" ] && echo "$f"; done)"
+if [ -z "$SLOGS" ]; then
+  warn "server.log 를 찾지 못했습니다. WildFly 로그 기반 공격 흔적 점검을 건너뜁니다. (찾아본 곳: $LOG_DIR 아래 3단계, 로깅 설정의 파일 경로)"
+  detail "→ 로그 위치는 WildFly 시작 옵션 -Djboss.server.log.dir 과 standalone.xml 의 logging 설정(<file path=...>)을 확인하세요."
+else
+  info "점검 대상 WildFly 로그: $(printf '%s\n' "$SLOGS" | wc -l)개"
+  printf '%s\n' "$SLOGS" | head -n 10 | show
   GAD="$(printf '%s\n' "$SLOGS" | xargs -r zgrep -hE 'InvokerTransformer|TemplatesImpl|ysoserial|ChainedTransformer|JdbcRowSetImpl|\$\{jndi:(ldap|rmi|dns)' 2>/dev/null | grep -vE 'serialFilter|VM Arguments|-Djdk\.serial' | head -n 5)"
   if [ -n "$GAD" ]; then
     risk "server.log 에 역직렬화 공격 도구·JNDI 주입 흔적 → 침해 시도/성공 여부 상세 분석 필요"

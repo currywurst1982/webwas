@@ -162,6 +162,18 @@ class ReportParserTest {
         assertEquals(2, r.dataQuality.size(), r.dataQuality.toString());
     }
 
+    /** server.log 를 못 찾은 것은 침해 흔적이 아니라 점검 누락 → "확인 필요"가 아니라 데이터 경고 */
+    @Test
+    void missingServerLogIsCoverageGap() {
+        String text = "WildFly 패치 전 보안 사전 점검  |  호스트: h  |  일시: 2026-10-16 09:00:00\n"
+                + " [4] 침해 흔적 점검 (이미 해킹당했는지)\n"
+                + "[주의] server.log 를 찾지 못했습니다. WildFly 로그 기반 공격 흔적 점검을 건너뜁니다. (찾아본 곳: /opt/w/standalone/log 아래 3단계, 로깅 설정의 파일 경로)\n"
+                + "[양호] 배포된 앱에 웹쉘 의심 코드 패턴 JSP 없음 (패턴 우회형·컴파일된 클래스형 웹쉘은 탐지 못함)\n";
+        Report r = ReportParser.parse("wildfly_precheck_h_20261016_090000.txt", text);
+        assertEquals("clean", r.intrusionStatus());
+        assertTrue(r.dataQuality.stream().anyMatch(d -> d.contains("server.log 를 찾지 못해")), r.dataQuality.toString());
+    }
+
     @Test
     void decodesEucKr() {
         String s = "WildFly 패치 전 보안 사전 점검  |  호스트: h  |  일시: 2026-01-01 00:00:00";

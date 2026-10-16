@@ -28,15 +28,15 @@ import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
  * 한글 표시를 위해 나눔고딕(SIL OFL 1.1) 글꼴을 WAR 에 넣어 필요한 글자만 PDF 에 포함(subset)함.
  */
 public final class IntrusionPdf {
-    private static final float MARGIN = 42f;
-    private static final float FOOTER = 28f;
-    private static final Color INK = new Color(0x0b, 0x0b, 0x0b);
-    private static final Color INK2 = new Color(0x52, 0x51, 0x4e);
-    private static final Color MUTED = new Color(0x89, 0x87, 0x81);
-    private static final Color CRITICAL = new Color(0xa3, 0x24, 0x24);
-    private static final Color WARN = new Color(0x7a, 0x53, 0x00);
-    private static final Color GOOD = new Color(0x00, 0x63, 0x00);
-    private static final Color BOX = new Color(0xf2, 0xf1, 0xed);
+    static final float MARGIN = 42f;
+    static final float FOOTER = 28f;
+    static final Color INK = new Color(0x0b, 0x0b, 0x0b);
+    static final Color INK2 = new Color(0x52, 0x51, 0x4e);
+    static final Color MUTED = new Color(0x89, 0x87, 0x81);
+    static final Color CRITICAL = new Color(0xa3, 0x24, 0x24);
+    static final Color WARN = new Color(0x7a, 0x53, 0x00);
+    static final Color GOOD = new Color(0x00, 0x63, 0x00);
+    static final Color BOX = new Color(0xf2, 0xf1, 0xed);
 
     private IntrusionPdf() {}
 
@@ -53,7 +53,7 @@ public final class IntrusionPdf {
     private static byte[] build(List<Report> reports, String latest, String user, boolean cover) throws IOException {
         try (PDDocument doc = new PDDocument()) {
             Writer w = new Writer(doc);
-            String now = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+            String now = now();
             PDDocumentInformation info = doc.getDocumentInformation();
             info.setTitle(cover ? "침해 의심 서버 점검 결과" : "침해 흔적 점검 결과 - " + reports.get(0).host);
             info.setCreator("precheck-dashboard");
@@ -81,32 +81,34 @@ public final class IntrusionPdf {
                 w.newPage();
                 reportPages(w, r, latest, user, now);
             }
-            w.close();
-
-            // 바닥글 (페이지 번호는 전체 쪽수를 안 뒤에 씀)
-            int total = doc.getNumberOfPages();
-            for (int i = 0; i < total; i++) {
-                PDPage page = doc.getPage(i);
-                try (PDPageContentStream cs = new PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true)) {
-                    cs.setNonStrokingColor(MUTED);
-                    cs.beginText();
-                    cs.setFont(w.regular, 7.5f);
-                    cs.newLineAtOffset(MARGIN, 16);
-                    cs.showText(w.safe(w.regular, "precheck-dashboard · 생성 " + now + " · " + user + " · 대외비"));
-                    cs.endText();
-                    String pn = (i + 1) + " / " + total;
-                    float pw = w.width(w.regular, 7.5f, pn);
-                    cs.beginText();
-                    cs.setFont(w.regular, 7.5f);
-                    cs.newLineAtOffset(page.getMediaBox().getWidth() - MARGIN - pw, 16);
-                    cs.showText(pn);
-                    cs.endText();
-                }
-            }
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            doc.save(out);
-            return out.toByteArray();
+            return finish(doc, w, now, user);
         }
+    }
+
+    static String now() {
+        return LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
+    }
+
+    /** 모든 쪽에 바닥글(생성 정보, 쪽 번호)을 쓰고 PDF 바이트로 저장 */
+    static byte[] finish(PDDocument doc, Writer w, String now, String user) throws IOException {
+        w.close();
+        int total = doc.getNumberOfPages();
+        for (int i = 0; i < total; i++) {
+            PDPage page = doc.getPage(i);
+            try (PDPageContentStream cs = new PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true)) {
+                w.page = page;
+                w.cs = cs;
+                w.y = 16;
+                w.draw(w.regular, 7.5f, MUTED, 0, "precheck-dashboard · 생성 " + now + " · " + user + " · 대외비");
+                String pn = (i + 1) + " / " + total;
+                w.draw(w.regular, 7.5f, MUTED, w.contentWidth() - w.width(w.regular, 7.5f, pn), pn);
+            } finally {
+                w.cs = null;
+            }
+        }
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        doc.save(out);
+        return out.toByteArray();
     }
 
     private static void reportPages(Writer w, Report r, String latest, String user, String now) throws IOException {
@@ -159,7 +161,7 @@ public final class IntrusionPdf {
                 + "결과는 '알려진 패턴' 기준으로 침해 여부를 확정하지 않습니다. 침해 의심이면 설정 보완·패치보다 침해사고 대응(격리·증거 보존·분석)이 우선입니다.", 0);
     }
 
-    private static String nz(String s) {
+    static String nz(String s) {
         return s == null || s.isBlank() ? "-" : s;
     }
 
@@ -171,8 +173,8 @@ public final class IntrusionPdf {
         }
     }
 
-    /** 쪽 넘김·줄바꿈을 처리하며 위에서 아래로 글을 쓰는 도우미 */
-    private static final class Writer {
+    /** 쪽 넘김·줄바꿈을 처리하며 위에서 아래로 글을 쓰는 도우미 (ConfigPdf 에서도 사용) */
+    static final class Writer {
         final PDDocument doc;
         final PDType0Font regular, bold, mono;
         final PDType1Font spaceFont = new PDType1Font(Standard14Fonts.FontName.HELVETICA);

@@ -129,7 +129,12 @@
 
       <div class="panel">
         <div class="panel-head"><h2>설정 취약 항목별 서버 수</h2>
-          <div class="legend" id="legend-config"></div></div>
+          <div class="head-right">
+            <div class="legend" id="legend-config"></div>
+            <a class="btn small" id="btn-config-pdf" href="api/config.pdf" download
+               title="항목별 점검 문구와 대상 서버, 서버별 설정 위치(파일:줄)를 PDF로 받습니다. 인스턴스별 최신 점검 기준이며, 왼쪽에서 고른 에이전트 필터가 반영됩니다.">설정 취약 PDF</a>
+          </div></div>
+        <p class="muted chart-hint">막대에 마우스를 올리면 대상 서버가, 누르면 서버 목록 창이 열립니다.</p>
         <div id="chart-config" class="hbars"></div>
       </div>
     </section>
@@ -224,6 +229,12 @@
       </form>
       <div id="agent-install" hidden></div>
     </div>
+  </dialog>
+
+  <dialog id="cfg-dlg" class="dialog" aria-labelledby="cfg-title">
+    <div class="dialog-head"><div><h2 id="cfg-title"></h2><div class="muted" id="cfg-sub"></div></div>
+      <button class="btn" data-close type="button">닫기</button></div>
+    <div class="dialog-body" id="cfg-body"></div>
   </dialog>
 
   <dialog id="users" class="dialog" aria-labelledby="us-title">

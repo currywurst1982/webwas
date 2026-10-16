@@ -203,7 +203,8 @@
   }
 
   /** 가로 막대 1줄: segs = [{cls, value, label}] */
-  function hbar(name, segs, max, tipTitle, onclick) {
+  /** extraLines: 툴팁에 덧붙일 줄 (문자열, 또는 {text, level, head}) */
+  function hbar(name, segs, max, tipTitle, onclick, extraLines) {
     const total = segs.reduce((a, s) => a + s.value, 0);
     const track = h('div', { class: 'track' });
     segs.filter(s => s.value > 0).forEach(s => {
@@ -213,7 +214,7 @@
     });
     const row = h('div', { class: 'hbar', role: onclick ? 'button' : null, tabindex: onclick ? '0' : null, onclick },
       h('div', { class: 'name', title: name }, name), track, h('div', { class: 'val' }, String(total)));
-    tip(row, () => [tipTitle || name, ...segs.map(s => `${s.label}: ${s.value}`)]);
+    tip(row, () => [tipTitle || name, ...segs.map(s => `${s.label}: ${s.value}`), ...(extraLines ? extraLines() : [])]);
     return row;
   }
 
@@ -252,26 +253,56 @@
 
   function renderConfigChart(list) {
     legend('#legend-config', [['c-critical', '위험'], ['c-warning', '주의']]);
+    const pdf = $('#btn-config-pdf');
+    pdf.href = 'api/config.pdf' + (state.sourceFilter ? '?source=' + encodeURIComponent(state.sourceFilter) : '');
     const agg = new Map();
     list.forEach(r => {
       const seen = new Set();
       r.configIssues.forEach(ci => {
-        const key = ci.text.split(/ → | \(/)[0].trim();
+        const key = ci.text.split(/ → | \(/)[0].trim(); // ConfigIssues.key() 와 같은 규칙
         if (seen.has(key)) return;
         seen.add(key);
-        const a = agg.get(key) || { key, risk: 0, warn: 0, full: ci.text };
+        const a = agg.get(key) || { key, risk: 0, warn: 0, full: ci.text, servers: [] };
         a[ci.level]++;
+        a.servers.push({ r, level: ci.level, text: ci.text });
         agg.set(key, a);
       });
     });
+    agg.forEach(a => a.servers.sort((x, y) => (x.level === 'risk' ? 0 : 1) - (y.level === 'risk' ? 0 : 1) || x.r.host.localeCompare(y.r.host)));
     const rows = Array.from(agg.values()).sort((a, b) => (b.risk + b.warn) - (a.risk + a.warn) || b.risk - a.risk).slice(0, 12);
     const el = $('#chart-config');
     if (!rows.length) { el.replaceChildren(h('div', { class: 'none' }, '위험·주의 설정 없음')); return; }
     const max = Math.max(1, ...rows.map(a => a.risk + a.warn));
+    const LIMIT = 12;
     el.replaceChildren(...rows.map(a => hbar(a.key, [
       { cls: 'c-critical', value: a.risk, label: '위험 서버' },
       { cls: 'c-warning', value: a.warn, label: '주의 서버' }
-    ], max, a.full)));
+    ], max, a.full, () => openConfigItem(a), () => [
+      { head: true, text: '대상 서버' },
+      ...a.servers.slice(0, LIMIT).map(s => ({ level: s.level, text: serverLabel(s.r) })),
+      ...(a.servers.length > LIMIT ? [`외 ${a.servers.length - LIMIT}대 — 눌러서 전체 보기`] : [])
+    ])));
+  }
+
+  function serverLabel(r) {
+    return `${r.host}${r.pid ? ` (PID ${r.pid})` : ''} · Apache ${r.version || '?'}`;
+  }
+
+  /** 설정 취약 항목 1개의 대상 서버 목록 창 (터치 화면에서도 볼 수 있게) */
+  function openConfigItem(a) {
+    $('#cfg-title').textContent = a.key;
+    $('#cfg-sub').textContent = `대상 서버 ${a.servers.length}대 (위험 ${a.risk} · 주의 ${a.warn})`;
+    $('#cfg-body').replaceChildren(
+      h('p', null, a.full),
+      h('table', { class: 'servers' },
+        h('thead', null, h('tr', null, ...['등급', '서버', '점검 일시', '수집'].map(t => h('th', null, t)))),
+        h('tbody', null, ...a.servers.map(s => h('tr', { class: 'row', tabindex: '0', onclick: () => { $('#cfg-dlg').close(); openDetail(s.r.id); } },
+          h('td', null, badge(s.level)),
+          h('td', null, h('div', null, s.r.host + (s.r.pid ? ` (PID ${s.r.pid})` : '')), h('div', { class: 'sub' }, `Apache ${s.r.version || '?'}`)),
+          h('td', { class: 'nowrap' }, s.r.checkedAt || '-'),
+          h('td', null, s.r.source ? `에이전트 ${s.r.source}` : '수동 업로드'))))),
+      h('p', { class: 'muted' }, '서버를 누르면 그 서버의 상세 결과(설정 파일 위치 포함)가 열립니다.'));
+    $('#cfg-dlg').showModal();
   }
 
   // ---------------------------------------------------------------- 툴팁
@@ -279,7 +310,9 @@
     const t = $('#tooltip');
     const show = e => {
       const [title, ...rest] = lines();
-      t.replaceChildren(h('b', null, title), ...rest.map(l => h('div', null, l)));
+      t.replaceChildren(h('b', null, title), ...rest.map(l => typeof l === 'string' ? h('div', null, l)
+        : l.head ? h('div', { class: 'tip-head' }, l.text)
+          : h('div', { class: 'tip-item' }, h('span', { class: 'tip-lv tip-' + l.level }, STATUS[l.level] ? STATUS[l.level].label : l.level), l.text)));
       t.hidden = false;
       move(e);
     };
@@ -292,6 +325,11 @@
     el.addEventListener('mouseenter', show);
     el.addEventListener('mousemove', move);
     el.addEventListener('mouseleave', () => { t.hidden = true; });
+    el.addEventListener('focus', () => {
+      const b = el.getBoundingClientRect();
+      show({ clientX: b.left + 40, clientY: b.bottom });
+    });
+    el.addEventListener('blur', () => { t.hidden = true; });
   }
 
   // ---------------------------------------------------------------- 상세

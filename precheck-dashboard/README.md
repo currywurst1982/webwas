@@ -21,6 +21,7 @@
 | 핵심 지표 | 점검 인스턴스 수, **침해 의심**, 위험, 2.4.69 미만(EOL 포함), 미조치 CVE 보유, 데이터 경고 |
 | 서버별 점검 결과 표 | 판정 · 호스트 · 버전 · 설치방식 · 점검일시 · 위험/주의/양호 건수 · 미조치 CVE(등급별) · 데이터 경고 |
 | 차트 3종 | 서버별 위험/주의/양호 건수, CVE별 해당 서버 수(백포트 추정은 빗금), 설정 취약 항목별 서버 수 |
+| 설정 취약 항목별 서버 수 | 막대에 마우스를 올리면 **대상 서버 목록**(등급·버전), 누르면 서버 목록 창. 오른쪽 위 **설정 취약 PDF** |
 | 상세 화면(행 클릭) | 점검 결과(침해 흔적 → 위험 설정 → 버전 → CVE 순), CVE 판정 표, 같은 인스턴스의 점검 이력, 원본 리포트 |
 
 판정 규칙(스크립트 결과를 그대로 따름):
@@ -171,6 +172,17 @@ sudo bash /tmp/precheck-install.sh --uninstall    # 에이전트 삭제
 - 한글 표시를 위해 나눔고딕 글꼴(SIL OFL 1.1, `src/main/resources/fonts/LICENSE-NanumFonts.txt`)을 WAR 에 넣었습니다. PDF 에는 쓰인 글자만 들어갑니다.
 - 로그인한 사용자는 누구나(조회 전용 포함) 받을 수 있고, 받을 때마다 서버 로그에 사용자 이름이 남습니다.
 
+## 5-3. 설정 취약 항목 PDF
+
+- **설정 취약 항목별 서버 수** 차트 오른쪽 위 **설정 취약 PDF** 버튼으로 받습니다.
+- 첫 장: 항목 요약표(항목 · 등급 · 대상 서버 수). 이어서 항목마다
+  - 점검 문구(스크립트 원문, 권장 조치 포함)
+  - 대상 서버: 호스트(PID), Apache 버전, 등급, 점검 일시, 수집 경로, 리포트 파일명
+  - 서버별 **설정 위치**(리포트에 기록된 `설정파일:줄번호:내용`). 기록이 없으면 "기본값/미설정 상태일 수 있음"으로 표시
+- 범위: **인스턴스별 최신 점검** 기준. 왼쪽에서 에이전트를 골라 두면 그 에이전트 수집분만 들어갑니다.
+  화면의 검색어·판정 필터는 PDF 에 반영되지 않습니다.
+- 항목을 묶는 규칙은 화면 차트와 같습니다(문구에서 ` → ` 또는 ` (` 앞부분).
+
 ## 6. 리포트 직접 넣기 (에이전트를 쓸 수 없는 서버)
 
 1. 각 Apache 서버에서 점검 스크립트를 실행합니다. **`scripts/apache_precheck.sh`(수정본) 사용을 권장합니다** (아래 "알려진 문제" 참고).
@@ -243,7 +255,9 @@ src/main/java/com/webwas/precheck/
   AgentStore.java     에이전트 목록·토큰 해시·점검 지시 판단 (agents.properties)
   AgentApiServlet.java  에이전트용 API (/agent-api/heartbeat, report, result, files)
   LatestVersion.java  Apache 최신 버전 자동 확인/직접 지정 (latest-version.properties)
-  IntrusionPdf.java   [4] 침해 흔적 발췌 PDF (PDFBox 3.0.5 + 나눔고딕)
+  IntrusionPdf.java   [4] 침해 흔적 발췌 PDF (PDFBox 3.0.5 + 나눔고딕), 공용 PDF 쓰기 도구(Writer)
+  ConfigIssues.java   [3] 설정 취약 항목을 항목별 → 대상 서버로 묶음
+  ConfigPdf.java      설정 취약 항목별 대상 서버 PDF
   LoginServlet / PasswordServlet / LogoutServlet / ApiServlet
 src/main/webapp/      index.html, static/app.js, static/app.css (외부 CDN 없음)
 src/test/             실제 Ubuntu apache2 2.4.58 에서 얻은 리포트로 해석기 테스트

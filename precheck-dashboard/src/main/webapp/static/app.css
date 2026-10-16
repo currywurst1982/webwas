@@ -325,3 +325,13 @@ pre.raw { margin: 0; padding: 12px; background: var(--surface-2); border-radius:
   .suspect { flex-direction: column; }
 }
 .nowrap { white-space: nowrap; }
+
+/* 설정 취약 차트: 툴팁 서버 목록, PDF 버튼 */
+.head-right { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.chart-hint { font-size: 12px; margin: -6px 0 8px; }
+.tip-head { margin-top: 6px; padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--page) 30%, transparent); font-weight: 600; }
+.tip-item { display: flex; gap: 6px; align-items: baseline; }
+.tip-lv { font-size: 11px; font-weight: 700; padding: 0 5px; border-radius: 4px; flex-shrink: 0; }
+.tip-risk { background: var(--s-critical); color: #fff; }
+.tip-warn { background: var(--s-warning); color: #000; }
+#chart-config .hbar { cursor: pointer; }

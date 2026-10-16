@@ -49,6 +49,7 @@ public class AgentStore {
         public String ip;
         public String agentVersion;
         public String scriptSha256;
+        public String apacheVersion;         // 마지막 리포트에서 읽은 Apache 버전
         public boolean pendingRun;           // 관리자가 "지금 점검" 요청
         public long runStartedAt;            // 에이전트에게 실행하라고 응답한 시각 (0 = 실행 중 아님)
         public long lastRunAt;               // 마지막 실행 완료 시각
@@ -62,6 +63,7 @@ public class AgentStore {
             a.name = name; a.tokenHash = tokenHash; a.intervalHours = intervalHours; a.createdAt = createdAt;
             a.lastSeen = lastSeen; a.lastSeenPersisted = lastSeenPersisted; a.hostname = hostname; a.ip = ip;
             a.agentVersion = agentVersion; a.scriptSha256 = scriptSha256; a.pendingRun = pendingRun;
+            a.apacheVersion = apacheVersion;
             a.runStartedAt = runStartedAt; a.lastRunAt = lastRunAt; a.lastExit = lastExit;
             a.lastReportCount = lastReportCount; a.lastMessage = lastMessage; a.lastReportAt = lastReportAt;
             return a;
@@ -87,6 +89,7 @@ public class AgentStore {
             m.put("ip", ip);
             m.put("agentVersion", agentVersion);
             m.put("scriptSha256", scriptSha256);
+            m.put("apacheVersion", apacheVersion);
             m.put("scriptMatches", scriptSha256 == null || expectedSha == null ? null : scriptSha256.equals(expectedSha));
             m.put("pendingRun", pendingRun);
             m.put("runStartedAt", runStartedAt);
@@ -205,12 +208,20 @@ public class AgentStore {
      */
     public synchronized String heartbeat(String name, long now, String hostname, String ip, String version,
                                          String scriptSha, boolean busy) throws IOException {
-        return heartbeat(name, now, hostname, ip, version, scriptSha, busy, false);
+        return heartbeat(name, now, hostname, ip, version, scriptSha, busy, false, null);
     }
 
-    /** probe=true 는 설치 직후 연결 확인용: 상태만 갱신하고 점검을 지시하지 않음. */
     public synchronized String heartbeat(String name, long now, String hostname, String ip, String version,
                                          String scriptSha, boolean busy, boolean probe) throws IOException {
+        return heartbeat(name, now, hostname, ip, version, scriptSha, busy, probe, null);
+    }
+
+    /**
+     * probe=true 는 설치 직후 연결 확인용: 상태만 갱신하고 점검을 지시하지 않음.
+     * skipAtOrAbove 가 있으면 이 버전 이상(=최신)인 서버는 자동(주기) 점검을 하지 않음. "지금 점검"은 항상 실행.
+     */
+    public synchronized String heartbeat(String name, long now, String hostname, String ip, String version,
+                                         String scriptSha, boolean busy, boolean probe, String skipAtOrAbove) throws IOException {
         Agent a = require(name);
         boolean changed = !eq(a.hostname, hostname) || !eq(a.ip, ip) || !eq(a.agentVersion, version) || !eq(a.scriptSha256, scriptSha);
         a.hostname = hostname;
@@ -233,7 +244,7 @@ public class AgentStore {
             }
             if (a.runStartedAt == 0) {
                 if (a.pendingRun) reason = "manual";
-                else if (a.intervalHours > 0 && (a.lastReportAt == 0 || now - a.lastReportAt >= a.intervalHours * 3_600_000L)
+                else if (a.intervalHours > 0 && !upToDate(a, skipAtOrAbove) && (a.lastReportAt == 0 || now - a.lastReportAt >= a.intervalHours * 3_600_000L)
                         && (a.lastRunAt == 0 || now - a.lastRunAt >= 30 * 60 * 1000L)) {
                     // 결과가 없거나 주기가 지났으면 실행 (실패가 반복될 때 1분마다 재실행하지 않도록 최소 30분 간격)
                     reason = "schedule";
@@ -252,9 +263,20 @@ public class AgentStore {
         return reason;
     }
 
+    /** 버전을 알고 있고, 그 버전이 기준 이상이면 true */
+    public static boolean upToDate(Agent a, String latest) {
+        return latest != null && a.apacheVersion != null && ReportParser.compareVersions(a.apacheVersion, latest) >= 0;
+    }
+
     /** 리포트 1건 수신 */
     public synchronized void reportReceived(String name, long now) throws IOException {
+        reportReceived(name, now, null);
+    }
+
+    /** 리포트 1건 수신 (apacheVersion = 리포트에서 읽은 버전, 모르면 null) */
+    public synchronized void reportReceived(String name, long now, String apacheVersion) throws IOException {
         Agent a = require(name);
+        if (apacheVersion != null) a.apacheVersion = apacheVersion;
         a.lastReportAt = now;
         a.lastSeen = now;
         save();
@@ -304,6 +326,7 @@ public class AgentStore {
             a.ip = p.getProperty(n + ".ip");
             a.agentVersion = p.getProperty(n + ".agentVersion");
             a.scriptSha256 = p.getProperty(n + ".scriptSha256");
+            a.apacheVersion = p.getProperty(n + ".apacheVersion");
             a.pendingRun = "true".equals(p.getProperty(n + ".pendingRun"));
             a.runStartedAt = num(p, n + ".runStartedAt", 0);
             a.lastRunAt = num(p, n + ".lastRunAt", 0);
@@ -335,6 +358,7 @@ public class AgentStore {
             if (a.ip != null) p.setProperty(n + ".ip", a.ip);
             if (a.agentVersion != null) p.setProperty(n + ".agentVersion", a.agentVersion);
             if (a.scriptSha256 != null) p.setProperty(n + ".scriptSha256", a.scriptSha256);
+            if (a.apacheVersion != null) p.setProperty(n + ".apacheVersion", a.apacheVersion);
             p.setProperty(n + ".pendingRun", String.valueOf(a.pendingRun));
             p.setProperty(n + ".runStartedAt", String.valueOf(a.runStartedAt));
             p.setProperty(n + ".lastRunAt", String.valueOf(a.lastRunAt));

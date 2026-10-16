@@ -28,6 +28,9 @@ public class AppInit implements ServletContextListener {
     public static final String ATTR_AGENTS = "precheck.agents";
     /** WAR 에 들어 있는 apache_precheck.sh 의 SHA-256 (에이전트 쪽 스크립트가 같은지 비교용) */
     public static final String ATTR_SCRIPT_SHA = "precheck.scriptSha";
+    public static final String ATTR_LATEST = "precheck.latest";
+    private static final java.util.regex.Pattern SCRIPT_BASELINE =
+            java.util.regex.Pattern.compile("ver_le \"(\\d+\\.\\d+\\.\\d+)\" \"\\$VER\"");
     public static final String INITIAL_PASSWORD_FILE = "initial-admin-password.txt";
 
     public static Path dataDir() {
@@ -50,17 +53,32 @@ public class AppInit implements ServletContextListener {
             ctx.setAttribute(ATTR_REPORTS, new ReportStore(reports));
             ctx.setAttribute(ATTR_THROTTLE, new LoginThrottle());
             ctx.setAttribute(ATTR_AGENTS, new AgentStore(data.resolve("agents.properties")));
+            String baseline = null;
             try (InputStream in = AppInit.class.getResourceAsStream("/agent/apache_precheck.sh")) {
                 if (in != null) {
-                    ctx.setAttribute(ATTR_SCRIPT_SHA, HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(in.readAllBytes())));
+                    byte[] script = in.readAllBytes();
+                    ctx.setAttribute(ATTR_SCRIPT_SHA, HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(script)));
+                    // 스크립트의 CVE 목록 기준 버전 (예: ver_le "2.4.69" "$VER")
+                    java.util.regex.Matcher m = SCRIPT_BASELINE.matcher(new String(script, StandardCharsets.UTF_8));
+                    if (m.find()) baseline = m.group(1);
                 }
             } catch (NoSuchAlgorithmException e) {
                 throw new IllegalStateException(e);
             }
+            LatestVersion latest = new LatestVersion(data.resolve("latest-version.properties"),
+                    System.getProperty("precheck.latest.url"), baseline);
+            ctx.setAttribute(ATTR_LATEST, latest);
+            latest.start();
             LOG.info("[precheck-dashboard] 데이터 폴더: " + data + " / 리포트 폴더: " + reports);
         } catch (IOException e) {
             throw new IllegalStateException("데이터 폴더 초기화 실패", e);
         }
+    }
+
+    @Override
+    public void contextDestroyed(ServletContextEvent sce) {
+        Object l = sce.getServletContext().getAttribute(ATTR_LATEST);
+        if (l instanceof LatestVersion lv) lv.stop();
     }
 
     private static void createInitialAdmin(UserStore users, Path data) throws IOException {

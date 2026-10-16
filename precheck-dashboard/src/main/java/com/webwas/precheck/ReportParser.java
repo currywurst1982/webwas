@@ -86,6 +86,10 @@ public final class ReportParser {
                 last = null;
                 continue;
             }
+            // [4] 침해 흔적 섹션은 원문 그대로 보관 (PDF 발췌용). 구분선(=====)만 제외
+            if ("4".equals(section) && !inSummary && !line.startsWith("=====")) {
+                r.section4Raw.add(line);
+            }
             if (inSummary) {
                 Matcher s = SUMMARY.matcher(line);
                 if (s.find()) {
@@ -147,6 +151,9 @@ public final class ReportParser {
             r.eol = r.version.startsWith("2.2.") || r.version.startsWith("2.0.") || r.version.startsWith("1.");
         }
         if (r.host == null) r.host = "(알 수 없음)";
+        while (!r.section4Raw.isEmpty() && r.section4Raw.get(r.section4Raw.size() - 1).isBlank()) {
+            r.section4Raw.remove(r.section4Raw.size() - 1);
+        }
         return r;
     }
 

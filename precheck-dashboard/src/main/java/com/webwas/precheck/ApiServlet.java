@@ -34,6 +34,10 @@ import java.util.logging.Logger;
  *  POST   /api/agents/{이름}/token    토큰 재발급 (관리자)
  *  POST   /api/agents/{이름}/interval 점검 주기 변경 (관리자, hours)
  *  DELETE /api/agents/{이름}          에이전트 삭제 (관리자)
+ *  GET    /api/reports/{파일명}/intrusion.pdf  [4] 침해 흔적만 발췌한 PDF
+ *  GET    /api/suspects.pdf          침해 의심 서버 전체 PDF (인스턴스별 최신 점검)
+ *  GET    /api/latest-version        Apache 최신 버전 정보
+ *  POST   /api/latest-version        (관리자) action=refresh | auto | manual(version) | skip(value=true/false)
  */
 @WebServlet("/api/*")
 @MultipartConfig(maxFileSize = ReportStore.MAX_FILE_BYTES, maxRequestSize = 60L * 1024 * 1024, fileSizeThreshold = 1024 * 1024)
@@ -54,7 +58,8 @@ public class ApiServlet extends HttpServlet {
             Web.json(resp, 200, Map.of("user", Web.user(req), "admin", Web.isAdmin(req),
                     "csrf", Web.csrf(req.getSession()), "reportDir", Web.isAdmin(req) ? store.dir().toString() : ""));
         } else if (p.length == 1 && p[0].equals("reports")) {
-            Web.json(resp, 200, store.all().stream().map(Report::toSummary).toList());
+            String latest = Web.latest(getServletContext()).current();
+            Web.json(resp, 200, store.all().stream().map(r -> r.toSummary(latest)).toList());
         } else if ((p.length == 2 || p.length == 3) && p[0].equals("reports")) {
             Report r = store.get(p[1]);
             if (r == null) {
@@ -64,9 +69,26 @@ public class ApiServlet extends HttpServlet {
                 resp.setHeader("Content-Disposition", "attachment; filename=\"" + r.id + "\"");
                 resp.setHeader("Cache-Control", "no-store");
                 resp.getWriter().write(r.raw);
+            } else if (p.length == 3 && p[2].equals("intrusion.pdf")) {
+                LOG.info("[precheck-dashboard] 침해 흔적 PDF: " + r.id + " by " + Web.user(req));
+                sendPdf(resp, IntrusionPdf.single(r, Web.latest(getServletContext()).current(), Web.user(req)),
+                        "intrusion_" + ascii(r.host) + "_" + ascii(r.checkedAt) + ".pdf");
+            } else if (p.length == 2) {
+                Web.json(resp, 200, r.toDetail(Web.latest(getServletContext()).current()));
             } else {
-                Web.json(resp, 200, r.toDetail());
+                Web.json(resp, 404, Map.of("error", "없는 주소입니다."));
             }
+        } else if (p.length == 1 && p[0].equals("suspects.pdf")) {
+            List<Report> suspects = suspects(store.all());
+            if (suspects.isEmpty()) {
+                Web.json(resp, 404, Map.of("error", "침해 의심 서버가 없습니다."));
+                return;
+            }
+            LOG.info("[precheck-dashboard] 침해 의심 서버 전체 PDF (" + suspects.size() + "대) by " + Web.user(req));
+            sendPdf(resp, IntrusionPdf.combined(suspects, Web.latest(getServletContext()).current(), Web.user(req)),
+                    "intrusion_suspects_" + java.time.LocalDate.now() + ".pdf");
+        } else if (p.length == 1 && p[0].equals("latest-version")) {
+            Web.json(resp, 200, Web.latest(getServletContext()).toMap());
         } else if (p.length == 1 && p[0].equals("agents")) {
             long now = System.currentTimeMillis();
             Object sha = getServletContext().getAttribute(AppInit.ATTR_SCRIPT_SHA);
@@ -74,7 +96,15 @@ public class ApiServlet extends HttpServlet {
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("now", now);
             out.put("expectedScriptSha256", expected);
-            out.put("agents", Web.agents(getServletContext()).list().stream().map(a -> a.toMap(now, expected)).toList());
+            LatestVersion lv = Web.latest(getServletContext());
+            String latest = lv.current();
+            out.put("latest", latest);
+            out.put("agents", Web.agents(getServletContext()).list().stream().map(a -> {
+                Map<String, Object> m = a.toMap(now, expected);
+                m.put("upToDate", AgentStore.upToDate(a, latest));
+                m.put("autoSkipped", lv.skipUpToDate() && AgentStore.upToDate(a, latest));
+                return m;
+            }).toList());
             Web.json(resp, 200, out);
         } else if (p.length == 1 && p[0].equals("users")) {
             if (!requireAdmin(req, resp)) return;
@@ -94,6 +124,23 @@ public class ApiServlet extends HttpServlet {
         if (!requireAdmin(req, resp)) return;
         if (p.length >= 1 && (p[0].equals("agents") || p[0].equals("agents-run"))) {
             agentAction(req, resp, p);
+        } else if (p.length == 1 && p[0].equals("latest-version")) {
+            LatestVersion lv = Web.latest(getServletContext());
+            String action = req.getParameter("action");
+            try {
+                switch (action == null ? "" : action) {
+                    case "refresh" -> lv.refresh();
+                    case "auto" -> lv.setAuto();
+                    case "manual" -> lv.setManual(req.getParameter("version") == null ? null : req.getParameter("version").trim());
+                    case "skip" -> lv.setSkipUpToDate("true".equals(req.getParameter("value")));
+                    default -> throw new IllegalArgumentException("알 수 없는 작업입니다.");
+                }
+            } catch (IllegalArgumentException e) {
+                Web.json(resp, 400, Map.of("error", e.getMessage()));
+                return;
+            }
+            LOG.info("[precheck-dashboard] 최신 버전 설정 변경(" + action + ") by " + Web.user(req) + " → " + lv.current());
+            Web.json(resp, 200, lv.toMap());
         } else if (p.length == 1 && p[0].equals("reports")) {
             upload(req, resp);
         } else if (p.length == 1 && p[0].equals("users")) {
@@ -223,6 +270,29 @@ public class ApiServlet extends HttpServlet {
             return;
         }
         Web.json(resp, 200, results);
+    }
+
+    /** 인스턴스별 최신 리포트 중 [4] 침해 흔적에 [위험]이 있는 것 */
+    static List<Report> suspects(List<Report> all) {
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        List<Report> out = new ArrayList<>();
+        for (Report r : all) { // all() 은 최신순
+            if (!seen.add(r.instanceKey())) continue;
+            if ("compromise".equals(r.intrusionStatus())) out.add(r);
+        }
+        return out;
+    }
+
+    private static void sendPdf(HttpServletResponse resp, byte[] pdf, String fileName) throws IOException {
+        resp.setContentType("application/pdf");
+        resp.setHeader("Content-Disposition", "attachment; filename=\"" + fileName + "\"");
+        resp.setHeader("Cache-Control", "no-store");
+        resp.setContentLength(pdf.length);
+        resp.getOutputStream().write(pdf);
+    }
+
+    private static String ascii(String s) {
+        return s == null ? "unknown" : s.replaceAll("[^A-Za-z0-9.-]+", "_");
     }
 
     private boolean requireAdmin(HttpServletRequest req, HttpServletResponse resp) throws IOException {

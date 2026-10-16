@@ -81,6 +81,7 @@
     const st = $('#f-status').value;
     const latestOnly = $('#f-latest').checked;
     const dqOnly = $('#f-dq').checked;
+    const src = state.sourceFilter;
     let list = state.reports;
     if (latestOnly) {
       const seen = new Set();
@@ -93,6 +94,7 @@
     return list.filter(r => {
       if (st && r.status !== st) return false;
       if (dqOnly && !r.dataQuality.length) return false;
+      if (src && r.source !== src) return false;
       if (!q) return true;
       const hay = [r.host, r.version, r.versionLine, r.binary, r.id, r.cveList.map(c => c.id).join(' ')].join(' ').toLowerCase();
       return hay.includes(q);
@@ -124,6 +126,13 @@
     $('#empty').hidden = state.reports.length > 0;
     $('#f-count').textContent = state.reports.length ? `${list.length}건 표시 / 전체 리포트 ${state.reports.length}건` : '';
     renderKpis(list);
+    renderSuspects();
+    const chip = $('#f-source');
+    chip.hidden = !state.sourceFilter;
+    if (state.sourceFilter) {
+      chip.replaceChildren(`에이전트: ${state.sourceFilter} `,
+        h('button', { class: 'btn-link', type: 'button', 'aria-label': '에이전트 필터 해제', onclick: () => { state.sourceFilter = null; render(); renderSideAgents(); } }, '✕'));
+    }
     renderTable(list);
     renderFindingsChart(list);
     renderCveChart(list);
@@ -145,7 +154,7 @@
   function renderKpis(list) {
     const n = list.length;
     const count = s => list.filter(r => r.status === s).length;
-    const below = list.filter(r => r.below2469).length;
+    const below = list.filter(r => r.belowLatest).length;
     const eol = list.filter(r => r.eol).length;
     const unpatched = list.filter(r => cveTotal(r) > 0).length;
     const dq = list.filter(r => r.dataQuality.length).length;
@@ -153,7 +162,7 @@
       kpi('점검 인스턴스', n, '개', '필터 조건 기준'),
       kpi('', count('compromise'), '대', '[4] 침해 흔적에 [위험] 있음 → 사고 대응 우선', 'compromise', () => setStatusFilter('compromise')),
       kpi('', count('risk'), '대', '침해 흔적 외 [위험] 항목 보유', 'risk', () => setStatusFilter('risk')),
-      kpi('2.4.69 미만', below, '대', eol ? `이 중 EOL(2.2 이하) ${eol}대` : '업그레이드 대상'),
+      kpi(`최신(${latestVer()}) 미만`, below, '대', eol ? `이 중 EOL(2.2 이하) ${eol}대` : '업그레이드 대상'),
       kpi('미조치 CVE 보유', unpatched, '대', '모듈 조건 충족 + 백포트 기록 없음'),
       kpi('데이터 경고', dq, '대', '점검이 불완전해 수동 확인 필요', null, dq ? () => { $('#f-dq').checked = true; render(); } : null)
     );
@@ -174,9 +183,9 @@
         h('td', null, h('div', null, r.host), h('div', { class: 'sub mono' }, (r.binary || '') + (r.pid ? ` · PID ${r.pid}` : '')),
           h('div', { class: 'sub' }, r.source ? `에이전트 ${r.source} 수집` : '수동 업로드')),
         h('td', null, h('div', null, r.version || '확인 불가'),
-          r.eol ? h('div', { class: 'sub' }, 'EOL') : r.below2469 ? h('div', { class: 'sub' }, '2.4.69 미만') : h('div', { class: 'sub' }, '2.4.69 이상')),
+          r.eol ? h('div', { class: 'sub' }, 'EOL') : r.belowLatest ? h('div', { class: 'sub', title: `최신 ${latestVer()} 미만` }, '최신 미만') : r.version ? h('div', { class: 'sub' }, '최신 버전') : null),
         h('td', null, r.installType || '-'),
-        h('td', null, r.checkedAt || '-'),
+        h('td', { class: 'nowrap' }, r.checkedAt || '-'),
         num(r.counts.risk), num(r.counts.warn), num(r.counts.ok),
         h('td', { class: 'num' }, chips.length ? h('div', { class: 'cve-chips' }, chips)
           : r.version && !r.version.startsWith('2.4.') ? h('span', { class: 'badge b-warn', title: '2.4.x 가 아니라 스크립트가 CVE 판정을 하지 않았습니다. EOL 버전은 교체가 근본 대책입니다.' }, '판정 제외')
@@ -297,6 +306,7 @@
     $('#d-sub').textContent = [r.checkedAt, r.binary, r.pid ? 'PID ' + r.pid : null, r.installType ? r.installType + ' 설치' : null,
       r.runUser ? '실행계정 ' + r.runUser : null, r.moduleCount !== null ? `모듈 ${r.moduleCount}개` : null, r.id].filter(Boolean).join(' · ');
     $('#d-raw').href = 'api/reports/' + encodeURIComponent(r.id) + '/raw';
+    $('#d-pdf').href = 'api/reports/' + encodeURIComponent(r.id) + '/intrusion.pdf';
 
     $('#d-dq').replaceChildren(...(r.dataQuality.length ? [h('div', { class: 'alert warn dq' },
       h('b', null, '데이터 품질 경고 — 아래 결과를 그대로 믿기 전에 확인하세요'), ...r.dataQuality.map(d => h('div', null, '· ' + d)))] : []),
@@ -426,6 +436,116 @@
     catch (e) { alert(e.message); }
   }
 
+  // ---------------------------------------------------------------- 최신 버전 / 사이드바 / 침해 의심
+  function latestVer() {
+    return state.latest ? state.latest.version : '?';
+  }
+
+  function apacheCell(a) {
+    if (!a.apacheVersion) return h('span', { class: 'zero' }, '미확인');
+    return h('span', null, a.apacheVersion, ' ',
+      a.upToDate ? h('span', { class: 'badge b-ok' }, '최신') : h('span', { class: 'badge b-warn' }, '최신 미만'));
+  }
+
+  async function loadLatest() {
+    try { state.latest = await api('latest-version'); } catch (e) { return; }
+    const l = state.latest;
+    $('#latest-ver').textContent = l.version;
+    $('#brand-sub').textContent = `Apache 최신 ${l.version} 미만 서버 · apache_precheck.sh 결과`;
+    const host = (() => { try { return new URL(l.source).host; } catch (e) { return l.source; } })();
+    let origin;
+    if (l.origin === 'manual') origin = '관리자가 직접 지정한 값';
+    else if (l.origin === 'auto') origin = `자동 확인 · ${host} · ${rel(l.autoSuccessAt)}`;
+    else origin = '자동 확인 전/실패 → 점검 스크립트 기준값 사용';
+    $('#latest-origin').textContent = origin;
+    $('#latest-origin').title = l.autoCheckedAt ? `마지막 확인 시도: ${abs(l.autoCheckedAt)}` : '';
+    const warns = [];
+    if (l.autoError && l.origin !== 'manual') {
+      warns.push(h('div', { class: 'side-warn' }, `자동 확인 실패: ${l.autoError}`,
+        h('div', { class: 'muted' }, '내부망이라 인터넷이 막혀 있으면 [직접 지정]으로 버전을 넣으세요.')));
+    }
+    if (l.newerThanScript) {
+      warns.push(h('div', { class: 'side-warn' },
+        `점검 스크립트의 CVE 목록은 ${l.scriptBaseline} 기준입니다. ${l.scriptBaseline} 이후 공개된 취약점은 판정되지 않으니 스크립트 업데이트가 필요합니다.`));
+    }
+    $('#latest-warn').replaceChildren(...warns);
+    $('#btn-latest-auto').hidden = l.mode !== 'manual';
+    $('#latest-skip').checked = !!l.skipUpToDate;
+  }
+
+  async function latestAction(params) {
+    try { state.latest = await api('latest-version', { method: 'POST', body: new URLSearchParams(params) }); }
+    catch (e) { alert(e.message); }
+    await refreshAll();
+  }
+
+  /** 에이전트별 최신 리포트 (source 기준) */
+  function latestReportOf(agentName) {
+    return state.reports.find(r => r.source === agentName); // reports 는 최신순
+  }
+
+  function renderSideAgents() {
+    const ul = $('#side-agents');
+    if (!state.agents) return;
+    const list = state.agents.agents;
+    $('#side-agents-count').textContent = list.length ? `${list.length}대` : '';
+    if (!list.length) {
+      ul.replaceChildren(h('li', { class: 'muted side-empty' }, state.me.admin ? '등록된 에이전트가 없습니다. [에이전트 관리]에서 추가하세요.' : '등록된 에이전트가 없습니다.'));
+      return;
+    }
+    const order = { offline: 0, running: 1, requested: 2, online: 3, never: 4 };
+    const sorted = list.slice().sort((a, b) => {
+      const ra = latestReportOf(a.name), rb = latestReportOf(b.name);
+      const ca = ra && ra.intrusion === 'compromise' ? 0 : 1, cb = rb && rb.intrusion === 'compromise' ? 0 : 1;
+      return ca - cb || (order[a.state] ?? 9) - (order[b.state] ?? 9) || a.name.localeCompare(b.name);
+    });
+    ul.replaceChildren(...sorted.map(a => {
+      const st = AGENT_STATE[a.state] || AGENT_STATE.never;
+      const rep = latestReportOf(a.name);
+      const selected = state.sourceFilter === a.name;
+      const item = h('li', null, h('button', {
+        class: 'side-item' + (selected ? ' selected' : ''), type: 'button', 'aria-pressed': String(selected),
+        title: '누르면 이 에이전트의 점검 결과만 표시',
+        onclick: () => { state.sourceFilter = selected ? null : a.name; render(); renderSideAgents(); }
+      },
+        h('span', { class: 'side-row' },
+          h('span', { class: 'badge ' + st.cls }, h('span', { class: 'ic', 'aria-hidden': 'true' }, st.icon), st.label),
+          rep && rep.intrusion === 'compromise' ? badge('compromise') : null),
+        h('span', { class: 'side-name' }, a.name),
+        h('span', { class: 'side-meta mono' }, a.hostname || '아직 접속 안 함'),
+        h('span', { class: 'side-meta' }, a.apacheVersion ? `Apache ${a.apacheVersion} · ${a.upToDate ? '최신' : '최신 미만'}` : 'Apache 버전 미확인',
+          rep ? ` · 점검 ${rel(rep.fileModified)}` : '')));
+      return item;
+    }));
+  }
+
+  /** 인스턴스별 최신 리포트 중 [4] 침해 흔적에 위험/주의가 있는 것 */
+  function renderSuspects() {
+    const seen = new Set();
+    const latest = state.reports.filter(r => { if (seen.has(r.instanceKey)) return false; seen.add(r.instanceKey); return true; });
+    const comp = latest.filter(r => r.intrusion === 'compromise');
+    const check = latest.filter(r => r.intrusion === 'check');
+    $('#btn-suspects-pdf').hidden = comp.length === 0;
+    const row = r => h('div', { class: 'suspect' },
+      h('div', { class: 'suspect-main' },
+        h('div', { class: 'suspect-title' }, badge(r.intrusion === 'compromise' ? 'compromise' : 'warn', r.intrusion === 'compromise' ? '침해 의심' : '확인 필요'),
+          h('b', null, r.host), r.pid ? h('span', { class: 'muted' }, `PID ${r.pid}`) : null,
+          h('span', { class: 'muted' }, `Apache ${r.version || '?'}`), h('span', { class: 'muted' }, r.checkedAt || ''),
+          h('span', { class: 'muted' }, r.source ? `에이전트 ${r.source}` : '수동 업로드')),
+        h('ul', { class: 'suspect-findings' }, ...r.intrusionFindings.slice(0, 3).map(f => h('li', null, badge(f.level), ' ', f.text)),
+          r.intrusionFindings.length > 3 ? h('li', { class: 'muted' }, `외 ${r.intrusionFindings.length - 3}건`) : null)),
+      h('div', { class: 'suspect-actions' },
+        h('button', { class: 'btn small', type: 'button', onclick: () => openDetail(r.id) }, '상세'),
+        h('a', { class: 'btn small' + (r.intrusion === 'compromise' ? ' btn-danger' : ''), href: 'api/reports/' + encodeURIComponent(r.id) + '/intrusion.pdf', download: '' }, 'PDF')));
+    const out = [];
+    if (!comp.length) out.push(h('p', { class: 'muted none-msg' }, state.reports.length ? '침해 의심 서버가 없습니다.' : '점검 결과가 아직 없습니다.'));
+    out.push(...comp.map(row));
+    if (check.length) {
+      out.push(h('details', { class: 'check-group' }, h('summary', null, `확인 필요 ${check.length}대 — [4]에 [주의] 항목(스캔 시도, 최근 변경 파일 등)`), ...check.map(row)));
+    }
+    $('#suspects').replaceChildren(...out);
+  }
+
   // ---------------------------------------------------------------- 에이전트
   const AGENT_STATE = {
     online: { label: '온라인', cls: 'b-ok', icon: '✔' },
@@ -449,7 +569,7 @@
 
   async function loadAgents() {
     let data;
-    try { data = await api('agents'); } catch (e) { $('#agents tbody').replaceChildren(h('tr', null, h('td', { colspan: '8', class: 'muted' }, '에이전트 목록을 불러오지 못했습니다: ' + e.message))); return; }
+    try { data = await api('agents'); } catch (e) { $('#agents tbody').replaceChildren(h('tr', null, h('td', { colspan: '9', class: 'muted' }, '에이전트 목록을 불러오지 못했습니다: ' + e.message))); return; }
     state.agents = data;
     const now = data.now;
     const count = {};
@@ -479,14 +599,16 @@
         h('td', null, h('div', null, a.name), h('div', { class: 'sub mono' }, [a.hostname, a.ip].filter(Boolean).join(' · ') || '아직 접속 안 함')),
         h('td', { title: abs(a.lastSeen) }, rel(a.lastSeen, now)),
         h('td', null, lastRun),
-        h('td', null, next),
+        h('td', null, apacheCell(a)),
+        h('td', null, a.autoSkipped && a.intervalHours > 0 ? h('span', { class: 'muted', title: '최신 버전이라 자동 점검 제외 (지금 점검은 가능)' }, '제외(최신)') : next),
         h('td', null, (INTERVALS.find(([v]) => v === a.intervalHours) || [0, `${a.intervalHours}시간`])[1]),
         h('td', null, scriptCell),
         actions);
     });
-    if (!rows.length) rows.push(h('tr', null, h('td', { colspan: '8', class: 'muted' },
+    if (!rows.length) rows.push(h('tr', null, h('td', { colspan: '9', class: 'muted' },
       state.me.admin ? '등록된 에이전트가 없습니다. [에이전트 추가]로 웹서버에 에이전트를 설치하세요.' : '등록된 에이전트가 없습니다.')));
     $('#agents tbody').replaceChildren(...rows);
+    renderSideAgents();
   }
 
   function dashboardUrl() {
@@ -559,7 +681,9 @@
     if (refreshing) return;
     refreshing = true;
     try {
+      await loadLatest();
       await Promise.all([load(), loadAgents()]);
+      renderSideAgents();
       $('#last-refresh').textContent = `마지막 갱신: ${new Date().toLocaleTimeString('ko-KR')}`;
     } finally { refreshing = false; }
   }
@@ -623,6 +747,14 @@
       } catch (err) { alert(err.message); }
     });
 
+    $('#btn-agents').addEventListener('click', () => { $('#agents-dlg').showModal(); loadAgents(); });
+    $('#btn-latest-refresh').addEventListener('click', () => latestAction({ action: 'refresh' }));
+    $('#btn-latest-auto').addEventListener('click', () => latestAction({ action: 'auto' }));
+    $('#btn-latest-manual').addEventListener('click', () => {
+      const v = prompt('최신 버전으로 쓸 Apache 버전을 입력하세요 (예: 2.4.69)', state.latest ? state.latest.version : '');
+      if (v) latestAction({ action: 'manual', version: v.trim() });
+    });
+    $('#latest-skip').addEventListener('change', e => latestAction({ action: 'skip', value: String(e.target.checked) }));
     $('#btn-add-agent').addEventListener('click', () => {
       $('#ag-title').textContent = '에이전트 추가';
       $('#agent-form').hidden = false;
@@ -649,7 +781,8 @@
     await refreshAll();
     // 30초마다 자동 갱신 (열린 창이 있거나 탭이 숨겨져 있으면 건너뜀)
     setInterval(() => {
-      if (document.hidden || $$('dialog').some(d => d.open)) return;
+      // 에이전트 관리 창은 열려 있어도 갱신, 다른 창이 열려 있으면 건너뜀
+      if (document.hidden || $$('dialog').some(d => d.open && d.id !== 'agents-dlg')) return;
       refreshAll();
     }, 30000);
   }

@@ -76,6 +76,26 @@ class AgentStoreTest {
     }
 
     @Test
+    void upToDateServersSkipScheduleButManualStillRuns() throws Exception {
+        AgentStore s = new AgentStore(dir.resolve("a.properties"));
+        s.create("web01", 24);
+        long t = 1_000_000_000_000L;
+        // 버전을 모르면(첫 점검 전) 점검해서 버전을 알아냄
+        assertEquals("schedule", s.heartbeat("web01", t, "h", null, null, null, false, false, "2.4.69"));
+        s.reportReceived("web01", t + 1000, "2.4.69");
+        s.runFinished("web01", t + 1000, 0, 1, "ok");
+        // 최신(2.4.69) 이상이면 주기가 지나도 자동 점검 안 함
+        assertNull(s.heartbeat("web01", t + 48 * H, "h", null, null, null, false, false, "2.4.69"));
+        // 새 버전(2.4.70)이 나오면 다시 점검 대상
+        assertEquals("schedule", s.heartbeat("web01", t + 49 * H, "h", null, null, null, false, false, "2.4.70"));
+        s.runFinished("web01", t + 49 * H, 0, 1, "ok");
+        s.reportReceived("web01", t + 49 * H, "2.4.70");
+        // 지금 점검은 최신이어도 실행
+        s.requestRun("web01");
+        assertEquals("manual", s.heartbeat("web01", t + 50 * H, "h", null, null, null, false, false, "2.4.70"));
+    }
+
+    @Test
     void manualRunAndManualOnlyMode() throws Exception {
         AgentStore s = new AgentStore(dir.resolve("a.properties"));
         s.create("web01", 0);

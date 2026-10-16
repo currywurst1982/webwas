@@ -74,6 +74,8 @@ public class Report {
     public final List<Finding> findings = new ArrayList<>();
     public final List<Cve> cves = new ArrayList<>();
     public final List<String> dataQuality = new ArrayList<>();
+    /** 원본 리포트의 [4] 침해 흔적 섹션 원문 (구분선 제외) */
+    public final List<String> section4Raw = new ArrayList<>();
     public String raw;
 
     /** 같은 서버의 같은 Apache 인스턴스를 묶는 키 (호스트 + 실행파일 + PID). */
@@ -104,7 +106,32 @@ public class Report {
         return m;
     }
 
+    /**
+     * [4] 섹션의 [주의] 중 "로그/DocumentRoot 를 못 찾아 점검을 건너뜀" 같은 항목은 침해 흔적이 아니라
+     * 점검 누락이므로 침해 판정에서 제외 (데이터 품질 경고로 따로 표시됨).
+     */
+    static boolean coverageGap(Finding f) {
+        return f.text.startsWith("접근 로그 파일을 찾지 못했습니다") || f.text.startsWith("DocumentRoot 를 찾지 못했습니다");
+    }
+
+    /** [4] 침해 흔적의 판정: compromise(위험 있음) | check(주의 있음) | clean | none(점검 안 됨) */
+    public String intrusionStatus() {
+        boolean any = false, warnFound = false;
+        for (Finding f : findings) {
+            if (!"4".equals(f.section) || coverageGap(f)) continue;
+            any = true;
+            if ("risk".equals(f.level)) return "compromise";
+            if ("warn".equals(f.level)) warnFound = true;
+        }
+        return warnFound ? "check" : any ? "clean" : "none";
+    }
+
     public Map<String, Object> toSummary() {
+        return toSummary(null);
+    }
+
+    /** latest = 지금 기준 Apache 최신 버전 (null 이면 판정 안 함) */
+    public Map<String, Object> toSummary(String latest) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", id);
         m.put("host", host);
@@ -121,6 +148,11 @@ public class Report {
         m.put("status", status());
         m.put("compromise", compromiseSuspected());
         m.put("below2469", below2469);
+        m.put("belowLatest", latest != null && version != null && ReportParser.compareVersions(version, latest) < 0);
+        m.put("intrusion", intrusionStatus());
+        m.put("intrusionFindings", findings.stream()
+                .filter(f -> "4".equals(f.section) && !coverageGap(f) && ("risk".equals(f.level) || "warn".equals(f.level)))
+                .map(f -> Map.of("level", f.level, "text", f.text)).toList());
         m.put("eol", eol);
         m.put("counts", Map.of("risk", risk, "warn", warn, "ok", ok, "info", info));
         m.put("cveApplicable", cveCounts(false));
@@ -135,7 +167,11 @@ public class Report {
     }
 
     public Map<String, Object> toDetail() {
-        Map<String, Object> m = toSummary();
+        return toDetail(null);
+    }
+
+    public Map<String, Object> toDetail(String latest) {
+        Map<String, Object> m = toSummary(latest);
         m.put("findings", findings.stream().map(Finding::toMap).toList());
         m.put("cves", cves.stream().map(Cve::toMap).toList());
         m.put("raw", raw);

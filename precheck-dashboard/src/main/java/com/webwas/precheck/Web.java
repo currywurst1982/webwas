@@ -32,6 +32,10 @@ final class Web {
         return (AgentStore) c.getAttribute(AppInit.ATTR_AGENTS);
     }
 
+    static LatestVersion latest(ServletContext c) {
+        return (LatestVersion) c.getAttribute(AppInit.ATTR_LATEST);
+    }
+
     static LoginThrottle throttle(ServletContext c) {
         return (LoginThrottle) c.getAttribute(AppInit.ATTR_THROTTLE);
     }

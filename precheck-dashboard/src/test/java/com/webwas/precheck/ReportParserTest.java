@@ -109,6 +109,25 @@ class ReportParserTest {
         assertTrue(r.findings.stream().anyMatch(f -> f.text.startsWith("AllowOverride 는 모두 None")));
     }
 
+    /** 로그를 못 찾은 것은 침해 흔적이 아니라 점검 누락 → "확인 필요"가 아니라 데이터 경고 */
+    @Test
+    void missingLogsIsCoverageGapNotIntrusion() {
+        String text = String.join("\n",
+                "Apache 패치 전 보안 사전 점검  |  호스트: legacy01  |  일시: 2026-10-13 14:00:00",
+                "==================================================================",
+                " [4] 침해 흔적 점검 (이미 해킹당했는지)",
+                "==================================================================",
+                "[주의] 접근 로그 파일을 찾지 못했습니다. 로그 기반 점검을 건너뜁니다.",
+                "[양호] 웹쉘 의심 코드 패턴 파일 없음 (패턴 우회형 웹쉘은 탐지 못함 → KISA 휘슬 병행 권장)");
+        Report r = ReportParser.parse("apache_precheck_legacy01_20261013_140000.txt", text);
+        assertEquals("clean", r.intrusionStatus());
+        assertTrue(r.dataQuality.stream().anyMatch(d -> d.contains("접근 로그")));
+        assertEquals(2, r.section4Raw.size());
+
+        String scan = text.replace("[주의] 접근 로그 파일을 찾지 못했습니다. 로그 기반 점검을 건너뜁니다.", "[주의] 경로 탐색 시도 12건 (성공 응답 없음) → 스캔 대상이 되고 있음");
+        assertEquals("check", ReportParser.parse("apache_precheck_legacy01_20261013_140000.txt", scan).intrusionStatus());
+    }
+
     @Test
     void decodesEucKr() {
         String s = "Apache 패치 전 보안 사전 점검  |  호스트: h  |  일시: 2026-01-01 00:00:00";

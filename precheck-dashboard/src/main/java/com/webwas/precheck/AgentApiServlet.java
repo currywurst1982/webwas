@@ -68,13 +68,15 @@ public class AgentApiServlet extends HttpServlet {
         }
         throttle.success(key, ip);
         long now = System.currentTimeMillis();
+        LatestVersion latest = Web.latest(getServletContext());
 
         try {
             switch (p) {
                 case "/heartbeat" -> {
                     String reason = agents.heartbeat(name, now, limit(req.getParameter("hostname"), 255), ip,
                             limit(req.getParameter("version"), 40), limit(req.getParameter("scriptSha256"), 64),
-                            "1".equals(req.getParameter("busy")), "1".equals(req.getParameter("probe")));
+                            "1".equals(req.getParameter("busy")), "1".equals(req.getParameter("probe")),
+                            latest.skipUpToDate() ? latest.current() : null);
                     Map<String, Object> out = new LinkedHashMap<>();
                     out.put("run", reason != null);
                     out.put("reason", reason);
@@ -88,7 +90,8 @@ public class AgentApiServlet extends HttpServlet {
                         body = in.readNBytes((int) ReportStore.MAX_FILE_BYTES + 1);
                     }
                     String saved = Web.reports(getServletContext()).saveAgentReport(name, req.getParameter("name"), body);
-                    agents.reportReceived(name, now);
+                    Report saved_ = Web.reports(getServletContext()).get(saved);
+                    agents.reportReceived(name, now, saved_ == null ? null : saved_.version);
                     LOG.info("[precheck-dashboard] 에이전트 리포트 수신: " + saved);
                     Web.json(resp, 200, Map.of("saved", saved));
                 }

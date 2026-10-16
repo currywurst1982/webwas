@@ -10,7 +10,7 @@
 <body>
   <header class="topbar">
     <div class="brand"><span class="brand-mark" aria-hidden="true"></span>Apache 사전점검 대시보드
-      <span class="brand-sub">2.4.69 미만 서버 · apache_precheck.sh 결과</span></div>
+      <span class="brand-sub" id="brand-sub">Apache 최신 버전 미만 서버 · apache_precheck.sh 결과</span></div>
     <nav class="topnav">
       <span class="who" id="who"></span>
       <button class="btn admin-only" id="btn-upload" type="button">리포트 업로드</button>
@@ -23,13 +23,39 @@
     </nav>
   </header>
 
+  <div class="layout">
+  <aside class="sidebar" aria-label="최신 버전과 에이전트 서버">
+    <section class="side-box" id="latest-box" aria-labelledby="latest-title">
+      <h2 id="latest-title">Apache 최신 버전</h2>
+      <div class="latest-ver" id="latest-ver">-</div>
+      <div class="muted side-sub" id="latest-origin"></div>
+      <div id="latest-warn"></div>
+      <div class="side-actions admin-only">
+        <button class="btn small" id="btn-latest-refresh" type="button">지금 확인</button>
+        <button class="btn small" id="btn-latest-manual" type="button">직접 지정</button>
+        <button class="btn small" id="btn-latest-auto" type="button" hidden>자동으로 되돌리기</button>
+      </div>
+      <label class="check side-check admin-only"><input type="checkbox" id="latest-skip"> 최신 버전 서버는 자동 점검 제외</label>
+    </section>
+
+    <section class="side-box" aria-labelledby="side-agents-title">
+      <div class="side-head">
+        <h2 id="side-agents-title">에이전트 서버</h2>
+        <span class="muted" id="side-agents-count"></span>
+      </div>
+      <ul class="side-list" id="side-agents"></ul>
+      <button class="btn small side-manage" id="btn-agents" type="button">에이전트 관리</button>
+    </section>
+    <p class="muted side-foot" id="last-refresh"></p>
+  </aside>
+
   <main class="wrap">
     <div id="alert" class="alert" role="alert" hidden></div>
 
     <section id="empty" class="panel empty" hidden>
       <h2>아직 등록된 점검 결과가 없습니다</h2>
       <ol>
-        <li>아래 <b>점검 에이전트</b>에서 <b>에이전트 추가</b>를 누르고, 안내되는 명령으로 점검할 웹서버에 에이전트를 설치합니다.</li>
+        <li>왼쪽 <b>에이전트 서버 → 에이전트 관리 → 에이전트 추가</b>를 누르고, 안내되는 명령으로 점검할 웹서버에 에이전트를 설치합니다.</li>
         <li>설치되면 에이전트가 점검 스크립트를 실행해 결과를 자동으로 보내고, 이 화면에 표시됩니다. (<b>지금 점검</b>으로 바로 실행 가능)</li>
         <li>에이전트를 설치할 수 없는 서버는 <code>sudo bash apache_precheck.sh</code> 결과 파일을 <b>리포트 업로드</b>로 올려도 됩니다.
           <span class="muted admin-only" id="report-dir"></span></li>
@@ -38,24 +64,15 @@
 
     <section id="kpis" class="kpis" aria-label="핵심 지표"></section>
 
-    <section class="panel" aria-labelledby="agents-title">
+    <section class="panel suspects" aria-labelledby="suspects-title">
       <div class="panel-head">
-        <h2 id="agents-title">점검 에이전트</h2>
+        <h2 id="suspects-title">침해 의심 서버</h2>
         <div class="dialog-actions">
-          <span class="muted" id="agents-summary"></span>
-          <button class="btn admin-only" id="btn-run-all" type="button">전체 지금 점검</button>
-          <button class="btn btn-primary admin-only" id="btn-add-agent" type="button">에이전트 추가</button>
+          <span class="muted">인스턴스별 최신 점검 · [4] 침해 흔적 기준</span>
+          <a class="btn btn-danger" id="btn-suspects-pdf" href="api/suspects.pdf" download hidden>의심 서버 전체 PDF</a>
         </div>
       </div>
-      <div class="table-scroll">
-        <table class="servers" id="agents">
-          <thead><tr>
-            <th>상태</th><th>에이전트</th><th>마지막 접속</th><th>마지막 점검</th><th>다음 자동 점검</th><th>주기</th><th>스크립트</th><th class="admin-only"></th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <p class="muted small-note">에이전트는 1분마다 대시보드에 점검 차례인지 묻습니다. [지금 점검]을 누르면 1분 안에 시작하며, 점검 시간은 서버에 따라 수 분 걸릴 수 있습니다. 화면은 30초마다 자동으로 갱신됩니다. <span id="last-refresh"></span></p>
+      <div id="suspects"></div>
     </section>
 
     <section class="filters panel" aria-label="필터">
@@ -70,6 +87,7 @@
         </select>
       </label>
       <label class="check"><input id="f-latest" type="checkbox" checked> 인스턴스별 최신 점검만</label>
+      <span class="chip" id="f-source" hidden></span>
       <label class="check"><input id="f-dq" type="checkbox"> 데이터 경고 있는 것만</label>
       <button class="btn" id="btn-refresh" type="button">새로고침</button>
       <span class="muted" id="f-count"></span>
@@ -119,6 +137,7 @@
     <p class="footnote">※ 이 대시보드는 apache_precheck.sh 결과를 그대로 모아 보여 줄 뿐이며, 스크립트와 마찬가지로 '알려진 패턴' 기준입니다. 안전을 보증하지 않습니다.
       침해 의심 서버는 설정 보완보다 침해사고 대응이 우선입니다. 근본 대책은 2.4.69 이상(또는 보안수정이 반영된 배포판 패키지)으로의 업그레이드입니다.</p>
   </main>
+  </div>
 
   <dialog id="detail" class="dialog wide" aria-labelledby="d-title">
     <div class="dialog-head">
@@ -128,6 +147,7 @@
       </div>
       <div class="dialog-actions">
         <a class="btn" id="d-raw" download>원본 받기</a>
+        <a class="btn" id="d-pdf" download>침해 흔적 PDF</a>
         <button class="btn btn-danger admin-only" id="d-delete" type="button">삭제</button>
         <button class="btn" data-close type="button">닫기</button>
       </div>
@@ -160,6 +180,29 @@
       <ul class="u-results" id="u-results"></ul>
     </div>
   </dialog>
+
+    <dialog id="agents-dlg" class="dialog wide" aria-labelledby="agents-title">
+      <div class="dialog-head">
+        <div><h2 id="agents-title">에이전트 관리</h2><div class="muted" id="agents-summary"></div></div>
+        <div class="dialog-actions">
+          <button class="btn admin-only" id="btn-run-all" type="button">전체 지금 점검</button>
+          <button class="btn btn-primary admin-only" id="btn-add-agent" type="button">에이전트 추가</button>
+          <button class="btn" data-close type="button">닫기</button>
+        </div>
+      </div>
+      <div class="dialog-body">
+      <div class="table-scroll">
+        <table class="servers" id="agents">
+          <thead><tr>
+            <th>상태</th><th>에이전트</th><th>마지막 접속</th><th>마지막 점검</th><th>Apache</th><th>다음 자동 점검</th><th>주기</th><th>스크립트</th><th class="admin-only"></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="muted small-note">에이전트는 1분마다 대시보드에 점검 차례인지 묻습니다. [지금 점검]을 누르면 1분 안에 시작하며, 점검 시간은 서버에 따라 수 분 걸릴 수 있습니다. 화면은 30초마다 자동으로 갱신됩니다. </p>
+      </div>
+    </dialog>
+
 
   <dialog id="agent-dlg" class="dialog wide" aria-labelledby="ag-title">
     <div class="dialog-head"><h2 id="ag-title">에이전트 추가</h2>

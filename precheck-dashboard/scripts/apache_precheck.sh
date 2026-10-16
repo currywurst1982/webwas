@@ -7,9 +7,18 @@
 #  - 점검 항목
 #      [1] 버전 / 설치 방식(RPM·DEB·소스) 확인
 #      [2] 버전 구간별 해당 CVE 판정 (켜진 모듈 기준으로 해당/미해당 구분)
-#      [3] 위험 설정 점검 (httpd.conf 및 Include 파일 전체)
+#      [3] 위험 설정 점검 (httpd 가 실제로 읽는 = Include 된 설정 파일만,
+#          꺼진 <IfModule>/<IfDefine> 블록 안의 설정은 제외)
 #      [4] 침해 흔적 점검 (접근 로그, 웹쉘 의심 파일, 의심 프로세스/연결/크론)
-#  - 결과: 화면 출력 + 리포트 파일(/tmp/apache_precheck_<호스트>_<시각>.txt)
+#  - 결과: 화면 출력 + 리포트 파일(/tmp/apache_precheck_<호스트>_<시각>[_pid<PID>].txt)
+#
+#  수정 이력 (원본 대비)
+#    1) 인스턴스 자동 탐지 버그 수정: httpd 를 옵션(-f/-d) 없이 띄운 경우 PID 가 실행 인자로 잘못
+#       들어가 "로드된 모듈 수: 0" → 모듈 조건 CVE 전부 미해당 오판정, 설정 파일 목록 실패 문제
+#    2) [3] 설정 점검 대상: DUMP_INCLUDES 실패 시 설정 폴더의 *.conf 를 전부 보던 방식 →
+#       httpd.conf 의 (주석 아닌) Include/IncludeOptional 만 따라가도록 변경.
+#       소스 설치의 #Include 로 막혀 있는 conf/extra/httpd-autoindex.conf, httpd-manual.conf,
+#       httpd-userdir.conf 등이 점검되던 오탐 해결. 점검한 파일 목록과 확인 방법을 리포트에 기록
 #
 #  CVE 데이터 출처: https://httpd.apache.org/security/vulnerabilities_24.html
 #                   (2026-10-15 기준, 2.4.69 릴리스 반영)
@@ -36,7 +45,7 @@ while getopts "b:d:l:A:h" opt; do
     A) HTTPD_ARGS_STR="$OPTARG" ;;   # 내부용: 인스턴스의 -f/-d/-D 인자
     d) RECENT_DAYS="$OPTARG" ;;
     l) LOG_PATHS="$OPTARG" ;;
-    h) sed -n '2,28p' "$0"; exit 0 ;;
+    h) sed -n '2,/^# =\{10,\}$/p' "$0"; exit 0 ;;
     *) echo "알 수 없는 옵션입니다. -h 로 사용법을 확인하세요."; exit 1 ;;
   esac
 done

@@ -56,7 +56,8 @@ class ReportParserTest {
         // 원본 스크립트 버그(PID 가 실행 인자로 들어감, 모듈 0개)를 데이터 품질 경고로 표시
         assertEquals("1583", r.pid);
         assertEquals(0, r.moduleCount);
-        assertEquals(2, r.dataQuality.size());
+        assertEquals(3, r.dataQuality.size()); // 모듈 0개, PID 인자 버그, Include 안 된 파일(mods-available) 점검
+        assertTrue(r.dataQuality.get(2).contains("/etc/apache2/mods-available/userdir.conf"), r.dataQuality.toString());
         assertFalse(r.compromiseSuspected());
         assertEquals("risk", r.status());
     }
@@ -126,6 +127,31 @@ class ReportParserTest {
 
         String scan = text.replace("[주의] 접근 로그 파일을 찾지 못했습니다. 로그 기반 점검을 건너뜁니다.", "[주의] 경로 탐색 시도 12건 (성공 응답 없음) → 스캔 대상이 되고 있음");
         assertEquals("check", ReportParser.parse("apache_precheck_legacy01_20261013_140000.txt", scan).intrusionStatus());
+    }
+
+    /** 원본 스크립트(PID 버그 → 폴더 전체 검색)로 만든 실제 리포트: Include 안 된 파일 점검 경고 */
+    @Test
+    void legacyReportWarnsAboutUnincludedFiles() throws Exception {
+        Report r = ReportParser.parse("apache_precheck_vm_20261016_012910.txt", resource("legacy_unincluded_debian.txt"));
+        assertEquals(null, r.confMethod);
+        assertEquals("확인 안 됨(이전 스크립트)", r.confMethodShort());
+        assertTrue(r.dataQuality.stream().anyMatch(d -> d.contains("Include 되지 않은 설정 파일") && d.contains("available")), r.dataQuality.toString());
+    }
+
+    /** 수정본 스크립트의 Include 추적 결과(소스 설치 구조): 주석 처리된 conf/extra 파일은 대상 아님 */
+    @Test
+    void includeTraceReportListsOnlyIncludedFiles() throws Exception {
+        Report r = ReportParser.parse("apache_precheck_vm_20261016_013039_pid938.txt", resource("srcstyle_include_trace.txt"));
+        assertTrue(r.confMethod.startsWith("메인 설정("), r.confMethod);
+        assertEquals("httpd.conf Include 추적", r.confMethodShort());
+        assertEquals(3, r.confFiles.size());
+        assertTrue(r.confFiles.stream().noneMatch(f -> f.contains("httpd-autoindex") || f.contains("httpd-manual")
+                || f.contains("httpd-userdir") || f.contains("httpd-ssl")), r.confFiles.toString());
+        assertTrue(r.dataQuality.stream().noneMatch(d -> d.contains("Include 되지 않은")));
+        // Options Indexes 는 실제로 Include 된 conf.d/site.conf 에서만 나와야 함
+        Report.Finding idx = r.findings.stream().filter(f -> f.text.startsWith("Options Indexes")).findFirst().orElseThrow();
+        assertEquals(1, idx.details.size());
+        assertTrue(idx.details.get(0).contains("/conf.d/site.conf:"));
     }
 
     @Test

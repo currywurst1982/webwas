@@ -298,28 +298,137 @@ else
 fi
 
 # =====================================================================
-section "[3] 위험 설정 점검 (메인 설정 + Include 파일 전체)"
+section "[3] 위험 설정 점검 (실제로 Include 된 설정 파일만)"
 # =====================================================================
-CONF_LIST="$WORK/conf_files.txt"
-hb -t -D DUMP_INCLUDES 2>/dev/null | grep -oE '/[^ ]+' | sort -u > "$CONF_LIST"
-if [ ! -s "$CONF_LIST" ]; then
-  ROOT="$("$HTTPD_BIN" -V 2>/dev/null | sed -n 's/.*HTTPD_ROOT="\(.*\)"/\1/p')"
-  CFG="$("$HTTPD_BIN" -V 2>/dev/null | sed -n 's/.*SERVER_CONFIG_FILE="\(.*\)"/\1/p')"
-  for ((k=0; k<${#HTTPD_ARGS[@]}; k++)); do
-    [ "${HTTPD_ARGS[$k]}" = "-d" ] && ROOT="${HTTPD_ARGS[$((k+1))]}"
-    [ "${HTTPD_ARGS[$k]}" = "-f" ] && CFG="${HTTPD_ARGS[$((k+1))]}"
-  done
-  [[ "$CFG" != /* ]] && CFG="$ROOT/$CFG"
-  CFG_DIR="$(dirname "$CFG")"
-  find "$CFG_DIR" -type f -name '*.conf' 2>/dev/null | sort -u > "$CONF_LIST"
-fi
-info "점검 대상 설정 파일 수: $(wc -l < "$CONF_LIST")"
+CONF_LIST="$WORK/conf_files.txt"; : > "$CONF_LIST"
 
-# 주석/빈줄 제거한 통합본 (파일명:줄번호:내용)
+# 설정 파일 1개에서 "실제로 적용되는" 줄만 골라냄 (주석·빈 줄 제외, 꺼진 <IfModule>/<IfDefine> 블록 제외)
+# 출력: L<TAB>파일:줄:내용 / I<TAB>Include 경로 / S<TAB>제외된 줄 수(마지막 1줄)
+conf_active() {
+  awk -v F="$1" -v MODS="$(tr '\n' ' ' < "$MODS")" -v DEFS="$DEFINES" '
+    function modok(x,   neg, name, r) {
+      neg = 0; if (substr(x, 1, 1) == "!") { neg = 1; x = substr(x, 2) }
+      if (nm == 0) return 1                              # 모듈 목록을 모르면 켜진 것으로 간주
+      name = x
+      if (name ~ /^mod_.*\.c$/) { sub(/^mod_/, "", name); sub(/\.c$/, "", name); name = name "_module" }
+      else if (name ~ /\.c$/) return 1                   # core.c, prefork.c 등 판별 불가 → 켜짐
+      r = (name in mod) ? 1 : 0
+      return neg ? !r : r
+    }
+    function defok(x,   neg, r) {
+      neg = 0; if (substr(x, 1, 1) == "!") { neg = 1; x = substr(x, 2) }
+      r = (x in def) ? 1 : 0
+      return neg ? !r : r
+    }
+    BEGIN {
+      nm = split(MODS, m, " "); for (i = 1; i <= nm; i++) mod[m[i]] = 1
+      nd = split(DEFS, d, " "); for (i = 1; i <= nd; i++) def[d[i]] = 1
+      depth = 0; act[0] = 1; skipped = 0
+    }
+    {
+      l = $0; sub(/^[ \t]+/, "", l); sub(/[ \t\r]+$/, "", l)
+      if (l == "" || l ~ /^#/) next
+      low = tolower(l)
+      if (low ~ /^<if(module|define|version|file|directive|section)[ \t>]/) {
+        arg = l; sub(/^<[^ \t>]+[ \t]*/, "", arg); sub(/>$/, "", arg); gsub(/"/, "", arg)
+        ok = 1
+        if (low ~ /^<ifmodule/) ok = modok(arg)
+        else if (low ~ /^<ifdefine/) ok = defok(arg)
+        depth++; act[depth] = (act[depth - 1] && ok) ? 1 : 0
+        next
+      }
+      if (low ~ /^<\/if(module|define|version|file|directive|section)[ \t]*>/) { if (depth > 0) depth--; next }
+      if (!act[depth]) { skipped++; next }
+      if (low ~ /^include(optional)?[ \t]/) { a = l; sub(/^[^ \t]+[ \t]+/, "", a); gsub(/"/, "", a); print "I\t" a }
+      print "L\t" F ":" NR ":" l
+    }
+    END { print "S\t" skipped }' "$1" 2>/dev/null
+}
+
+# ${APACHE_LOG_DIR} 같은 환경변수 치환
+expand_vars() {
+  local p="$1" v pat
+  while [[ "$p" =~ \$\{([A-Za-z_][A-Za-z0-9_]*)\} ]]; do
+    v="${BASH_REMATCH[1]}"; pat="\${$v}"; p="${p//"$pat"/${!v:-}}"
+  done
+  printf '%s' "$p"
+}
+
+# 메인 설정 파일에서 시작해 (주석이 아니고 켜진 블록 안의) Include/IncludeOptional 을 따라가며 파일 목록 작성
+resolve_includes() {
+  local queue=("$1") f pat p x seen="$WORK/seen.txt"
+  : > "$seen"
+  while [ ${#queue[@]} -gt 0 ]; do
+    f="${queue[0]}"; queue=("${queue[@]:1}")
+    [ -r "$f" ] || continue
+    grep -qxF -- "$f" "$seen" && continue
+    printf '%s\n' "$f" >> "$seen"
+    while IFS= read -r pat; do
+      pat="$(expand_vars "$pat")"
+      [[ "$pat" != /* ]] && pat="$SROOT/$pat"
+      while IFS= read -r p; do
+        if [ -d "$p" ]; then
+          while IFS= read -r x; do queue+=("$x"); done < <(find "$p" -type f 2>/dev/null | sort)
+        elif [ -f "$p" ]; then
+          queue+=("$p")
+        fi
+      done < <(compgen -G "$pat" | sort)
+    done < <(conf_active "$f" | awk -F'\t' '$1 == "I" { print $2 }')
+  done
+  cat "$seen"
+}
+
+# 메인 설정 파일과 ServerRoot: 실행 인자(-f/-d) > 컴파일 기본값, ServerRoot 지시자가 있으면 그것이 우선
+ROOT0="$("$HTTPD_BIN" -V 2>/dev/null | sed -n 's/.*HTTPD_ROOT="\(.*\)"/\1/p')"
+CFG="$("$HTTPD_BIN" -V 2>/dev/null | sed -n 's/.*SERVER_CONFIG_FILE="\(.*\)"/\1/p')"
+DEFINES=""
+for ((k=0; k<${#HTTPD_ARGS[@]}; k++)); do
+  [ "${HTTPD_ARGS[$k]}" = "-d" ] && ROOT0="${HTTPD_ARGS[$((k+1))]}"
+  [ "${HTTPD_ARGS[$k]}" = "-f" ] && CFG="${HTTPD_ARGS[$((k+1))]}"
+  [ "${HTTPD_ARGS[$k]}" = "-D" ] && DEFINES="$DEFINES ${HTTPD_ARGS[$((k+1))]}"
+done
+[[ -n "$CFG" && "$CFG" != /* ]] && CFG="$ROOT0/$CFG"
+SROOT="$ROOT0"
+if [ -r "$CFG" ]; then
+  SR="$(conf_active "$CFG" | awk -F'\t' '$1 == "L"' | sed -n 's/^L\t[^:]*:[0-9]*:[Ss][Ee][Rr][Vv][Ee][Rr][Rr][Oo][Oo][Tt][ \t]\+//p' | head -n1 | tr -d '"')"
+  [ -n "$SR" ] && SROOT="$(expand_vars "$SR")"
+fi
+
+# 1순위: httpd 가 직접 알려 주는 "실제로 읽는 설정 파일" 목록
+DUMP_ERR="$WORK/dump.err"
+if [ -z "${PRECHECK_TEST_NO_DUMP:-}" ]; then
+  hb -t -D DUMP_INCLUDES 2>"$DUMP_ERR" | sed -n 's/^[ \t]*([0-9*]*)[ \t]*\(\/.*\)$/\1/p' | awk '!seen[$0]++' > "$CONF_LIST"
+else
+  echo "테스트용으로 DUMP_INCLUDES 사용 안 함" > "$DUMP_ERR"
+fi
+if [ -s "$CONF_LIST" ]; then
+  info "설정 파일 목록 확인 방법: httpd -t -D DUMP_INCLUDES (httpd 가 실제로 읽는 파일)"
+else
+  # 2순위: httpd.conf 의 Include/IncludeOptional 을 직접 따라감 (예전처럼 폴더의 *.conf 를 전부 점검하지 않음)
+  REASON="$(grep -v '^Syntax OK' "$DUMP_ERR" 2>/dev/null | head -n1 | cut -c1-200)"
+  if [ -r "$CFG" ]; then
+    resolve_includes "$CFG" > "$CONF_LIST"
+    info "설정 파일 목록 확인 방법: 메인 설정($CFG)의 Include/IncludeOptional 직접 추적 (DUMP_INCLUDES 실패: ${REASON:-출력 없음})"
+  else
+    warn "메인 설정 파일을 찾지 못해 설정 점검을 할 수 없습니다: ${CFG:-(알 수 없음)} (DUMP_INCLUDES 실패: ${REASON:-출력 없음})"
+  fi
+fi
+[ -s "$MODS" ] || warn "모듈 목록을 확인하지 못해 <IfModule> 조건을 모두 '켜짐'으로 간주했습니다. (설정 점검 결과가 실제보다 많을 수 있음)"
+info "점검 대상 설정 파일 수: $(wc -l < "$CONF_LIST")"
+head -n 100 "$CONF_LIST" | while IFS= read -r f; do detail "$f"; done
+[ "$(wc -l < "$CONF_LIST")" -gt 100 ] && detail "... (100개까지만 표시)"
+
+# 적용되는 설정 줄 통합본 (파일명:줄번호:내용) — 주석·빈 줄, 꺼진 <IfModule>/<IfDefine> 블록 제외
 ALLCONF="$WORK/all.conf"; : > "$ALLCONF"
-while read -r f; do
-  [ -r "$f" ] && awk -v F="$f" '{ l=$0; sub(/^[ \t]+/,"",l); if (l!="" && l !~ /^#/) print F":"NR":"l }' "$f" >> "$ALLCONF"
+SKIPPED=0
+while IFS= read -r f; do
+  [ -r "$f" ] || continue
+  conf_active "$f" > "$WORK/active.txt"
+  awk -F'\t' '$1 == "L" { sub(/^L\t/, ""); print }' "$WORK/active.txt" >> "$ALLCONF"
+  n="$(awk -F'\t' '$1 == "S" { print $2 }' "$WORK/active.txt")"
+  SKIPPED=$((SKIPPED + ${n:-0}))
 done < "$CONF_LIST"
+[ "$SKIPPED" -gt 0 ] && info "꺼진 <IfModule>/<IfDefine> 블록 안의 설정 ${SKIPPED}줄은 실제로 적용되지 않으므로 점검에서 제외했습니다."
 cfg_grep() { grep -iE "$1" "$ALLCONF"; }
 show() { while IFS= read -r line; do detail "$line"; done; }
 

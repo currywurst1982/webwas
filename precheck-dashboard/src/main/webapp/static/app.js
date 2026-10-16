@@ -342,7 +342,8 @@
     const dlg = $('#detail');
     $('#d-title').replaceChildren(badge(r.status), r.host, h('span', { class: 'muted' }, `Apache ${r.version || '?'}`));
     $('#d-sub').textContent = [r.checkedAt, r.binary, r.pid ? 'PID ' + r.pid : null, r.installType ? r.installType + ' 설치' : null,
-      r.runUser ? '실행계정 ' + r.runUser : null, r.moduleCount !== null ? `모듈 ${r.moduleCount}개` : null, r.id].filter(Boolean).join(' · ');
+      r.runUser ? '실행계정 ' + r.runUser : null, r.moduleCount !== null ? `모듈 ${r.moduleCount}개` : null,
+      `설정 파일 ${r.confFileCount}개(${r.confMethodShort})`, r.id].filter(Boolean).join(' · ');
     $('#d-raw').href = 'api/reports/' + encodeURIComponent(r.id) + '/raw';
     $('#d-pdf').href = 'api/reports/' + encodeURIComponent(r.id) + '/intrusion.pdf';
 

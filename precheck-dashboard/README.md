@@ -225,9 +225,27 @@ Ubuntu 24.04 + apache2 2.4.58 에서 실제로 재현했습니다.
 - 결과 2: Include 목록을 못 얻어 설정 폴더의 `*.conf` 를 전부 읽습니다. 비활성 파일(`mods-available/` 등)까지 점검해 **오탐**이 생깁니다.
   (재현 환경에서 비활성 `mods-available/userdir.conf` 때문에 AllowOverride 가 [주의]로 잘못 나왔고, 수정본에서는 [양호])
 
-`scripts/apache_precheck.sh` 는 구분자를 TAB 대신 `\x1f` 로 바꾼 수정본입니다. 원본과의 차이는 이 부분뿐입니다.
+`scripts/apache_precheck.sh` 는 위 버그를 고친 수정본입니다 (구분자를 TAB 대신 `\x1f` 로 변경).
 수정 후 같은 서버에서 모듈 수가 0 → 27 로 정상 집계되는 것을 확인했습니다.
 대시보드는 원본 스크립트로 만든 리포트에서 이 현상을 감지하면 **데이터 경고**로 표시합니다.
+
+### [3] 설정 점검 대상 파일 (수정본)
+
+원본은 `httpd -t -D DUMP_INCLUDES` 가 실패하면 **설정 폴더의 `*.conf` 를 전부** 점검했습니다. 그래서 소스 설치의
+`conf/extra/httpd-autoindex.conf`, `httpd-manual.conf`, `httpd-userdir.conf` 처럼 httpd.conf 에서 `#Include` 로
+**주석 처리된 파일까지** 점검되어 오탐이 났습니다. (위 PID 버그가 있으면 항상 이 경우에 해당)
+
+수정본은 다음 순서로 "실제로 적용되는 설정"만 점검합니다.
+
+1. `httpd -t -D DUMP_INCLUDES` — httpd 가 직접 알려 주는 실제로 읽는 파일 목록
+2. 1이 실패하면: 메인 설정(httpd.conf / apache2.conf)에서 시작해 **주석이 아닌 `Include`/`IncludeOptional`만 따라감**
+   (상대경로는 ServerRoot 기준, `*` 패턴·폴더 Include·중첩 Include, `${환경변수}` 처리)
+3. 두 경우 모두 **꺼진 `<IfModule>`(로드 안 된 모듈) / `<IfDefine>`(실행 인자 -D 로 정의 안 됨) 블록 안의 줄은 제외**
+
+리포트 [3] 섹션에 `설정 파일 목록 확인 방법`과 점검한 파일 목록이 남고, 대시보드 상세 화면과 설정 취약 PDF 에 표시됩니다.
+테스트에서 1과 2의 결과는 Ubuntu 구조(37개)와 소스 설치 구조(3개, `-D` 조건·폴더·중첩 Include 포함 7개)에서 httpd 의 목록과 같았습니다.
+이전 스크립트로 만든 리포트에 `extra/`, `original/`, `*-available/` 경로가 보이면 대시보드가 **데이터 경고**로 재점검을 권합니다.
+**에이전트가 설치된 서버는 install.sh 를 다시 실행해야** 새 스크립트로 바뀝니다 (대시보드의 "스크립트" 열이 "다름"이면 이전 스크립트).
 
 ## 참고: WildFly AI 관련 프로젝트와의 관계
 

@@ -34,7 +34,9 @@ public final class ConfigPdf {
             w.text(w.regular, 9.5f, INK2, "점검 서버 " + serverCount + "대 중 " + affected + "대에서 설정 취약 항목 " + items.size() + "종 발견 (인스턴스별 최신 점검 기준, Apache 최신 " + latest + ")");
             w.gap(6);
             w.wrapped(w.regular, 9, MUTED, "근거: apache_precheck.sh 리포트의 [3] 위험 설정 점검에서 [위험]/[주의]로 나온 항목. "
-                    + "항목 문구와 권장 조치는 점검 스크립트의 원문이며, 서버별 '설정 위치'는 리포트에 기록된 설정 파일:줄 번호입니다.", 0);
+                    + "항목 문구와 권장 조치는 점검 스크립트의 원문이며, 서버별 '설정 위치'는 리포트에 기록된 설정 파일:줄 번호입니다. "
+                    + "수정본 스크립트는 httpd 가 실제로 읽는(Include 된) 설정 파일만 점검하고, 꺼진 <IfModule>/<IfDefine> 블록은 제외합니다. "
+                    + "'확인 안 됨(이전 스크립트)'으로 표시된 서버는 Include 되지 않은 파일까지 점검했을 수 있으니 재점검하세요.", 0);
             w.gap(12);
 
             if (items.isEmpty()) {
@@ -68,7 +70,7 @@ public final class ConfigPdf {
                     w.wrapped(w.bold, 9.5f, INK, "■ " + r.host + (r.pid != null ? " (PID " + r.pid + ")" : "")
                             + "  ·  Apache " + nz(r.version) + "  ·  " + levelLabel(t.level()), 12);
                     w.wrapped(w.regular, 8.5f, MUTED, "점검 " + nz(r.checkedAt) + " · " + (r.source != null ? "에이전트 " + r.source : "수동 업로드")
-                            + " · " + r.id, 12);
+                            + " · 설정 파일 " + r.confFiles.size() + "개 (" + r.confMethodShort() + ") · " + r.id, 12);
                     if (!t.text().equals(it.text)) w.wrapped(w.regular, 8.5f, INK2, "문구: " + t.text(), 12);
                     if (t.details().isEmpty()) {
                         w.wrapped(w.regular, 8.5f, MUTED, "설정 위치: (리포트에 기록 없음 — 기본값/미설정 상태일 수 있음)", 12);

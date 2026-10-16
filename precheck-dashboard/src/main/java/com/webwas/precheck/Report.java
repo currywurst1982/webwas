@@ -67,6 +67,10 @@ public class Report {
     public String installType;
     public Integer moduleCount;
     public String runUser;
+    /** [3] 설정 파일 목록을 얻은 방법 (수정본 스크립트만 기록, 이전 스크립트는 null) */
+    public String confMethod;
+    /** 설정 점검 대상 파일 목록 */
+    public final List<String> confFiles = new ArrayList<>();
     public int risk, warn, ok, info;
     public boolean summaryFound;
     public boolean below2469;
@@ -144,6 +148,9 @@ public class Report {
         m.put("installType", installType);
         m.put("moduleCount", moduleCount);
         m.put("runUser", runUser);
+        m.put("confMethod", confMethod);
+        m.put("confMethodShort", confMethodShort());
+        m.put("confFileCount", confFiles.size());
         m.put("instanceKey", instanceKey());
         m.put("status", status());
         m.put("compromise", compromiseSuspected());
@@ -170,8 +177,17 @@ public class Report {
         return toDetail(null);
     }
 
+    /** 화면·PDF 표시용 짧은 이름 */
+    public String confMethodShort() {
+        if (confMethod == null) return "확인 안 됨(이전 스크립트)";
+        if (confMethod.startsWith("httpd -t -D DUMP_INCLUDES")) return "httpd 가 읽는 파일(DUMP_INCLUDES)";
+        if (confMethod.startsWith("메인 설정")) return "httpd.conf Include 추적";
+        return confMethod;
+    }
+
     public Map<String, Object> toDetail(String latest) {
         Map<String, Object> m = toSummary(latest);
+        m.put("confFiles", confFiles);
         m.put("findings", findings.stream().map(Finding::toMap).toList());
         m.put("cves", cves.stream().map(Cve::toMap).toList());
         m.put("raw", raw);

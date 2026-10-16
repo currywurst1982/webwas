@@ -28,6 +28,8 @@ public final class ReportParser {
     private static final Pattern SUMMARY = Pattern.compile(
             "\\[위험\\] (\\d+)건\\s+\\[주의\\] (\\d+)건\\s+\\[양호\\] (\\d+)건\\s+\\[정보\\] (\\d+)건");
     private static final Pattern VERSION = Pattern.compile("Apache/(\\d+\\.\\d+\\.\\d+)");
+    /** 기본 설치에서 보통 Include 되지 않는 위치 (소스 설치 conf/extra, conf/original, Debian *-available) */
+    private static final Pattern UNINCLUDED_HINT = Pattern.compile("^/\\S*/(extra|original|mods-available|conf-available|sites-available)/");
 
     /** UTF-8 로 읽되, 깨지면 한글 Windows/EUC-KR(MS949)로 다시 읽음. */
     public static String decode(byte[] bytes) {
@@ -146,6 +148,24 @@ public final class ReportParser {
             }
             r.dataQuality.add("리포트에 '점검 요약'이 없습니다. 스크립트가 중간에 종료되었을 수 있어 결과가 불완전합니다.");
         }
+        // 설정 파일 목록 (점검 대상 설정 파일 수 항목의 상세 줄)
+        r.findings.stream().filter(x -> x.text.startsWith("점검 대상 설정 파일 수")).findFirst()
+                .ifPresent(x -> x.details.stream().filter(d -> d.startsWith("/")).forEach(r.confFiles::add));
+        // 이전 스크립트는 DUMP_INCLUDES 가 실패하면 설정 폴더의 *.conf 를 전부 점검했음 → Include 안 된 파일 오탐 가능성 경고
+        if (r.confMethod == null) {
+            java.util.Set<String> suspicious = new java.util.TreeSet<>();
+            for (Report.Finding x : r.findings) {
+                if (!"3".equals(x.section)) continue;
+                for (String d : x.details) {
+                    Matcher sp = UNINCLUDED_HINT.matcher(d);
+                    if (sp.find()) suspicious.add(d.substring(0, d.indexOf(':') > 0 ? d.indexOf(':') : d.length()));
+                }
+            }
+            if (!suspicious.isEmpty()) {
+                r.dataQuality.add("이전 버전 스크립트로 만든 리포트라 httpd.conf 에 Include 되지 않은 설정 파일까지 점검했을 수 있습니다 "
+                        + "(의심: " + String.join(", ", suspicious) + "). 수정본 스크립트로 재점검하면 실제로 Include 된 파일만 점검합니다.");
+            }
+        }
         if (r.version != null) {
             r.below2469 = compareVersions(r.version, "2.4.69") < 0;
             r.eol = r.version.startsWith("2.2.") || r.version.startsWith("2.0.") || r.version.startsWith("1.");
@@ -188,6 +208,8 @@ public final class ReportParser {
         } else if (body.startsWith("실행 중인 Apache 프로세스 자동 탐지: 마스터 PID ")) {
             String p = body.replaceAll("\\D+", " ").trim();
             if (!p.isEmpty() && r.pid == null) r.pid = p.split(" ")[0];
+        } else if (body.startsWith("설정 파일 목록 확인 방법: ")) {
+            r.confMethod = body.substring("설정 파일 목록 확인 방법: ".length()).trim();
         } else if (body.startsWith("워커 실행 계정: ")) {
             r.runUser = body.substring("워커 실행 계정: ".length()).trim();
         } else if (body.startsWith("워커 실행 계정이 root")) {

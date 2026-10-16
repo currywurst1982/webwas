@@ -886,7 +886,7 @@
     const cols = Math.max(2, Math.ceil(Math.sqrt(n || 1)));
     const rows = Math.max(2, Math.ceil((n || 1) / cols));
     const W = 132, H = 66;                       // 바닥 칸 하나의 폭·높이 (2:1 등각)
-    const SP = 2.0;                              // 서버 사이 간격 (칸 단위). 뒤 서버 이름표가 대각선 앞 상자 윗면과 겹치지 않는 최소값
+    const SP = 2.3;                              // 서버 사이 간격 (칸 단위). 뒤 서버 이름표(3줄)가 대각선 앞 상자 윗면과 겹치지 않는 값
     const P = (gx, gy) => [(gx - gy) * W / 2, (gx + gy) * H / 2];
     const pts = a => a.map(p => p.join(',')).join(' ');
     const agentsByName = new Map(((state.agents && state.agents.agents) || []).map(a => [a.name, a]));
@@ -952,7 +952,9 @@
       g.append(svg('circle', { class: 'led', cx: c[0] + W * 0.21, cy: c[1] - 12, r: 2.6, fill: tone }));
       g.append(svg('circle', { class: 'led', cx: c[0] + W * 0.21, cy: c[1] - 30, r: 2.6, fill: tone }));
       labels.push(svg('text', { class: 'iso-label', x: c[0], y: c[1] + H * 0.3 + 18 }, r.host.length > 16 ? r.host.slice(0, 15) + '…' : r.host));
-      labels.push(svg('text', { class: 'iso-sub', x: c[0], y: c[1] + H * 0.3 + 32 }, r.version ? 'WildFly ' + r.version.replace(/\.Final$/, '') : (r.ip || '')));
+      // 이름표 3줄: 호스트 / 서버 IP / WildFly 버전 (SP=2.0 이면 셋째 줄까지 대각선 앞 상자와 겹치지 않음)
+      labels.push(svg('text', { class: 'iso-sub', x: c[0], y: c[1] + H * 0.3 + 31 }, r.ip ? r.ip + (r.ipFromAgent ? ' (접속 IP)' : '') : 'IP 미확인'));
+      labels.push(svg('text', { class: 'iso-sub', x: c[0], y: c[1] + H * 0.3 + 44 }, r.version ? 'WildFly ' + r.version.replace(/\.Final$/, '') : '버전 미확인'));
       tip(g, () => [hostLabel(r), { level: r.status === 'compromise' ? 'compromise' : r.status, text: `WildFly ${r.version || '?'}${r.belowLatest ? ' (최신 미만)' : ''}` },
         `점검 ${r.checkedAt || '-'} · ${r.source ? '에이전트 ' + r.source : '수동 업로드'}`,
         `위험 ${r.counts.risk} · 주의 ${r.counts.warn} · 해당 CVE ${cveTotal(r)}`,

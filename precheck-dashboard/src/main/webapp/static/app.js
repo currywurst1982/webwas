@@ -910,13 +910,13 @@
     for (let y = Math.ceil(g0); y <= gy1; y++) els.push(svg('line', { class: 'iso-grid', x1: P(g0, y)[0], y1: P(g0, y)[1], x2: P(gx1, y)[0], y2: P(gx1, y)[1] }));
 
     // 등각 상자 (서버 랙 모양): 바닥 중심 c, 반폭 w·반높이 h, 높이 z
-    function cube(c, w, h, z, topFill, sideL, sideR, slots) {
+    function cube(c, w, h, z, topFill, slots) { // 옆면 색은 CSS(--rack-l/r, --hub-l/r)가 화면 모드별로 지정
       const [x, y] = c;
       const top = [[x, y - z - h], [x + w, y - z], [x, y - z + h], [x - w, y - z]];
       const left = [[x - w, y - z], [x, y - z + h], [x, y + h], [x - w, y]];
       const right = [[x, y - z + h], [x + w, y - z], [x + w, y], [x, y + h]];
-      const g = [svg('polygon', { class: 'left', points: pts(left), fill: sideL }),
-        svg('polygon', { class: 'right', points: pts(right), fill: sideR })];
+      const g = [svg('polygon', { class: 'left', points: pts(left) }),
+        svg('polygon', { class: 'right', points: pts(right) })];
       for (let i = 1; i <= slots; i++) { // 랙 칸 선 + 표시등
         const t = i / (slots + 1);
         const ly = y - z + h + (z) * t, ry = y - z + (z) * t;
@@ -937,7 +937,7 @@
       els.push(svg('path', { class: 'iso-link' + (ag && ag.state !== 'offline' && ag.state !== 'never' ? ' live' : ''),
         d: `M${hub[0]},${hub[1] - 20} Q${(hub[0] + c[0]) / 2},${Math.min(hub[1], c[1]) - 50} ${c[0]},${c[1] - 40}` }));
     });
-    const hubG = svg('g', { class: 'iso-box iso-hub', 'aria-hidden': 'true' }, cube(hub, W * 0.42, H * 0.42, 34, 'url(#hubTop)', '#1d3c6e', '#152e57', 2));
+    const hubG = svg('g', { class: 'iso-box iso-hub', 'aria-hidden': 'true' }, cube(hub, W * 0.42, H * 0.42, 34, 'url(#hubTop)', 2));
     els.push(hubG);
     labels.push(svg('text', { class: 'iso-label', x: hub[0], y: hub[1] - 34 - H * 0.42 - 12 }, '점검 대시보드'));
 
@@ -947,7 +947,7 @@
       const g = svg('g', { class: 'iso-box', tabindex: '0', role: 'button', 'aria-label': `${r.host} ${STATUS[r.status].label}, 상세 보기`,
         onclick: () => openDetail(r.id), onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(r.id); } } });
       if (r.status === 'compromise') g.append(svg('ellipse', { class: 'iso-ring', cx: c[0], cy: c[1], rx: W * 0.42, ry: H * 0.42 }));
-      cube(c, W * 0.3, H * 0.3, 52, tone, '#16305a', '#0f2346', 3).forEach(x => g.append(x));
+      cube(c, W * 0.3, H * 0.3, 52, tone, 3).forEach(x => g.append(x));
       // 앞면 표시등 (상태색)
       g.append(svg('circle', { class: 'led', cx: c[0] + W * 0.21, cy: c[1] - 12, r: 2.6, fill: tone }));
       g.append(svg('circle', { class: 'led', cx: c[0] + W * 0.21, cy: c[1] - 30, r: 2.6, fill: tone }));
@@ -1008,7 +1008,7 @@
       els.push(hit, bar);
       tip(hit, () => [`${d.slice(5).replace('-', '/')} 점검 ${cnt[i]}건`, ...(comp[i] ? [{ level: 'compromise', label: '침해 의심', text: `${comp[i]}건` }] : [])]);
       if (i % 3 === 1 || i === days.length - 1) els.push(svg('text', { class: 'axis-label', x: L + slot * i + slot / 2, y: Ht - 6, 'text-anchor': 'middle' }, d.slice(5).replace('-', '/')));
-      if (i === maxIdx && cnt[i]) els.push(svg('text', { class: 'axis-label', x: x + bw / 2, y: top - 4, 'text-anchor': 'middle', fill: '#e8f1ff' }, String(cnt[i])));
+      if (i === maxIdx && cnt[i]) els.push(svg('text', { class: 'axis-label axis-strong', x: x + bw / 2, y: top - 4, 'text-anchor': 'middle' }, String(cnt[i])));
     });
     $('#trend-bars').replaceChildren(svg('svg', { viewBox: `0 0 ${Wd} ${Ht}`, role: 'img', 'aria-label': `최근 14일 점검 ${cnt.reduce((a, b) => a + b, 0)}건` }, els));
   }

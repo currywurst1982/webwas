@@ -17,7 +17,7 @@ import java.util.Set;
  */
 @WebFilter("/*")
 public class AuthFilter extends HttpFilter {
-    private static final Set<String> PUBLIC = Set.of("/login", "/static/app.css");
+    private static final Set<String> PUBLIC = Set.of("/login", "/static/app.css", "/static/theme.js");
     private static final Set<String> SAFE_METHODS = Set.of("GET", "HEAD");
 
     @Override

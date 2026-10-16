@@ -95,6 +95,12 @@ final class Web {
         resp.getWriter().write(Json.write(body));
     }
 
+    /** 화면 모드 전환 버튼 (로그인 화면에는 아이콘 묶음이 없어 SVG 를 직접 넣음) */
+    private static final String THEME_BTN = "<button class=\"icon-btn theme-btn auth-theme\" type=\"button\" aria-label=\"밝은 화면으로 전환\">"
+            + "<svg class=\"t-moon\" viewBox=\"0 0 24 24\"><path d=\"M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z\"/></svg>"
+            + "<svg class=\"t-sun\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"4\"/>"
+            + "<path d=\"M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4\"/></svg></button>";
+
     /** 로그인/비밀번호 변경 화면 공통 HTML 틀. */
     static void page(HttpServletRequest req, HttpServletResponse resp, String title, String body) throws IOException {
         resp.setContentType("text/html;charset=UTF-8");
@@ -103,8 +109,9 @@ final class Web {
         resp.getWriter().write("<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\">"
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
                 + "<title>" + esc(title) + "</title>"
+                + "<script src=\"" + cp + "/static/theme.js\"></script>"
                 + "<link rel=\"stylesheet\" href=\"" + cp + "/static/app.css\"></head>"
-                + "<body class=\"auth-body\"><main class=\"auth-card\">"
+                + "<body class=\"auth-body\">" + THEME_BTN + "<main class=\"auth-card\">"
                 + "<div class=\"brand\"><span class=\"brand-mark\" aria-hidden=\"true\"></span>Apache 사전점검 대시보드</div>"
                 + body + "</main></body></html>");
     }

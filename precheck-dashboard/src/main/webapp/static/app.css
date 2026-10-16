@@ -335,3 +335,5 @@ pre.raw { margin: 0; padding: 12px; background: var(--surface-2); border-radius:
 .tip-risk { background: var(--s-critical); color: #fff; }
 .tip-warn { background: var(--s-warning); color: #000; }
 #chart-config .hbar { cursor: pointer; }
+.tip-bp { background: transparent; color: inherit; border: 1px dashed currentColor; }
+#chart-cve .hbar { cursor: pointer; }

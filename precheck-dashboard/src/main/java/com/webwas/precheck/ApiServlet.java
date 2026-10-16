@@ -37,6 +37,7 @@ import java.util.logging.Logger;
  *  GET    /api/reports/{파일명}/intrusion.pdf  [4] 침해 흔적만 발췌한 PDF
  *  GET    /api/suspects.pdf          침해 의심 서버 전체 PDF (인스턴스별 최신 점검)
  *  GET    /api/config.pdf[?source=에이전트]  설정 취약 항목별 대상 서버 PDF (인스턴스별 최신 점검)
+ *  GET    /api/cve.pdf[?source=에이전트]     CVE별 대상 서버 PDF (인스턴스별 최신 점검)
  *  GET    /api/latest-version        Apache 최신 버전 정보
  *  POST   /api/latest-version        (관리자) action=refresh | auto | manual(version) | skip(value=true/false)
  */
@@ -88,22 +89,27 @@ public class ApiServlet extends HttpServlet {
             LOG.info("[precheck-dashboard] 침해 의심 서버 전체 PDF (" + suspects.size() + "대) by " + Web.user(req));
             sendPdf(resp, IntrusionPdf.combined(suspects, Web.latest(getServletContext()).current(), Web.user(req)),
                     "intrusion_suspects_" + java.time.LocalDate.now() + ".pdf");
-        } else if (p.length == 1 && p[0].equals("config.pdf")) {
-            List<Report> latestReports = ConfigIssues.latestPerInstance(store.all());
+        } else if (p.length == 1 && (p[0].equals("config.pdf") || p[0].equals("cve.pdf"))) {
             String source = req.getParameter("source");
-            String scope = "전체 서버";
-            if (source != null && !source.isBlank()) {
-                if (!AgentStore.validName(source)) {
-                    Web.json(resp, 400, Map.of("error", "잘못된 에이전트 이름"));
-                    return;
-                }
-                latestReports = latestReports.stream().filter(r -> source.equals(r.source)).toList();
-                scope = "에이전트 " + source + " 수집분만";
+            if (source != null && !source.isBlank() && !AgentStore.validName(source)) {
+                Web.json(resp, 400, Map.of("error", "잘못된 에이전트 이름"));
+                return;
+            }
+            boolean bySource = source != null && !source.isBlank();
+            List<Report> latestReports = ConfigIssues.latestPerInstance(store.all()).stream()
+                    .filter(r -> !bySource || source.equals(r.source)).toList();
+            String scope = bySource ? "에이전트 " + source + " 수집분만" : "전체 서버";
+            String suffix = (bySource ? ascii(source) + "_" : "") + java.time.LocalDate.now() + ".pdf";
+            String latest = Web.latest(getServletContext()).current();
+            if (p[0].equals("cve.pdf")) {
+                List<CveIssues.Item> cves = CveIssues.group(latestReports);
+                LOG.info("[precheck-dashboard] CVE PDF (" + cves.size() + "건, " + scope + ") by " + Web.user(req));
+                sendPdf(resp, CvePdf.build(cves, latestReports.size(), latest, scope, Web.user(req)), "cve_targets_" + suffix);
+                return;
             }
             List<ConfigIssues.Item> items = ConfigIssues.group(latestReports);
             LOG.info("[precheck-dashboard] 설정 취약 PDF (" + items.size() + "종, " + scope + ") by " + Web.user(req));
-            sendPdf(resp, ConfigPdf.build(items, latestReports.size(), Web.latest(getServletContext()).current(), scope, Web.user(req)),
-                    "config_issues_" + (source == null || source.isBlank() ? "" : ascii(source) + "_") + java.time.LocalDate.now() + ".pdf");
+            sendPdf(resp, ConfigPdf.build(items, latestReports.size(), latest, scope, Web.user(req)), "config_issues_" + suffix);
         } else if (p.length == 1 && p[0].equals("latest-version")) {
             Web.json(resp, 200, Web.latest(getServletContext()).toMap());
         } else if (p.length == 1 && p[0].equals("agents")) {

@@ -123,7 +123,12 @@
 
       <div class="panel">
         <div class="panel-head"><h2>CVE별 해당 서버 수</h2>
-          <div class="legend" id="legend-cve"></div></div>
+          <div class="head-right">
+            <div class="legend" id="legend-cve"></div>
+            <a class="btn small" id="btn-cve-pdf" href="api/cve.pdf" download
+               title="CVE별 설명·영향 버전·필요 모듈과 대상 서버(미조치/백포트 추정)를 PDF로 받습니다. 인스턴스별 최신 점검 기준이며, 왼쪽에서 고른 에이전트 필터가 반영됩니다.">CVE PDF</a>
+          </div></div>
+        <p class="muted chart-hint">막대에 마우스를 올리면 대상 서버가, 누르면 서버 목록 창이 열립니다.</p>
         <div id="chart-cve" class="hbars"></div>
       </div>
 

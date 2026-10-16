@@ -234,21 +234,55 @@
 
   function renderCveChart(list) {
     legend('#legend-cve', [['c-critical', '미조치 추정(막대 색=등급)'], ['c-backport', '백포트 추정']]);
+    $('#btn-cve-pdf').href = 'api/cve.pdf' + (state.sourceFilter ? '?source=' + encodeURIComponent(state.sourceFilter) : '');
     const agg = new Map();
     list.forEach(r => r.cveList.forEach(c => {
-      const a = agg.get(c.id) || { id: c.id, open: 0, bp: 0, sev: SEVERITY[c.severity] ? c.severity : 'low', desc: c.description };
+      const a = agg.get(c.id) || { id: c.id, open: 0, bp: 0, sev: SEVERITY[c.severity] ? c.severity : 'low', desc: c.description,
+        affected: c.affected, condition: c.condition, servers: [] };
       if (c.backported) a.bp++; else a.open++;
+      a.servers.push({ r, backported: c.backported });
       agg.set(c.id, a);
     }));
+    // CveIssues.group() 과 같은 순서: 미조치 먼저, 그다음 호스트 이름
+    agg.forEach(a => a.servers.sort((x, y) => (x.backported - y.backported) || x.r.host.localeCompare(y.r.host)));
     const rows = Array.from(agg.values())
       .sort((a, b) => (b.open - a.open) || SEVERITY[a.sev].rank - SEVERITY[b.sev].rank || (b.bp - a.bp)).slice(0, 15);
     const el = $('#chart-cve');
     if (!rows.length) { el.replaceChildren(h('div', { class: 'none' }, '해당 CVE 없음')); return; }
     const max = Math.max(1, ...rows.map(a => a.open + a.bp));
+    const LIMIT = 12;
     el.replaceChildren(...rows.map(a => hbar(`${a.id} · ${a.sev}`, [
       { cls: SEVERITY[a.sev].color, value: a.open, label: '미조치 추정 서버' },
       { cls: 'c-backport', value: a.bp, label: '백포트 추정 서버' }
-    ], max, `${a.id} [${a.sev}] ${a.desc || ''}`, () => { $('#f-q').value = a.id; render(); })));
+    ], max, `${a.id} [${a.sev}] ${a.desc || ''}`, () => openCveItem(a), () => [
+      { head: true, text: '대상 서버' },
+      ...a.servers.slice(0, LIMIT).map(s => s.backported
+        ? { level: 'bp', label: '백포트', text: serverLabel(s.r) }
+        : { level: 'risk', label: '미조치', text: serverLabel(s.r) }),
+      ...(a.servers.length > LIMIT ? [`외 ${a.servers.length - LIMIT}대 — 눌러서 전체 보기`] : [])
+    ])));
+  }
+
+  /** CVE 1건의 대상 서버 목록 창 */
+  function openCveItem(a) {
+    $('#cfg-title').textContent = `${a.id} [${a.sev}]`;
+    $('#cfg-sub').textContent = `대상 서버 ${a.servers.length}대 (미조치 추정 ${a.open} · 백포트 추정 ${a.bp})`;
+    $('#cfg-body').replaceChildren(
+      h('p', null, a.desc || ''),
+      h('p', { class: 'muted' }, `영향 버전: ${a.affected || '-'} · 필요 모듈 조건: ${a.condition || '-'} · `,
+        h('a', { href: 'https://www.cve.org/CVERecord?id=' + encodeURIComponent(a.id), target: '_blank', rel: 'noopener noreferrer' }, 'cve.org 상세')),
+      h('table', { class: 'servers' },
+        h('thead', null, h('tr', null, ...['판정', '서버', '설치', '점검 일시', '수집'].map(t => h('th', null, t)))),
+        h('tbody', null, ...a.servers.map(s => h('tr', { class: 'row', tabindex: '0', onclick: () => { $('#cfg-dlg').close(); openDetail(s.r.id); } },
+          h('td', null, s.backported ? h('span', { class: 'badge b-backport' }, '백포트 추정') : badge('risk', '미조치 추정')),
+          h('td', null, h('div', null, s.r.host + (s.r.pid ? ` (PID ${s.r.pid})` : '')), h('div', { class: 'sub' }, `Apache ${s.r.version || '?'}`)),
+          h('td', null, s.r.installType || '-'),
+          h('td', { class: 'nowrap' }, s.r.checkedAt || '-'),
+          h('td', null, s.r.source ? `에이전트 ${s.r.source}` : '수동 업로드'))))),
+      h('p', { class: 'dialog-actions' },
+        h('button', { class: 'btn small', type: 'button', onclick: () => { $('#cfg-dlg').close(); $('#f-q').value = a.id; render(); } }, '이 CVE로 표 거르기'),
+        h('span', { class: 'muted' }, '서버를 누르면 그 서버의 상세 결과가 열립니다. "백포트 추정"은 패키지 changelog 에 CVE 번호가 있다는 뜻이므로 배포판 보안 공지로 최종 확인하세요.')));
+    $('#cfg-dlg').showModal();
   }
 
   function renderConfigChart(list) {
@@ -312,7 +346,7 @@
       const [title, ...rest] = lines();
       t.replaceChildren(h('b', null, title), ...rest.map(l => typeof l === 'string' ? h('div', null, l)
         : l.head ? h('div', { class: 'tip-head' }, l.text)
-          : h('div', { class: 'tip-item' }, h('span', { class: 'tip-lv tip-' + l.level }, STATUS[l.level] ? STATUS[l.level].label : l.level), l.text)));
+          : h('div', { class: 'tip-item' }, h('span', { class: 'tip-lv tip-' + l.level }, l.label || (STATUS[l.level] ? STATUS[l.level].label : l.level)), l.text)));
       t.hidden = false;
       move(e);
     };

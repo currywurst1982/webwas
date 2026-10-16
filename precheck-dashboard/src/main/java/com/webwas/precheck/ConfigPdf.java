@@ -67,7 +67,7 @@ public final class ConfigPdf {
                     Report r = t.report();
                     w.ensure(40);
                     w.gap(3);
-                    w.wrapped(w.bold, 9.5f, INK, "■ " + r.host + (r.pid != null ? " (PID " + r.pid + ")" : "")
+                    w.wrapped(w.bold, 9.5f, INK, "■ " + IntrusionPdf.hostLabel(r)
                             + "  ·  Apache " + nz(r.version) + "  ·  " + levelLabel(t.level()), 12);
                     w.wrapped(w.regular, 8.5f, MUTED, "점검 " + nz(r.checkedAt) + " · " + (r.source != null ? "에이전트 " + r.source : "수동 업로드")
                             + " · 설정 파일 " + r.confFiles.size() + "개 (" + r.confMethodShort() + ") · " + r.id, 12);

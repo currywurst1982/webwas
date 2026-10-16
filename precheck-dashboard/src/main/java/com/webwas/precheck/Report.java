@@ -61,6 +61,14 @@ public class Report {
     public String host;
     public String checkedAt;     // "2026-10-15 07:34:43"
     public String pid;
+    /** 서버 IP (스크립트가 기록, 이전 스크립트 리포트는 비어 있음) */
+    public final List<String> ips = new ArrayList<>();
+    /** IP 기록이 없을 때 대신 보여 줄 에이전트 접속 IP (화면 표시용, 파일에는 없음) */
+    public volatile String fallbackIp;
+    /** 실행 인자 -f 로 지정한 설정 파일 (없으면 컴파일 기본값 사용) */
+    public String confArg;
+    /** 메인 설정 파일 경로 (수정본 스크립트가 기록) */
+    public String mainConfig;
     public String binary;
     public String versionLine;
     public String version;
@@ -82,9 +90,17 @@ public class Report {
     public final List<String> section4Raw = new ArrayList<>();
     public String raw;
 
-    /** 같은 서버의 같은 Apache 인스턴스를 묶는 키 (호스트 + 실행파일 + PID). */
+    /**
+     * 같은 서버의 같은 Apache 인스턴스를 묶는 키: 호스트 + 실행파일 + (-f 로 지정한) 설정 파일.
+     * PID 는 재시작할 때마다 바뀌므로 쓰지 않음 (예전에는 PID 가 바뀌면 다른 서버로 셌음).
+     */
     public String instanceKey() {
-        return host + "|" + (binary == null ? "" : binary) + "|" + (pid == null ? "" : pid);
+        return host + "|" + (binary == null ? "" : binary) + "|" + (confArg == null ? "" : confArg);
+    }
+
+    /** 대표 IP: 리포트에 기록된 첫 IP, 없으면 에이전트 접속 IP(fallbackIp) */
+    public String displayIp() {
+        return !ips.isEmpty() ? ips.get(0) : fallbackIp;
     }
 
     public boolean compromiseSuspected() {
@@ -142,6 +158,11 @@ public class Report {
         m.put("source", source);
         m.put("checkedAt", checkedAt);
         m.put("pid", pid);
+        m.put("ip", displayIp());
+        m.put("ips", ips.isEmpty() && fallbackIp != null ? List.of(fallbackIp) : ips);
+        m.put("ipFromAgent", ips.isEmpty() && fallbackIp != null);
+        m.put("mainConfig", mainConfig);
+        m.put("confArg", confArg);
         m.put("binary", binary);
         m.put("version", version);
         m.put("versionLine", versionLine);

@@ -19,6 +19,7 @@
 #       httpd.conf 의 (주석 아닌) Include/IncludeOptional 만 따라가도록 변경.
 #       소스 설치의 #Include 로 막혀 있는 conf/extra/httpd-autoindex.conf, httpd-manual.conf,
 #       httpd-userdir.conf 등이 점검되던 오탐 해결. 점검한 파일 목록과 확인 방법을 리포트에 기록
+#    3) 서버 IP(루프백 제외)와 메인 설정 파일 경로를 리포트에 기록 (대시보드 표시용)
 #
 #  CVE 데이터 출처: https://httpd.apache.org/security/vulnerabilities_24.html
 #                   (2026-10-15 기준, 2.4.69 릴리스 반영)
@@ -171,6 +172,20 @@ fi
 
 VER_LINE="$("$HTTPD_BIN" -v 2>/dev/null | head -n1)"
 VER="$(printf '%s' "$VER_LINE" | grep -oE 'Apache/[0-9]+\.[0-9]+\.[0-9]+' | cut -d/ -f2)"
+# 서버 IP (루프백·링크로컬 제외, IPv4 우선). 대시보드에서 서버를 알아보기 쉽게 표시하는 용도
+server_ips() {
+  local ips=""
+  if hostname -I >/dev/null 2>&1; then
+    ips="$(hostname -I 2>/dev/null)"
+  elif command -v ip >/dev/null 2>&1; then
+    ips="$(ip -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | tr '\n' ' ')"
+  elif command -v ifconfig >/dev/null 2>&1; then
+    ips="$(ifconfig 2>/dev/null | awk '/inet6? /{a=$2; sub(/^addr:/,"",a); print a}' | tr '\n' ' ')"
+  fi
+  printf '%s\n' $ips | grep -vE '^(127\.|::1$|fe80:|169\.254\.)' | awk 'index($0,":")==0{v4=v4" "$0; next} {v6=v6" "$0} END{print v4 v6}' | sed 's/^ *//'
+}
+SERVER_IPS="$(server_ips)"
+info "서버 IP: ${SERVER_IPS:-확인 불가}"
 info "실행파일: $HTTPD_BIN"
 info "버전 정보: ${VER_LINE:-확인 불가}"
 
@@ -422,6 +437,7 @@ else
     warn "메인 설정 파일을 찾지 못해 설정 점검을 할 수 없습니다: ${CFG:-(알 수 없음)} (DUMP_INCLUDES 실패: ${REASON:-출력 없음})"
   fi
 fi
+info "메인 설정 파일: ${CFG:-확인 불가}"
 [ -s "$MODS" ] || warn "모듈 목록을 확인하지 못해 <IfModule> 조건을 모두 '켜짐'으로 간주했습니다. (설정 점검 결과가 실제보다 많을 수 있음)"
 info "점검 대상 설정 파일 수: $(wc -l < "$CONF_LIST")"
 head -n 100 "$CONF_LIST" | while IFS= read -r f; do detail "$f"; done

@@ -45,6 +45,13 @@
     return el;
   }
 
+  /** "호스트 (IP)" — IP 기록이 없는 이전 리포트는 에이전트 접속 IP 를 "접속 IP"로 표시 */
+  function hostLabel(r) {
+    const s = r.ip ? `${r.host} (${r.ip}${r.ipFromAgent ? ', 접속 IP' : ''})` : r.host;
+    // 한 서버에 -f 로 설정 파일을 달리해 띄운 Apache 가 여러 개면 설정 파일로 구분
+    return r.confArg ? `${s} [${r.confArg.length <= 40 ? r.confArg : '…' + r.confArg.slice(-39)}]` : s;
+  }
+
   function badge(kind, text) {
     const s = STATUS[kind];
     return h('span', { class: 'badge b-' + kind }, s ? h('span', { class: 'ic', 'aria-hidden': 'true' }, s.icon) : null, text || (s ? s.label : kind));
@@ -96,7 +103,7 @@
       if (dqOnly && !r.dataQuality.length) return false;
       if (src && r.source !== src) return false;
       if (!q) return true;
-      const hay = [r.host, r.version, r.versionLine, r.binary, r.id, r.cveList.map(c => c.id).join(' ')].join(' ').toLowerCase();
+      const hay = [r.host, ...(r.ips || []), r.version, r.versionLine, r.binary, r.id, r.cveList.map(c => c.id).join(' ')].join(' ').toLowerCase();
       return hay.includes(q);
     });
   }
@@ -180,10 +187,10 @@
       const tr = h('tr', { class: 'row', tabindex: '0', onclick: () => openDetail(r.id),
         onkeydown: e => { if (e.key === 'Enter') openDetail(r.id); } },
         h('td', null, badge(r.status)),
-        h('td', null, h('div', null, r.host), h('div', { class: 'sub mono' }, (r.binary || '') + (r.pid ? ` · PID ${r.pid}` : '')),
+        h('td', null, h('div', null, r.host), h('div', { class: 'sub mono' }, [r.ip ? (r.ipFromAgent ? `${r.ip}(접속 IP)` : r.ips.join(', ')) : null, r.binary, r.confArg ? '-f ' + r.confArg : null].filter(Boolean).join(' · ')),
           h('div', { class: 'sub' }, r.source ? `에이전트 ${r.source} 수집` : '수동 업로드')),
         h('td', null, h('div', null, r.version || '확인 불가'),
-          r.eol ? h('div', { class: 'sub' }, 'EOL') : r.belowLatest ? h('div', { class: 'sub', title: `최신 ${latestVer()} 미만` }, '최신 미만') : r.version ? h('div', { class: 'sub' }, '최신 버전') : null),
+          r.eol ? h('div', { class: 'sub' }, 'EOL') : r.belowLatest ? h('div', { class: 'sub nowrap', title: `최신 ${latestVer()} 미만` }, '최신 미만') : r.version ? h('div', { class: 'sub' }, '최신 버전') : null),
         h('td', null, r.installType || '-'),
         h('td', { class: 'nowrap' }, r.checkedAt || '-'),
         num(r.counts.risk), num(r.counts.warn), num(r.counts.ok),
@@ -224,7 +231,7 @@
     const max = Math.max(1, ...rows.map(r => r.counts.risk + r.counts.warn + r.counts.ok));
     const el = $('#chart-findings');
     if (!rows.length) { el.replaceChildren(h('div', { class: 'none' }, '데이터 없음')); return; }
-    el.replaceChildren(...rows.map(r => hbar(r.host + (r.pid ? ` (PID ${r.pid})` : ''), [
+    el.replaceChildren(...rows.map(r => hbar(hostLabel(r), [
       { cls: 'c-critical', value: r.counts.risk, label: '위험' },
       { cls: 'c-warning', value: r.counts.warn, label: '주의' },
       { cls: 'c-good', value: r.counts.ok, label: '양호' }
@@ -275,7 +282,7 @@
         h('thead', null, h('tr', null, ...['판정', '서버', '설치', '점검 일시', '수집'].map(t => h('th', null, t)))),
         h('tbody', null, ...a.servers.map(s => h('tr', { class: 'row', tabindex: '0', onclick: () => { $('#cfg-dlg').close(); openDetail(s.r.id); } },
           h('td', null, s.backported ? h('span', { class: 'badge b-backport' }, '백포트 추정') : badge('risk', '미조치 추정')),
-          h('td', null, h('div', null, s.r.host + (s.r.pid ? ` (PID ${s.r.pid})` : '')), h('div', { class: 'sub' }, `Apache ${s.r.version || '?'}`)),
+          h('td', null, h('div', null, hostLabel(s.r)), h('div', { class: 'sub' }, `Apache ${s.r.version || '?'}`)),
           h('td', null, s.r.installType || '-'),
           h('td', { class: 'nowrap' }, s.r.checkedAt || '-'),
           h('td', null, s.r.source ? `에이전트 ${s.r.source}` : '수동 업로드'))))),
@@ -319,7 +326,7 @@
   }
 
   function serverLabel(r) {
-    return `${r.host}${r.pid ? ` (PID ${r.pid})` : ''} · Apache ${r.version || '?'}`;
+    return `${hostLabel(r)} · Apache ${r.version || '?'}`;
   }
 
   /** 설정 취약 항목 1개의 대상 서버 목록 창 (터치 화면에서도 볼 수 있게) */
@@ -332,7 +339,7 @@
         h('thead', null, h('tr', null, ...['등급', '서버', '점검 일시', '수집'].map(t => h('th', null, t)))),
         h('tbody', null, ...a.servers.map(s => h('tr', { class: 'row', tabindex: '0', onclick: () => { $('#cfg-dlg').close(); openDetail(s.r.id); } },
           h('td', null, badge(s.level)),
-          h('td', null, h('div', null, s.r.host + (s.r.pid ? ` (PID ${s.r.pid})` : '')), h('div', { class: 'sub' }, `Apache ${s.r.version || '?'}`)),
+          h('td', null, h('div', null, hostLabel(s.r)), h('div', { class: 'sub' }, `Apache ${s.r.version || '?'}`)),
           h('td', { class: 'nowrap' }, s.r.checkedAt || '-'),
           h('td', null, s.r.source ? `에이전트 ${s.r.source}` : '수동 업로드'))))),
       h('p', { class: 'muted' }, '서버를 누르면 그 서버의 상세 결과(설정 파일 위치 포함)가 열립니다.'));
@@ -375,7 +382,7 @@
     current = r;
     const dlg = $('#detail');
     $('#d-title').replaceChildren(badge(r.status), r.host, h('span', { class: 'muted' }, `Apache ${r.version || '?'}`));
-    $('#d-sub').textContent = [r.checkedAt, r.binary, r.pid ? 'PID ' + r.pid : null, r.installType ? r.installType + ' 설치' : null,
+    $('#d-sub').textContent = [r.checkedAt, r.ips.length ? 'IP ' + r.ips.join(', ') + (r.ipFromAgent ? '(접속 IP)' : '') : null, r.binary, r.installType ? r.installType + ' 설치' : null,
       r.runUser ? '실행계정 ' + r.runUser : null, r.moduleCount !== null ? `모듈 ${r.moduleCount}개` : null,
       `설정 파일 ${r.confFileCount}개(${r.confMethodShort})`, r.id].filter(Boolean).join(' · ');
     $('#d-raw').href = 'api/reports/' + encodeURIComponent(r.id) + '/raw';
@@ -447,7 +454,7 @@
     const panel = $('[data-panel="history"]');
     const same = state.reports.filter(x => x.instanceKey === r.instanceKey);
     panel.replaceChildren(
-      h('p', { class: 'muted' }, '같은 호스트·실행파일·PID 의 점검 기록입니다. 패치 전/후 비교에 사용하세요. (재기동으로 PID 가 바뀌면 다른 인스턴스로 보입니다)'),
+      h('p', { class: 'muted' }, '같은 호스트·실행파일·설정 파일(-f)의 점검 기록입니다. 재시작해도 같은 서버로 묶입니다. 패치 전/후 비교에 사용하세요.'),
       h('table', { class: 'servers' },
         h('thead', null, h('tr', null, ...['점검 일시', '판정', '버전', '위험', '주의', '양호', '미조치 CVE', '파일'].map(t => h('th', null, t)))),
         h('tbody', null, ...same.map(x => h('tr', { class: 'row', onclick: () => openDetail(x.id) },
@@ -602,7 +609,7 @@
     const row = r => h('div', { class: 'suspect' },
       h('div', { class: 'suspect-main' },
         h('div', { class: 'suspect-title' }, badge(r.intrusion === 'compromise' ? 'compromise' : 'warn', r.intrusion === 'compromise' ? '침해 의심' : '확인 필요'),
-          h('b', null, r.host), r.pid ? h('span', { class: 'muted' }, `PID ${r.pid}`) : null,
+          h('b', null, r.host), r.ip ? h('span', { class: 'muted mono' }, r.ip + (r.ipFromAgent ? '(접속 IP)' : '')) : null,
           h('span', { class: 'muted' }, `Apache ${r.version || '?'}`), h('span', { class: 'muted' }, r.checkedAt || ''),
           h('span', { class: 'muted' }, r.source ? `에이전트 ${r.source}` : '수동 업로드')),
         h('ul', { class: 'suspect-findings' }, ...r.intrusionFindings.slice(0, 3).map(f => h('li', null, badge(f.level), ' ', f.text)),

@@ -67,12 +67,12 @@ public final class IntrusionPdf {
                 w.text(w.regular, 9.5f, INK2, "판정 기준: 원본 리포트 [4] 침해 흔적 점검에 [위험] 항목이 있으면 '침해 의심'.");
                 w.text(w.regular, 9.5f, INK2, "다음 장부터 서버별로 원본 리포트의 [4] 섹션만 원문 그대로 발췌했습니다.");
                 w.gap(12);
-                float[] cols = {0, 150, 235, 345, 410};
+                float[] cols = {0, 175, 250, 350, 410};
                 w.row(w.bold, 9.5f, INK, cols, "호스트", "Apache 버전", "점검 일시", "[4] 위험", "수집");
                 w.rule();
                 for (Report r : reports) {
                     long risks = r.findings.stream().filter(f -> "4".equals(f.section) && "risk".equals(f.level)).count();
-                    w.row(w.regular, 9.5f, INK, cols, r.host + (r.pid != null ? " (PID " + r.pid + ")" : ""),
+                    w.row(w.regular, 9.5f, INK, cols, hostLabel(r),
                             nz(r.version), nz(r.checkedAt), risks + "건", r.source != null ? "에이전트 " + r.source : "업로드");
                 }
             }
@@ -128,7 +128,8 @@ public final class IntrusionPdf {
             ver += ReportParser.compareVersions(r.version, latest) < 0 ? "  (최신 " + latest + " 미만)" : "  (최신 " + latest + " 이상)";
         }
         String[][] meta = {
-                {"호스트", r.host + (r.pid != null ? "  (PID " + r.pid + ")" : "")},
+                {"호스트", r.host},
+                {"서버 IP", ipText(r)},
                 {"Apache 버전", ver},
                 {"실행 파일", nz(r.binary)},
                 {"점검 일시", nz(r.checkedAt)},
@@ -159,6 +160,24 @@ public final class IntrusionPdf {
         w.wrapped(w.regular, 8, MUTED, "※ 이 문서는 apache_precheck.sh 원본 리포트에서 [4] 침해 흔적 섹션만 발췌한 것입니다. "
                 + "원본 전체는 대시보드에서 받을 수 있으며, 위 SHA-256 값으로 원본 파일과 대조할 수 있습니다. "
                 + "결과는 '알려진 패턴' 기준으로 침해 여부를 확정하지 않습니다. 침해 의심이면 설정 보완·패치보다 침해사고 대응(격리·증거 보존·분석)이 우선입니다.", 0);
+    }
+
+    /** "호스트 (IP)" 표시. IP 기록이 없으면 에이전트 접속 IP 를 "접속 IP"로 표시 */
+    static String hostLabel(Report r) {
+        String ip = r.displayIp();
+        String s = ip == null ? r.host : r.host + " (" + ip + (r.ips.isEmpty() ? ", 접속 IP" : "") + ")";
+        // 한 서버에 -f 로 설정 파일을 달리해 띄운 Apache 가 여러 개면 설정 파일로 구분
+        return r.confArg == null ? s : s + " [" + shortPath(r.confArg) + "]";
+    }
+
+    static String shortPath(String p) {
+        return p.length() <= 40 ? p : "…" + p.substring(p.length() - 39);
+    }
+
+    static String ipText(Report r) {
+        if (!r.ips.isEmpty()) return String.join(", ", r.ips);
+        if (r.fallbackIp != null) return r.fallbackIp + "  (리포트에 IP 기록 없음 — 에이전트 접속 IP)";
+        return "-  (이전 스크립트 리포트라 IP 기록 없음)";
     }
 
     static String nz(String s) {

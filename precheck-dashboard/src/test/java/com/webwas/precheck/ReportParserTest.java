@@ -154,6 +154,29 @@ class ReportParserTest {
         assertTrue(idx.details.get(0).contains("/conf.d/site.conf:"));
     }
 
+    /** 서버 구분에 PID 를 쓰지 않음: 재시작으로 PID 가 바뀌어도 같은 인스턴스, -f 설정 파일이 다르면 다른 인스턴스 */
+    @Test
+    void instanceKeyIgnoresPidAndParsesIp() {
+        String head = "Apache 패치 전 보안 사전 점검  |  호스트: web07  |  일시: 2026-10-16 09:00:00\n"
+                + "==================================================================\n"
+                + " [1] 버전 및 설치 방식 확인\n"
+                + "==================================================================\n";
+        Report a = ReportParser.parse("apache_precheck_web07_20261016_090000_pid100.txt", head
+                + "[정보] 실행 중인 Apache 프로세스 자동 탐지: 마스터 PID 100\n[정보] 서버 IP: 10.1.2.3 10.9.9.9\n[정보] 실행파일: /usr/sbin/httpd\n");
+        Report b = ReportParser.parse("apache_precheck_web07_20261017_090000_pid999.txt", head
+                + "[정보] 실행 중인 Apache 프로세스 자동 탐지: 마스터 PID 999\n[정보] 실행파일: /usr/sbin/httpd\n");
+        Report c = ReportParser.parse("apache_precheck_web07_20261016_090000_pid200.txt", head
+                + "[정보] 인스턴스 실행 인자: -f /etc/httpd/conf/site2.conf\n[정보] 실행파일: /usr/sbin/httpd\n");
+        assertEquals(a.instanceKey(), b.instanceKey());
+        assertTrue(!a.instanceKey().equals(c.instanceKey()));
+        assertEquals("/etc/httpd/conf/site2.conf", c.confArg);
+        assertEquals(java.util.List.of("10.1.2.3", "10.9.9.9"), a.ips);
+        assertEquals("10.1.2.3", a.displayIp());
+        assertEquals(null, b.displayIp());
+        b.fallbackIp = "172.16.0.5";
+        assertEquals("172.16.0.5", b.displayIp());
+    }
+
     @Test
     void decodesEucKr() {
         String s = "Apache 패치 전 보안 사전 점검  |  호스트: h  |  일시: 2026-01-01 00:00:00";

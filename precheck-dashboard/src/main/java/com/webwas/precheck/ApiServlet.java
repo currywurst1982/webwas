@@ -61,9 +61,9 @@ public class ApiServlet extends HttpServlet {
                     "csrf", Web.csrf(req.getSession()), "reportDir", Web.isAdmin(req) ? store.dir().toString() : ""));
         } else if (p.length == 1 && p[0].equals("reports")) {
             String latest = Web.latest(getServletContext()).current();
-            Web.json(resp, 200, store.all().stream().map(r -> r.toSummary(latest)).toList());
+            Web.json(resp, 200, allReports(store).stream().map(r -> r.toSummary(latest)).toList());
         } else if ((p.length == 2 || p.length == 3) && p[0].equals("reports")) {
-            Report r = store.get(p[1]);
+            Report r = p[1] == null ? null : allReports(store).stream().filter(x -> x.id.equals(p[1])).findFirst().orElse(null);
             if (r == null) {
                 Web.json(resp, 404, Map.of("error", "리포트를 찾을 수 없습니다."));
             } else if (p.length == 3 && p[2].equals("raw")) {
@@ -81,7 +81,7 @@ public class ApiServlet extends HttpServlet {
                 Web.json(resp, 404, Map.of("error", "없는 주소입니다."));
             }
         } else if (p.length == 1 && p[0].equals("suspects.pdf")) {
-            List<Report> suspects = suspects(store.all());
+            List<Report> suspects = suspects(allReports(store));
             if (suspects.isEmpty()) {
                 Web.json(resp, 404, Map.of("error", "침해 의심 서버가 없습니다."));
                 return;
@@ -96,7 +96,7 @@ public class ApiServlet extends HttpServlet {
                 return;
             }
             boolean bySource = source != null && !source.isBlank();
-            List<Report> latestReports = ConfigIssues.latestPerInstance(store.all()).stream()
+            List<Report> latestReports = ConfigIssues.latestPerInstance(allReports(store)).stream()
                     .filter(r -> !bySource || source.equals(r.source)).toList();
             String scope = bySource ? "에이전트 " + source + " 수집분만" : "전체 서버";
             String suffix = (bySource ? ascii(source) + "_" : "") + java.time.LocalDate.now() + ".pdf";
@@ -293,6 +293,21 @@ public class ApiServlet extends HttpServlet {
             return;
         }
         Web.json(resp, 200, results);
+    }
+
+    /**
+     * 전체 리포트 (최신순). IP 기록이 없는 이전 스크립트 리포트는 보낸 에이전트의 접속 IP 를 대신 표시하도록 채움.
+     */
+    private List<Report> allReports(ReportStore store) {
+        Map<String, String> agentIps = new java.util.HashMap<>();
+        for (AgentStore.Agent a : Web.agents(getServletContext()).list()) {
+            if (a.ip != null) agentIps.put(a.name, a.ip);
+        }
+        List<Report> all = store.all();
+        for (Report r : all) {
+            r.fallbackIp = r.source == null ? null : agentIps.get(r.source);
+        }
+        return all;
     }
 
     /** 인스턴스별 최신 리포트 중 [4] 침해 흔적에 [위험]이 있는 것 */

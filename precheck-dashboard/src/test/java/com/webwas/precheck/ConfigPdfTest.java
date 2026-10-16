@@ -56,7 +56,7 @@ class ConfigPdfTest {
         assertTrue(t.contains("점검 서버 2대 중 2대"), t);
         assertTrue(t.contains("ServerTokens 가 Prod 가 아님"));
         assertTrue(t.contains("ProxyRequests On"));
-        assertTrue(t.contains("web01 (PID 321)"));
+        assertTrue(t.contains("web01 (192.0.2.11)"), t);
         assertTrue(t.contains("에이전트 vm-test"));
         // 서버별 설정 위치(파일:줄)
         assertTrue(t.contains("/etc/apache2/conf-enabled/security.conf:12:ServerTokens OS"), t);

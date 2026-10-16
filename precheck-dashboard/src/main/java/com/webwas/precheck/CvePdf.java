@@ -74,7 +74,7 @@ public final class CvePdf {
                     Report r = t.report();
                     w.ensure(30);
                     w.gap(3);
-                    w.wrapped(w.bold, 9.5f, t.backported() ? INK2 : INK, "■ " + r.host + (r.pid != null ? " (PID " + r.pid + ")" : "")
+                    w.wrapped(w.bold, 9.5f, t.backported() ? INK2 : INK, "■ " + IntrusionPdf.hostLabel(r)
                             + "  ·  Apache " + nz(r.version) + "  ·  " + (t.backported() ? "백포트 추정 (changelog 에 수정 기록)" : "미조치 추정"), 12);
                     w.wrapped(w.regular, 8.5f, MUTED, "설치 " + nz(r.installType) + " · 점검 " + nz(r.checkedAt) + " · "
                             + (r.source != null ? "에이전트 " + r.source : "수동 업로드") + " · " + r.id, 12);

@@ -198,8 +198,17 @@ public final class ReportParser {
                 r.dataQuality.add("로드된 모듈 수가 0입니다. httpd -M 실행이 실패한 것으로 보이며, "
                         + "이 경우 모듈 조건이 있는 CVE가 모두 '미해당'으로 잘못 판정됩니다. 수동 확인이 필요합니다.");
             }
+        } else if (body.startsWith("서버 IP: ")) {
+            for (String ip : body.substring("서버 IP: ".length()).trim().split("\\s+")) {
+                if (ip.matches("[0-9A-Fa-f:.]{2,45}")) r.ips.add(ip);
+            }
+        } else if (body.startsWith("메인 설정 파일: ")) {
+            String c = body.substring("메인 설정 파일: ".length()).trim();
+            if (c.startsWith("/")) r.mainConfig = c;
         } else if (body.startsWith("인스턴스 실행 인자: ")) {
             String a = body.substring("인스턴스 실행 인자: ".length()).trim();
+            Matcher fa = Pattern.compile("(?:^|\\s)-f\\s+(\\S+)").matcher(a);
+            if (fa.find()) r.confArg = fa.group(1);
             if (a.matches("\\d+")) {
                 if (r.pid == null) r.pid = a;
                 r.dataQuality.add("'인스턴스 실행 인자'에 PID(" + a + ")가 들어가 있습니다. 원본 스크립트의 인스턴스 탐지 버그로, "

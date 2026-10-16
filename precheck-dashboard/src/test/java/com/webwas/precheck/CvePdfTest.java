@@ -60,7 +60,7 @@ class CvePdfTest {
         assertTrue(t.contains("CVE-2021-41773"));
         assertTrue(t.contains("경로 탐색/파일 노출"));
         assertTrue(t.contains("영향 버전: 2.4.49~2.4.49"));
-        assertTrue(t.contains("web01 (PID 321)"));
+        assertTrue(t.contains("web01 (192.0.2.11)"), t);
         assertTrue(t.contains("백포트 추정 (changelog 에 수정 기록)"));
         assertTrue(t.contains("에이전트 vm-test"));
         assertTrue(t.contains("https://www.cve.org/CVERecord?id=CVE-2024-38476"));

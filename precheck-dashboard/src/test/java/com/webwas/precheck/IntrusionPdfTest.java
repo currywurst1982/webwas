@@ -42,6 +42,8 @@ class IntrusionPdfTest {
         assertTrue(t.contains("경로 탐색 시도 중 200(성공) 응답 3건"));
         assertTrue(t.contains("203.0.113.7"));
         assertTrue(t.contains("최신 2.4.69 미만"));
+        assertTrue(t.contains("192.0.2.11, 2001:db8::11"), t);
+        assertFalse(t.contains("PID"), t);
         assertTrue(t.contains(IntrusionPdf.sha256(r.raw)));
         // [3] 위험 설정, [2] CVE 내용은 들어가면 안 됨
         assertFalse(t.contains("ProxyRequests"), t);

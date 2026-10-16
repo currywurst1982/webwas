@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.webwas</groupId>
+  <artifactId>wildfly-precheck-dashboard</artifactId>
+  <version>1.0.0</version>
+  <packaging>war</packaging>
+  <name>WildFly Precheck Dashboard</name>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- WildFly 공식 다운로드 페이지(https://www.wildfly.org/downloads/)의 최신 Final 버전 -->
+    <version.wildfly>41.0.1.Final</version.wildfly>
+    <version.wildfly.plugin>6.0.3.Final</version.wildfly.plugin>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>jakarta.servlet</groupId>
+      <artifactId>jakarta.servlet-api</artifactId>
+      <version>6.0.0</version>
+      <scope>provided</scope>
+    </dependency>
+    <!-- 침해 흔적 PDF 생성 -->
+    <dependency>
+      <groupId>org.apache.pdfbox</groupId>
+      <artifactId>pdfbox</artifactId>
+      <version>3.0.5</version>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.11.4</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>wfprecheck</finalName>
+    <resources>
+      <!-- PDF 한글 글꼴(나눔고딕, SIL OFL 1.1) -->
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <!-- 에이전트 설치 파일(scripts/*.sh)을 WAR 에 넣어 /agent-api/files/ 로 내려받을 수 있게 함 -->
+      <resource>
+        <directory>scripts</directory>
+        <targetPath>agent</targetPath>
+        <includes>
+          <include>install.sh</include>
+          <include>wfprecheck-agent.sh</include>
+          <include>wildfly_precheck.sh</include>
+        </includes>
+      </resource>
+    </resources>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-war-plugin</artifactId>
+        <version>3.4.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.5.2</version>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!--
+      mvn -Pprovision package
+        → target/server 에 이 앱이 배포된 최소 구성 WildFly 를 만들어 줌 (WildFly 가 없을 때)
+    -->
+    <profile>
+      <id>provision</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.wildfly.plugins</groupId>
+            <artifactId>wildfly-maven-plugin</artifactId>
+            <version>${version.wildfly.plugin}</version>
+            <configuration>
+              <feature-packs>
+                <feature-pack>
+                  <location>org.wildfly:wildfly-galleon-pack:${version.wildfly}</location>
+                </feature-pack>
+              </feature-packs>
+              <layers>
+                <layer>web-server</layer>
+              </layers>
+              <name>ROOT.war</name>
+            </configuration>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>package</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

@@ -4,6 +4,7 @@
 |---|---|
 | `login_session_cookie.groovy` | 로그인 **화면(폼)**에서 로그인하고, 서버가 준 **쿠키(예: JSESSIONID)**로 로그인 상태가 유지되는 웹사이트 |
 | `login_token_api.groovy` | 로그인 **API**가 `{"accessToken":"..."}` 같은 **토큰**을 돌려주고, 이후 요청에 `Authorization: Bearer 토큰`을 붙이는 서비스 |
+| `login_csrf.groovy` | 로그인할 때 아이디·비밀번호 말고 **CSRF 토큰**(`_csrf` 등)도 함께 보내야 하는 웹사이트 (Spring Security 등) |
 | `resources/users.csv` | 테스트용 계정 목록 (한 줄에 `아이디,비밀번호`) |
 
 nGrinder **3.5.x** 기준입니다 (`org.ngrinder.http.HTTPRequest` 사용). 3.4 이하 버전이면 문법이 달라 그대로는 동작하지 않습니다.
@@ -49,8 +50,7 @@ nGrinder **3.5.x** 기준입니다 (`org.ngrinder.http.HTTPRequest` 사용). 3.4
 7. 로그인 후 테스트하고 싶은 페이지/API 주소도 같은 방법으로 메모합니다 → `TARGET_PATH` 또는 `API1_PATH`, `API2_PATH`.
 8. (예제 1) 그 페이지에 **로그인했을 때만 보이는 글자**(예: "홍길동님 환영합니다"의 "님 환영합니다")를 정해 `SUCCESS_TEXT` 에 넣습니다.
 
-> 로그인 요청에 아이디·비밀번호 말고 `_csrf`, `token` 같은 **알 수 없는 값이 함께 가면** 이 예제만으로는 안 됩니다.
-> 로그인 화면에서 그 값을 먼저 읽어 와야 합니다. 이 경우 메모한 내용을 알려 주시면 스크립트를 맞춰 드리겠습니다.
+> 로그인 요청에 아이디·비밀번호 말고 `_csrf`, `csrf_token` 같은 **알 수 없는 긴 값이 함께 가면** CSRF 토큰입니다 → 아래 "CSRF 토큰이 필요한 경우" 참고.
 
 ### 2단계. nGrinder에 스크립트 올리기
 1. nGrinder에 로그인 → 위 메뉴 **Script(스크립트)**.
@@ -74,6 +74,45 @@ nGrinder **3.5.x** 기준입니다 (`org.ngrinder.http.HTTPRequest` 사용). 3.4
 
 ---
 
+## CSRF 토큰이 필요한 경우 (`login_csrf.groovy`)
+
+### CSRF 토큰이란
+로그인 화면을 열 때 서버가 **일회성 비밀값(토큰)**을 같이 주고, 로그인할 때 그 값을 돌려받아 "진짜 우리 화면에서 온 요청인지" 확인하는 장치입니다.
+그래서 스크립트도 브라우저처럼 **① 로그인 화면을 먼저 열고 → ② 토큰을 읽고 → ③ 토큰과 함께 로그인**해야 합니다.
+
+### 토큰이 어디에 있는지 확인하기 (개발자 도구)
+1. 1단계처럼 Network 탭을 열고 로그인합니다.
+2. 로그인 요청(POST)의 **Payload** 탭에서 아이디·비밀번호 외의 항목 이름을 봅니다 (예: `_csrf`). → `CSRF_NAME`
+3. Payload에 없다면 **Headers → Request Headers** 에서 `X-CSRF-TOKEN`, `X-XSRF-TOKEN` 같은 헤더를 찾습니다.
+4. 로그인 화면에서 `Ctrl + U`(페이지 소스 보기) → `Ctrl + F` 로 2번에서 본 이름을 검색합니다.
+
+| 찾은 위치 | 예시 | 스크립트 동작 |
+|---|---|---|
+| ① 폼 안의 숨은 입력칸 | `<input type="hidden" name="_csrf" value="...">` | 값을 읽어 로그인 폼에 같은 이름으로 넣음 |
+| ② 화면 머리의 meta 태그 | `<meta name="_csrf" content="...">` `<meta name="_csrf_header" content="X-CSRF-TOKEN">` | 값을 읽어 지정된 헤더로 보냄 (+폼에도 넣음) |
+| ③ 쿠키 | 응답 헤더 `Set-Cookie: XSRF-TOKEN=...` | 쿠키 값을 읽어 `X-XSRF-TOKEN` 헤더로 보냄 |
+
+스크립트는 ① → ② → ③ 순서로 **자동으로** 찾습니다. 이름이 기본값과 다르면 ★ 설정의 `CSRF_NAME`, `CSRF_COOKIE`, `CSRF_COOKIE_HEADER` 만 바꾸면 됩니다.
+
+기본값의 근거 (Spring Security 소스, 2026-10 기준 main 브랜치):
+- `HttpSessionCsrfTokenRepository`: `DEFAULT_CSRF_PARAMETER_NAME = "_csrf"`, `DEFAULT_CSRF_HEADER_NAME = "X-CSRF-TOKEN"`
+- `CookieCsrfTokenRepository`: `DEFAULT_CSRF_COOKIE_NAME = "XSRF-TOKEN"`, `DEFAULT_CSRF_HEADER_NAME = "X-XSRF-TOKEN"`
+- 공식 문서(csrf.adoc): "The `CookieCsrfTokenRepository` writes to a cookie named `XSRF-TOKEN` and reads it from an HTTP request header named `X-XSRF-TOKEN` or the request parameter `_csrf` by default."
+
+### 로그인 후에 저장/주문 같은 POST도 측정하려면
+★ 설정의 `ACTION_PAGE_PATH`(그 기능이 있는 화면), `ACTION_PATH`(POST 주소), `ACTION_PARAMS`(보낼 값)를 채우세요.
+**로그인하면 토큰이 바뀌는 경우가 많아서**, 스크립트는 POST 직전마다 화면을 다시 열어 새 토큰을 읽습니다.
+근거: Spring 문서 "the `CsrfAuthenticationStrategy` and `CsrfLogoutHandler` will clear the previous token." /
+Spring Security 6부터는 "The `CsrfToken` now includes randomness on every request by default" (BREACH 공격 방지).
+그래서 **토큰 값을 한 번 복사해 고정값으로 넣는 방식은 동작하지 않습니다.**
+
+### CSRF 관련 오류
+| 로그 메시지 | 원인 / 해결 |
+|---|---|
+| `로그인 화면에서 CSRF 토큰을 찾지 못했습니다` (아래에 화면 앞부분이 찍힘) | `CSRF_NAME` 이 틀렸거나, 토큰이 화면이 아니라 JavaScript로 나중에 만들어지는 경우. 찍힌 화면 내용과 개발자 도구 내용을 알려주시면 맞춰 드립니다 |
+| `로그인 요청이 거부됐습니다 ... 403` | 토큰을 보내는 이름/헤더가 서버 기대와 다름. 개발자 도구에서 로그인 요청이 토큰을 Payload로 보내는지, 어떤 헤더로 보내는지 다시 확인 |
+| `POST 실패 ... 403` | `ACTION_PAGE_PATH` 화면에 토큰이 없음 → 토큰이 있는 화면 주소로 바꾸기 |
+
 ## 자주 나는 오류
 
 | 로그 메시지 | 원인 / 해결 |
@@ -96,6 +135,8 @@ nGrinder **3.5.x** 기준입니다 (`org.ngrinder.http.HTTPRequest` 사용). 3.4
   아주 오래된 서버나 일부 보안장비가 거부하면 로그인이 실패할 수 있습니다.
 
 ## 어떻게 검증했나 (한계 포함)
+- CSRF 예제: Spring Security처럼 동작하는 가짜 서버(토큰 없으면 403, 로그인하면 세션·토큰 교체)를 ①숨은 입력칸 ②meta+헤더 ③쿠키+헤더 세 방식으로 만들어
+  각각 로그인 1번 → 로그인 후 페이지 3번 + 로그인 후 POST 3번이 모두 성공함을 확인. `CSRF_NAME` 을 틀리게 넣으면 위 오류 메시지가 나오는 것도 확인.
 - Maven 중앙 저장소의 **nGrinder 3.5.9-p1 실행 라이브러리**로 두 스크립트를 컴파일·실행하고, 가짜 로그인 서버(쿠키 방식 + 토큰 방식)에 붙여 확인했습니다.
   - 쿠키 방식: 로그인 1번 → 마이페이지 3번 반복, 3번 모두 로그인 상태로 응답
   - 토큰 방식: 로그인 1번 → API 2개를 3번씩 반복, 모두 200 응답

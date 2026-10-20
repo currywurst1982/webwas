@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>성능테스트 개론</title>
+<style>
+:root{--bg:#f5f6f8;--panel:#fff;--text:#1d2330;--muted:#6b7385;--line:#e3e6ec;--accent:#2f6fdb;--chip:#eef1f6;--warn:#c98a00;--quote:#f3f5f8}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#12151b;--panel:#1b1f27;--text:#e6e9ef;--muted:#9aa3b5;--line:#2c323d;--accent:#6a9cff;--chip:#252a35;--warn:#f0b429;--quote:#161a21}}
+:root[data-theme="dark"]{--bg:#12151b;--panel:#1b1f27;--text:#e6e9ef;--muted:#9aa3b5;--line:#2c323d;--accent:#6a9cff;--chip:#252a35;--warn:#f0b429;--quote:#161a21}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+header{padding:16px 20px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:center}
+h1{font-size:20px;margin:0} h2{font-size:17px;margin:28px 0 10px} h3{font-size:15px;margin:18px 0 6px}
+main{max-width:920px;margin:0 auto;padding:16px}
+a{color:var(--accent)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 20px;margin-bottom:16px}
+table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0}
+th,td{border-bottom:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:500;font-size:13px}
+.tw{overflow-x:auto}
+blockquote{margin:8px 0;padding:8px 12px;border-left:3px solid var(--accent);background:var(--quote);border-radius:0 6px 6px 0;font-size:14px}
+blockquote .src{display:block;color:var(--muted);font-size:12px;margin-top:4px}
+.note{background:color-mix(in srgb,var(--warn) 15%,transparent);border-radius:8px;padding:10px 12px;font-size:14px}
+code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:13px}
+.formula{font-size:17px;font-weight:600;background:var(--chip);border-radius:8px;padding:10px 14px;margin:8px 0;display:inline-block}
+.muted{color:var(--muted)} .small{font-size:13px}
+ol li,ul li{margin:4px 0}
+@media (max-width:600px){main{padding:12px 16px} header{padding:12px 16px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>성능테스트 개론</h1>
+  <div><a href="./">← 시나리오 대시보드로</a></div>
+</header>
+<main>
+
+<div class="note">요청하신 참고 글(ssseung.tistory.com/557)은 작성 환경에서 열리지 않았고 검색 결과에도 나오지 않아 <b>내용을 확인하지 못했습니다.</b>
+아래는 원문을 직접 확인한 공개 자료(Grafana k6 공식 문서, nGrinder 소스·위키)와 앞서 인용했던 자료를 근거로 정리했습니다. 출처를 못 찾은 주장은 넣지 않았습니다.</div>
+
+<div class="panel">
+<h2 style="margin-top:0">1. 성능테스트로 답하려는 질문</h2>
+<p>기능테스트가 "<b>제대로 동작하나?</b>"를 묻는다면, 성능테스트는 "<b>많은 사람이 동시에 써도 빠르고 안정적인가?</b>"를 묻습니다. 실무에서는 보통 다음 질문에 답하려고 합니다.</p>
+<blockquote>한 서버당 TPS는 얼마나 나오며 목표 TPS를 달성하기 위해서 필요한 서버 구성은 무엇인가?
+<span class="src">— 네이버파이낸셜 기술블로그 「nGrinder를 활용한 부하테스트」 (검색 결과 발췌)</span></blockquote>
+<blockquote>Many things can go wrong when a system is under load. The system must run numerous operations simultaneously and respond to different requests from a variable number of users.
+<span class="src">— Grafana k6 문서 「Load test types」 (부하가 걸리면 많은 것이 잘못될 수 있다. 시스템은 수많은 작업을 동시에 처리하고, 수가 변하는 사용자들의 다양한 요청에 응답해야 한다)</span></blockquote>
+</div>
+
+<div class="panel">
+<h2 style="margin-top:0">2. 테스트 종류와 이 대시보드의 대응</h2>
+<p class="small muted">테스트 이름은 자료마다 다릅니다. k6 문서도 "no consensus even exists about the names of these test types"(이름에 대한 합의조차 없다)라고 씁니다. 아래 표의 <b>단위·통합</b>은 소프트웨어 공학의 단위/통합테스트(코드 수준)를 이 대시보드의 맥락(요청 단위 점검 / 전체 연결 점검)에 맞게 옮긴 것입니다.</p>
+<div class="tw"><table>
+<thead><tr><th>종류</th><th>무엇을 확인하나 (k6 문서 원문)</th><th>부하 · 시간</th><th>이 대시보드에서</th></tr></thead>
+<tbody>
+<tr><td><b>단위테스트</b></td><td>요청 하나하나가 맞게 동작하는지 (주소, 입력칸 이름, 응답코드, 성공 글자, 토큰)</td><td>1건씩</td><td>④-1 단위테스트 (WAS가 직접, 몇 초)</td></tr>
+<tr><td><b>통합테스트</b> ≈ 스모크</td><td>"validate that your script works and that the system performs adequately under minimal load" (스크립트가 동작하고 최소 부하에서 시스템이 적절히 동작하는지 확인)</td><td>낮음 · 짧게</td><td>④-2 통합테스트 (에이전트에서 1명 × 몇 회)</td></tr>
+<tr><td><b>부하테스트</b></td><td>"assess how your system performs under expected normal conditions" (예상되는 평소 조건에서 어떻게 동작하는지 평가)</td><td>평소 수준 · 5~60분</td><td>④-3 성능테스트 + 합격 기준</td></tr>
+<tr><td><b>내구성(Soak)테스트</b></td><td>"assess the reliability and performance of your system over extended periods" (장시간 동안의 안정성과 성능 평가). 원문은 장시간 사용 뒤에만 나타나는 문제로 "response time degradation, memory or other resource leaks"(응답시간 저하, 메모리 등 자원 누수)를 듭니다</td><td>평소 수준 · 수 시간</td><td>④-3 성능테스트의 "내구성테스트(60분)" 빠른 설정 + 모니터 화면의 메모리 그래프</td></tr>
+<tr><td><b>스트레스테스트</b></td><td>"assess how a system performs at its limits when load exceeds the expected average" (부하가 평균을 넘을 때 한계에서 어떻게 동작하는지)</td><td>평균 이상 · 5~60분</td><td>④-3 성능테스트에서 Vuser를 평소보다 크게</td></tr>
+<tr><td><b>임계테스트</b> (Breakpoint)</td><td>"gradually increase load to identify the capacity limits of the system" (부하를 점점 늘려 시스템의 용량 한계를 찾음). 원문: "it's also known as capacity, point load, and limit testing"</td><td>깨질 때까지 증가</td><td>④-4 임계테스트 (자동 단계 증가 + 자동 멈춤)</td></tr>
+<tr><td>스파이크테스트</td><td>"validate the behavior and survival of your system in cases of sudden, short, and massive increases in activity" (갑작스럽고 짧은 폭증에서의 동작)</td><td>매우 높음 · 몇 분</td><td class="muted">지원 안 함 (nGrinder에서 순간 폭증 패턴을 만들려면 스크립트 수정이 필요)</td></tr>
+</tbody></table></div>
+<p class="small muted">표의 영어 원문 출처: Grafana k6 문서 「Load test types」 (github.com/grafana/k6-docs, testing-guides/test-types)</p>
+</div>
+
+<div class="panel">
+<h2 style="margin-top:0">3. 진행 순서</h2>
+<blockquote>Start with smoke tests, then progress to higher loads and longer durations.
+<span class="src">— k6 「Load test types」 (스모크테스트로 시작해 더 큰 부하, 더 긴 시간으로 나아가라)</span></blockquote>
+<blockquote>Run breakpoints only when the system is known to perform under all other test types.
+<span class="src">— k6 「Breakpoint testing」 (임계테스트는 다른 모든 테스트에서 정상 동작이 확인된 뒤에만 하라)</span></blockquote>
+<ol>
+<li><b>단위테스트</b>: 입력값이 맞는지 먼저 확인 (주소·입력칸 이름·계정 오류를 몇 초 만에 발견)</li>
+<li><b>통합테스트</b>: 실제 에이전트에서 대상 서버까지 연결·스크립트가 동작하는지 확인 (연결 시간 초과 같은 문제가 여기서 드러남)</li>
+<li><b>성능테스트</b>: 예상 부하로 합격 기준을 통과하는지 확인 → 필요하면 같은 부하로 장시간(내구성)</li>
+<li><b>임계테스트</b>: 어디까지 버티는지(용량 한계) 확인</li>
+</ol>
+<p>서버를 새로 띄운 직후에는 결과가 불안정할 수 있습니다.</p>
+<blockquote>초기 서버의 불안정한 상태가 테스트 결과에 영향을 미치지 않도록 부하테스트 시작 전 1~5분 동안 서버 웜업을 진행합니다.
+<span class="src">— 네이버파이낸셜 기술블로그 (검색 결과 발췌)</span></blockquote>
+<blockquote>Stick to simple load patterns. … Avoid "rollercoaster" series where load increases and decreases multiple times.
+<span class="src">— k6 「Load test types」 (단순한 부하 패턴을 쓰고, 부하가 여러 번 오르내리는 '롤러코스터'는 피하라)</span></blockquote>
+</div>
+
+<div class="panel">
+<h2 style="margin-top:0">4. 핵심 지표 (nGrinder 기준)</h2>
+<div class="tw"><table>
+<thead><tr><th>지표</th><th>뜻</th><th>근거</th></tr></thead>
+<tbody>
+<tr><td><b>TPS</b></td><td>초당 처리한 테스트(요청) 건수. 높을수록 좋음</td><td>"TPS: 평균 TPS (초당 처리량이므로 높을 수록 좋다.)" — binghe819 nGrinder 완벽가이드</td></tr>
+<tr><td><b>Peak TPS</b></td><td>테스트 중 가장 높았던 TPS</td><td>"Peak TPS: 최고 TPS" — 같은 문서</td></tr>
+<tr><td><b>평균 응답시간 (MTT)</b></td><td>요청 1건의 평균 처리 시간</td><td>"Mean Test Time: 평균 테스트시간 (평균 Response Time = Latency)" — 같은 문서</td></tr>
+<tr><td><b>에러율</b></td><td>에러 ÷ (성공 + 에러) × 100</td><td>이 대시보드의 계산식</td></tr>
+<tr><td><b>Vuser</b> (가상 사용자)</td><td>동시에 요청을 보내는 가상 사용자 수. nGrinder에서는 에이전트당 프로세스 × 스레드</td><td>"The number of virtual users in each agent, which is multiplied by process count and thread count." — nGrinder 위키 Test Configuration</td></tr>
+</tbody></table></div>
+<p class="small muted">nGrinder 기본 통계에는 p95 같은 백분위 응답시간이 없습니다. 평균만 보면 일부 느린 요청이 가려질 수 있으니, 필요하면 대상 서버의 APM(예: Pinpoint)을 함께 보세요.</p>
+</div>
+
+<div class="panel">
+<h2 style="margin-top:0">5. 공식: TPS · 응답시간 · 동시 사용자</h2>
+<p>성능테스트 입문 자료들에서 다음 관계식을 씁니다 (검색 결과로 확인, 자료마다 용어 정의가 조금씩 다름).</p>
+<div class="formula">TPS = 액티브 사용자 수 ÷ 평균 응답시간(초)</div>
+<div class="formula">TPS = 동시 사용자 수 ÷ (평균 응답시간 + Think Time)</div>
+<p><b>Think Time</b>은 사용자가 화면을 읽거나 입력하느라 다음 요청 전에 쉬는 시간입니다. 이 대시보드의 스크립트는 쉬는 시간 없이 계속 요청하므로(Think Time = 0) 첫 번째 식이 그대로 맞아야 합니다.</p>
+<h3>실제 측정값으로 검산 (이 대시보드 검증 때 nGrinder로 측정)</h3>
+<div class="tw"><table>
+<thead><tr><th>시나리오</th><th>Vuser</th><th>평균 응답시간</th><th>공식 예상 TPS (Vuser ÷ 응답시간)</th><th>실제 TPS</th></tr></thead>
+<tbody>
+<tr><td>단순 조회</td><td>4</td><td>21.46 ms</td><td>4 ÷ 0.02146 ≈ 186</td><td>187.0</td></tr>
+<tr><td>토큰 로그인 API</td><td>4</td><td>21.03 ms</td><td>4 ÷ 0.02103 ≈ 190</td><td>189.5</td></tr>
+<tr><td>CSRF 로그인</td><td>4</td><td>31.68 ms</td><td>4 ÷ 0.03168 ≈ 126</td><td>126.9</td></tr>
+</tbody></table></div>
+<p><b>활용법</b>: 결과의 TPS가 이 식과 크게 다르면 측정이 이상하다는 신호입니다(에이전트 과부하, 에러로 빨리 끝나는 요청 등). 거꾸로 목표를 세울 때도 씁니다. 예: 목표 TPS 500, 응답시간 0.2초를 유지해야 한다면 쉬는 시간 없는 가상 사용자 약 500 × 0.2 = <b>100명</b>이 필요합니다.</p>
+</div>
+
+<div class="panel">
+<h2 style="margin-top:0">6. 결과 해석: 포화와 임계점</h2>
+<p>Vuser를 늘리면 처음에는 TPS가 같이 늘다가, 어느 순간부터 TPS는 그대로이고 <b>응답시간만 늘어납니다</b>(포화). 더 늘리면 TPS가 오히려 떨어지기도 합니다.</p>
+<blockquote>고부하 영역에서 일정 User 수를 초과하면 Buckle zone으로 진입해서 처리량이 줄어드는 현상이 발생한다
+<span class="src">— 「내가써본 nGrinder」 SpringCamp 2015 발표 (검색 결과 발췌)</span></blockquote>
+<blockquote>This test commonly has to be stopped manually or automatically as thresholds start to fail. When these problems appear, the system has reached its limits.
+<span class="src">— k6 「Breakpoint testing」 (기준이 깨지기 시작하면 수동·자동으로 멈춘다. 그 문제가 나타나면 시스템이 한계에 도달한 것이다)</span></blockquote>
+<p>이 대시보드의 임계테스트는 다음 중 하나가 나오면 멈추고, <b>직전 단계</b>를 임계점(감당 가능한 최대 부하)으로 보고합니다.</p>
+<ul>
+<li>평균 응답시간이 기준(ms)을 넘음</li>
+<li>에러율이 기준(%)을 넘음</li>
+<li>Vuser를 늘렸는데 TPS 증가가 5% 미만 (포화) — <span class="muted">5%는 이 대시보드가 정한 경험적 기준이며 업계 표준이 아닙니다</span></li>
+<li>테스트가 오류로 중지됨</li>
+</ul>
+</div>
+
+<div class="panel">
+<h2 style="margin-top:0">7. 결과를 믿을 수 있게 하려면</h2>
+<ul>
+<li><b>에이전트와 대상 서버를 분리</b>: "가능한 Controller와 Agent 그리고 테스트 서버 모두 각각 서로 다른 물리적 서버에서 구축해줘야한다." — binghe819 nGrinder 완벽가이드. 같은 서버에 두면 에이전트가 쓰는 CPU 때문에 결과가 실제보다 나빠집니다.</li>
+<li><b>같은 조건에서 반복</b>: 같은 스크립트·같은 환경에서 Vuser만 바꿔 비교해야 의미가 있습니다 (모니터 화면의 포화점 그래프는 같은 테스트 이름끼리 묶음).</li>
+<li><b>운영 서버·운영 계정 금지</b>: 허락받은 테스트 서버와 테스트용 계정만 쓰세요.</li>
+<li><b>한 번의 테스트로 모든 위험을 볼 수는 없음</b>: "no single test type eliminates all risk." — k6 「Load test types」</li>
+</ul>
+</div>
+
+<div class="panel small">
+<h2 style="margin-top:0">출처</h2>
+<ul>
+<li>Grafana k6 문서 「Load test types」, 「Breakpoint testing」, 「Soak testing」 — github.com/grafana/k6-docs (docs/sources/k6/next/testing-guides/test-types)</li>
+<li>nGrinder 위키 「Test Configuration」 — github.com/naver/ngrinder/wiki/Test-Configuration</li>
+<li>binghe819 「nGrinder 완벽가이드」 — github.com/binghe819/TIL</li>
+<li>네이버파이낸셜 「nGrinder를 활용한 부하테스트」 — medium.com/naverfinancial (검색 결과 발췌, 원문 미열람)</li>
+<li>「내가써본 nGrinder」 SpringCamp 2015 — slideshare.net (검색 결과 발췌, 원문 미열람)</li>
+<li>TPS 관계식 — 성능테스트 입문 자료 검색 결과 (velog 「처음 해보는 성능 테스트를 위한 기본 정리」, 도리의 디지털라이프 「성능 테스트」 등, 원문 미열람)</li>
+</ul>
+</div>
+</main>
+<script>
+try{ const t = JSON.parse(localStorage.getItem("ngr.theme")); if (t) document.documentElement.dataset.theme = t; }catch(e){}
+</script>
+</body>
+</html>

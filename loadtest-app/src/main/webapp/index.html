@@ -57,6 +57,20 @@ pre{background:var(--code);border:1px solid var(--line);border-radius:8px;paddin
 .kpi{border:1px solid var(--line);border-radius:8px;padding:8px 10px}
 .kpi .l{font-size:11px;color:var(--muted)} .kpi .v{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
 svg.spark{width:100%;height:60px;display:block}
+.types{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px;margin-bottom:12px}
+.type{border:1px solid var(--line);border-radius:10px;padding:12px;cursor:pointer;background:var(--panel);text-align:left}
+.type.sel{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 25%,transparent)}
+.type .n{display:inline-block;width:20px;height:20px;border-radius:50%;background:var(--chip);color:var(--muted);font-size:12px;text-align:center;line-height:20px;margin-right:6px}
+.type .t{font-weight:600} .type .d{font-size:12px;color:var(--muted);margin-top:4px}
+.opt{display:none} .opt.on{display:block}
+table{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:500;font-size:12px}
+td.num,th.num{text-align:right;white-space:nowrap}
+.tw{overflow-x:auto}
+.job{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+.verdict{font-weight:600}
+.logbox{font-family:ui-monospace,Consolas,monospace;font-size:12px;background:var(--code);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px;white-space:pre-wrap;word-break:break-all}
 @media (max-width:600px){header{padding:12px 16px} main{padding:12px 16px}}
 </style>
 </head>
@@ -64,10 +78,11 @@ svg.spark{width:100%;height:60px;display:block}
 <header>
   <div>
     <h1>부하테스트 시나리오 대시보드</h1>
-    <div class="small muted">시나리오를 고르고 → 항목 몇 개만 입력하고 → 버튼을 누르면 nGrinder에서 테스트가 시작됩니다.</div>
+    <div class="small muted">시나리오 고르기 → 항목 몇 개 입력 → 테스트 종류(단위·통합·성능·임계) 고르기 → 버튼 클릭</div>
   </div>
   <div class="row" style="align-items:center">
-    <a href="monitor/index.html">실시간 모니터 화면 ↗</a>
+    <a href="intro.html">성능테스트 개론 ↗</a>
+    <a href="monitor/index.html">실시간 모니터 ↗</a>
     <a href="demo/">테스트 대상 예제 ↗</a>
     <button id="themeBtn" title="밝게/어둡게">테마</button>
   </div>
@@ -97,7 +112,7 @@ svg.spark{width:100%;height:60px;display:block}
 
   <!-- ③ 입력 -->
   <section class="panel">
-    <h2 id="formTitle">③ 입력</h2>
+    <h2 id="formTitle">③ 시나리오 입력</h2>
     <div class="flow" id="flow"></div>
     <fieldset>
       <legend>테스트 대상</legend>
@@ -112,22 +127,11 @@ svg.spark{width:100%;height:60px;display:block}
       <textarea id="users" rows="4" style="width:100%;font-family:ui-monospace,Consolas,monospace"></textarea>
       <div class="small muted">가상 사용자마다 위에서부터 차례로 계정을 나눠 씁니다. <b>운영 고객 계정은 절대 넣지 마세요.</b></div>
     </fieldset>
-    <fieldset>
-      <legend>부하 크기</legend>
-      <div class="row" style="align-items:flex-start">
-        <label class="f">테스트 이름<input id="testName"><span class="help">같은 이름으로 Vuser만 바꿔 여러 번 실행하면 모니터 화면에서 포화점 비교가 됩니다</span></label>
-        <label class="f" style="flex:0 1 120px">에이전트 수<input id="agentCount" type="number" min="1" value="1"><span class="help" id="agentHelp"></span></label>
-        <label class="f" style="flex:0 1 150px">에이전트당 Vuser<input id="vuser" type="number" min="1" value="10"><span class="help" id="vuserHelp"></span></label>
-        <label class="f" style="flex:0 1 120px">시간(분)<input id="minutes" type="number" min="1" max="600" value="1"></label>
-        <label class="f" style="flex:0 1 200px">대상 서버 IP (선택)<input id="targetIp" placeholder="모니터 에이전트용"><span class="help">대상 서버에 nGrinder 모니터를 설치했을 때만</span></label>
-      </div>
-    </fieldset>
     <div class="row" style="align-items:center">
       <button id="btnPreview">스크립트 미리보기</button>
-      <button id="btnRun" class="primary">▶ nGrinder에 올리고 테스트 시작</button>
-      <span class="small muted">처음엔 Vuser 10명, 1분처럼 작게 시작하세요.</span>
+      <span class="small muted">nGrinder에 올라갈 스크립트를 미리 볼 수 있습니다.</span>
     </div>
-    <div id="formMsg"></div>
+    <div id="previewMsg"></div>
     <div id="previewBox" style="display:none">
       <div class="row" style="justify-content:space-between;align-items:center;margin-top:12px">
         <h3 style="margin:0">생성될 스크립트</h3><button id="btnCopy">복사</button>
@@ -137,13 +141,71 @@ svg.spark{width:100%;height:60px;display:block}
     </div>
   </section>
 
-  <!-- ④ 결과 -->
+  <!-- ④ 테스트 종류 -->
   <section class="panel">
-    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
-      <h2 style="margin:0">④ 실행한 테스트</h2>
-      <button id="btnClearRuns" class="small">목록 비우기</button>
+    <h2>④ 테스트 종류 선택 · 실행 <span class="small muted">(권장 순서: 1 → 2 → 3 → 4, 자세한 설명은 <a href="intro.html">성능테스트 개론</a>)</span></h2>
+    <div class="types" id="types"></div>
+
+    <div class="opt" data-opt="unit">
+      <div class="flow">이 WAS가 시나리오의 요청을 <b>1건씩 직접</b> 보내 단계마다 응답코드·응답시간·성공 글자·토큰을 확인합니다. nGrinder를 쓰지 않아 몇 초면 끝납니다.
+        입력값(주소, 입력칸 이름, 계정)이 맞는지 먼저 확인하는 용도입니다. ※ 요청을 보내는 곳이 <b>에이전트가 아니라 이 WAS</b>라서, 에이전트에서의 연결 문제는 통합테스트로 확인하세요.</div>
     </div>
-    <div id="runs"><div class="muted small">아직 이 화면에서 시작한 테스트가 없습니다.</div></div>
+    <div class="opt" data-opt="integration">
+      <div class="flow">실제 <b>nGrinder 에이전트</b>에서 가상 사용자 1명이 시나리오 전체를 몇 번 실행합니다. 대시보드 → nGrinder → 에이전트 → 대상 서버가 함께 동작하는지(연결·스크립트·계정) 확인합니다. 실패하면 에이전트 로그의 원인을 아래에 보여줍니다.</div>
+      <div class="row">
+        <label class="f">테스트 이름<input data-o="testName"></label>
+        <label class="f" style="flex:0 1 160px">반복 횟수<input data-o="runCount" type="number" min="1" max="100" value="3"></label>
+      </div>
+    </div>
+    <div class="opt" data-opt="performance">
+      <div class="flow">정한 부하(가상 사용자 수 × 시간)를 걸고 <b>합격 기준</b>으로 판정합니다. 평소 예상 부하로 몇 분~1시간 돌리면 <b>부하테스트</b>, 같은 부하로 몇 시간 돌리면 <b>내구성(Soak)테스트</b>입니다(메모리 누수 등 확인).</div>
+      <div class="row" style="align-items:flex-start">
+        <label class="f">테스트 이름<input data-o="testName"><span class="help">같은 이름으로 Vuser만 바꿔 실행하면 모니터 화면의 포화점 그래프에 쌓입니다</span></label>
+        <label class="f" style="flex:0 1 110px">에이전트 수<input data-o="agentCount" type="number" min="1" value="1"><span class="help agentHelp"></span></label>
+        <label class="f" style="flex:0 1 150px">에이전트당 Vuser<input data-o="vuserPerAgent" type="number" min="1" value="10"><span class="help" id="vuserHelp"></span></label>
+        <label class="f" style="flex:0 1 110px">시간(분)<input data-o="durationMinutes" type="number" min="1" max="600" value="1"></label>
+        <label class="f" style="flex:0 1 190px">대상 서버 IP (선택)<input data-o="targetHostIp" placeholder="모니터 에이전트용"></label>
+      </div>
+      <div class="row small" style="margin:6px 0 10px;align-items:center">빠른 설정:
+        <button type="button" data-preset="10">부하테스트 (10분)</button>
+        <button type="button" data-preset="60">내구성테스트 (60분)</button></div>
+      <fieldset><legend>합격 기준</legend><div class="row">
+        <label class="f">목표 TPS (이상, 0이면 안 봄)<input data-s="minTps" type="number" min="0" value="0"></label>
+        <label class="f">최대 평균 응답시간 ms (0이면 안 봄)<input data-s="maxMtt" type="number" min="0" value="500"></label>
+        <label class="f">최대 에러율 %<input data-s="maxErrorRate" type="number" min="0" step="0.1" value="1"></label>
+      </div></fieldset>
+    </div>
+    <div class="opt" data-opt="breakpoint">
+      <div class="flow">가상 사용자를 <b>단계적으로 자동으로 늘려 가며</b> 테스트를 반복합니다. 응답시간·에러율 기준을 넘거나, Vuser를 늘려도 TPS가 5% 미만으로만 늘면(포화) 멈추고 <b>임계점(감당 가능한 최대 부하)</b>을 알려줍니다.
+        ※ 다른 테스트를 통과한 뒤에 하세요. 대상 서버가 느려지거나 멈출 수 있습니다.</div>
+      <div class="row" style="align-items:flex-start">
+        <label class="f">테스트 이름<input data-o="testName"></label>
+        <label class="f" style="flex:0 1 110px">에이전트 수<input data-o="agentCount" type="number" min="1" value="1"><span class="help agentHelp"></span></label>
+        <label class="f" style="flex:0 1 130px">시작 Vuser<input data-o="startVuser" type="number" min="1" value="10"><span class="help">에이전트당</span></label>
+        <label class="f" style="flex:0 1 130px">증가량<input data-o="stepVuser" type="number" min="1" value="20"><span class="help">단계마다 +</span></label>
+        <label class="f" style="flex:0 1 130px">최대 Vuser<input data-o="maxVuser" type="number" min="1" value="110"><span class="help">에이전트당</span></label>
+        <label class="f" style="flex:0 1 130px">단계별 시간(분)<input data-o="stepMinutes" type="number" min="1" value="1"></label>
+      </div>
+      <div class="small muted" id="bpPlan" style="margin:6px 0 10px"></div>
+      <fieldset><legend>한계로 볼 기준</legend><div class="row">
+        <label class="f">최대 평균 응답시간 ms (0이면 안 봄)<input data-s="maxMtt" type="number" min="0" value="500"></label>
+        <label class="f">최대 에러율 %<input data-s="maxErrorRate" type="number" min="0" step="0.1" value="1"></label>
+        <span class="small muted" style="align-self:center">+ TPS 증가 5% 미만이면 포화로 판단</span>
+      </div></fieldset>
+    </div>
+
+    <div class="row" style="align-items:center">
+      <button id="btnRun" class="primary">▶ 실행</button>
+      <span class="small muted" id="runHint"></span>
+    </div>
+    <div id="formMsg"></div>
+  </section>
+
+  <!-- ⑤ 결과 -->
+  <section class="panel">
+    <h2>⑤ 결과</h2>
+    <div id="unitResult"></div>
+    <div id="jobs"><div class="muted small">아직 실행한 통합·성능·임계 테스트가 없습니다.</div></div>
   </section>
 </main>
 
@@ -249,7 +311,7 @@ function field(f, v){
 
 function renderForm(){
   const s = SCENARIOS[current], saved = store.get("sd.form." + current, {});
-  $("formTitle").textContent = `③ 입력 — ${s.title}`;
+  $("formTitle").textContent = `③ 시나리오 입력 — ${s.title}`;
   $("flow").textContent = "동작: " + s.flow;
   $("mainFields").innerHTML = field({key:"BASE_URL", label:"대상 서버 주소 (에이전트에서 접속 가능한 주소)"}, saved.BASE_URL ?? APP_BASE)
     + s.main.map(f => field(f, saved[f.key] ?? f.def)).join("");
@@ -257,11 +319,10 @@ function renderForm(){
   $("advBox").style.display = s.adv.length ? "" : "none";
   $("usersBox").style.display = s.users ? "" : "none";
   $("users").value = saved.__users ?? DEFAULT_USERS;
-  $("testName").value = saved.__testName ?? s.name;
-  ["agentCount","vuser","minutes","targetIp"].forEach(k => { if (saved["__"+k] != null) $(k).value = saved["__"+k]; });
-  $("previewBox").style.display = "none"; $("formMsg").innerHTML = "";
+  $("previewBox").style.display = "none"; $("previewMsg").innerHTML = "";
   document.querySelectorAll("#mainFields input, #advFields input").forEach(i => i.addEventListener("input", () => { saveForm(); checkBase(); }));
-  checkBase(); vuserHelp();
+  checkBase();
+  if (typeof loadOpts === "function" && document.querySelector(".opt.on")) loadOpts();
 }
 
 function collect(){
@@ -271,22 +332,16 @@ function collect(){
 }
 function saveForm(){
   const p = collect();
-  p.__users = $("users").value; p.__testName = $("testName").value;
-  ["agentCount","vuser","minutes","targetIp"].forEach(k => p["__"+k] = $(k).value);
+  p.__users = $("users").value;
   store.set("sd.form." + current, p);
 }
-["users","testName","agentCount","vuser","minutes","targetIp"].forEach(id => $(id).addEventListener("input", () => { saveForm(); vuserHelp(); }));
+$("users").addEventListener("input", saveForm);
 
 function checkBase(){
   const v = (document.querySelector('#mainFields input[data-key="BASE_URL"]')?.value || "");
   let host = ""; try{ host = new URL(v).hostname; }catch(e){}
   $("baseWarn").innerHTML = /^(localhost|127\.|::1)/.test(host)
     ? `<div class="msg warn">대상 주소가 ${esc(host)} 입니다. 부하는 <b>nGrinder 에이전트</b>가 보내므로, 에이전트가 다른 서버에 있으면 이 주소로 접속할 수 없습니다. 에이전트에서 접속 가능한 IP나 도메인으로 바꾸세요.</div>` : "";
-}
-function vuserHelp(){
-  const v = Math.max(1, parseInt($("vuser").value)||1), a = Math.max(1, parseInt($("agentCount").value)||1);
-  const p = Math.max(1, Math.ceil(v/100)), t = Math.ceil(v/p);
-  $("vuserHelp").textContent = `프로세스 ${p} × 스레드 ${t}${p*t!==v ? ` (=${p*t}명으로 맞춤)` : ""} · 총 ${p*t*a}명`;
 }
 
 /* ===================== 연결 ===================== */
@@ -298,7 +353,7 @@ async function loadInfo(){
     if (info.connected){
       $("connBadge").className = "badge good";
       $("connBadge").textContent = `연결됨 · 사용 가능 에이전트 ${info.readyAgents}/${info.agents}대`;
-      $("agentHelp").textContent = `사용 가능 ${info.readyAgents}대`;
+      document.querySelectorAll(".agentHelp").forEach(e => e.textContent = `사용 가능 ${info.readyAgents}대`);
       $("connMsg").innerHTML = info.readyAgents ? "" : `<div class="msg warn">연결은 됐지만 사용 가능한(READY·승인) 에이전트가 없습니다. 에이전트를 실행하고 nGrinder에서 승인하세요.</div>`;
     } else {
       $("connBadge").className = "badge bad"; $("connBadge").textContent = "연결 안 됨";
@@ -316,54 +371,163 @@ $("btnConn").onclick = async () => {
   $("btnConn").disabled = false;
 };
 
-/* ===================== 미리보기 / 실행 ===================== */
-function request(){
-  return {
-    scenario: current, params: collect(), users: $("users").value,
-    options: {testName: $("testName").value.trim(), agentCount: $("agentCount").value, vuserPerAgent: $("vuser").value,
-              durationMinutes: $("minutes").value, targetHostIp: $("targetIp").value.trim()},
-  };
+/* ===================== 테스트 종류 ===================== */
+const TYPES = {
+  unit:        {n:1, title:"단위테스트", desc:"요청을 1건씩 보내 단계별 점검 (몇 초, nGrinder 안 씀)", btn:"▶ 단위테스트 실행"},
+  integration: {n:2, title:"통합테스트", desc:"실제 에이전트로 1명 × 몇 회 — 전체 연결 확인", btn:"▶ 통합테스트 실행 (nGrinder)"},
+  performance: {n:3, title:"성능테스트", desc:"정한 부하로 실행 → 합격 기준으로 판정 (부하·내구성)", btn:"▶ 성능테스트 실행 (nGrinder)"},
+  breakpoint:  {n:4, title:"임계테스트", desc:"Vuser를 자동으로 늘려 한계점 찾기", btn:"▶ 임계테스트 실행 (nGrinder)"},
+};
+let curType = store.get("sd.type", "unit"); if (!TYPES[curType]) curType = "unit";
+
+function renderTypes(){
+  $("types").innerHTML = Object.entries(TYPES).map(([id, t]) =>
+    `<button class="type ${id===curType?"sel":""}" data-id="${id}"><div class="t"><span class="n">${t.n}</span>${esc(t.title)}</div><div class="d">${esc(t.desc)}</div></button>`).join("");
+  $("types").querySelectorAll(".type").forEach(b => b.onclick = () => { curType = b.dataset.id; store.set("sd.type", curType); renderTypes(); });
+  document.querySelectorAll(".opt").forEach(o => o.classList.toggle("on", o.dataset.opt === curType));
+  $("btnRun").textContent = TYPES[curType].btn;
+  $("runHint").textContent = curType === "unit" ? "" : "실행하면 nGrinder에 스크립트를 올리고 테스트를 만듭니다. 결과는 ⑤에서 갱신됩니다.";
+  loadOpts(); planText();
 }
+function optBox(){ return document.querySelector(`.opt[data-opt="${curType}"]`); }
+function loadOpts(){
+  const saved = store.get("sd.opt." + current + "." + curType, {}), box = optBox();
+  box.querySelectorAll("[data-o],[data-s]").forEach(i => {
+    const k = (i.dataset.o ? "o." + i.dataset.o : "s." + i.dataset.s);
+    if (saved[k] != null) i.value = saved[k];
+    else if (i.dataset.o === "testName") i.value = SCENARIOS[current].name + "_" + TYPES[curType].title.replace("테스트","");
+  });
+}
+function saveOpts(){
+  const box = optBox(), v = {};
+  box.querySelectorAll("[data-o],[data-s]").forEach(i => v[i.dataset.o ? "o." + i.dataset.o : "s." + i.dataset.s] = i.value);
+  store.set("sd.opt." + current + "." + curType, v);
+}
+document.querySelectorAll(".opt input").forEach(i => i.addEventListener("input", () => { saveOpts(); planText(); vuserHelp(); }));
+document.querySelectorAll("[data-preset]").forEach(b => b.onclick = () => {
+  optBox().querySelector('[data-o="durationMinutes"]').value = b.dataset.preset; saveOpts();
+});
+function collectOpts(){
+  const o = {}, s = {};
+  optBox().querySelectorAll("[data-o]").forEach(i => o[i.dataset.o] = i.value.trim());
+  optBox().querySelectorAll("[data-s]").forEach(i => s[i.dataset.s] = i.value.trim());
+  return {options: o, sla: s};
+}
+function vuserHelp(){
+  const box = document.querySelector('.opt[data-opt="performance"]');
+  const v = Math.max(1, parseInt(box.querySelector('[data-o="vuserPerAgent"]').value)||1), a = Math.max(1, parseInt(box.querySelector('[data-o="agentCount"]').value)||1);
+  const p = Math.max(1, Math.ceil(v/100)), t = Math.ceil(v/p);
+  $("vuserHelp").textContent = `프로세스 ${p} × 스레드 ${t}${p*t!==v ? ` (=${p*t}명으로 맞춤)` : ""} · 총 ${p*t*a}명`;
+}
+function planText(){
+  const box = document.querySelector('.opt[data-opt="breakpoint"]'), g = k => parseInt(box.querySelector(`[data-o="${k}"]`).value)||0;
+  const st = g("startVuser"), sp = g("stepVuser"), mx = g("maxVuser"), m = g("stepMinutes"), a = Math.max(1, g("agentCount"));
+  if (sp < 1 || mx < st){ $("bpPlan").textContent = "시작·증가량·최대 값을 확인하세요."; return; }
+  const list = []; for (let v = st; v <= mx && list.length < 21; v += sp) list.push(v*a);
+  $("bpPlan").textContent = `계획: 총 Vuser ${list.join(" → ")} (${list.length}단계, 최대 약 ${list.length * (m + 1)}분 — 한계에 닿으면 일찍 끝남)` + (list.length > 20 ? " ⚠ 20단계 초과: 증가량을 키우세요" : "");
+}
+
+/* ===================== 미리보기 / 실행 ===================== */
+function request(){ return {scenario: current, params: collect(), users: $("users").value}; }
 $("btnPreview").onclick = async () => {
   try{
     const r = await api("POST", "scenario/preview", request());
     $("previewScript").textContent = r.script;
     $("previewUsersWrap").style.display = r.users ? "" : "none";
     $("previewUsers").textContent = r.users || "";
-    $("previewBox").style.display = ""; $("formMsg").innerHTML = "";
-  }catch(e){ $("formMsg").innerHTML = `<div class="msg err">${esc(e.message)}</div>`; }
+    $("previewBox").style.display = ""; $("previewMsg").innerHTML = "";
+  }catch(e){ $("previewMsg").innerHTML = `<div class="msg err">${esc(e.message)}</div>`; }
 };
 $("btnCopy").onclick = () => { navigator.clipboard?.writeText($("previewScript").textContent); $("btnCopy").textContent = "복사됨"; setTimeout(() => $("btnCopy").textContent = "복사", 1500); };
 
 $("btnRun").onclick = async () => {
-  const req = request(), s = SCENARIOS[current];
-  const total = (Math.ceil((parseInt(req.options.vuserPerAgent)||1) / Math.max(1, Math.ceil((parseInt(req.options.vuserPerAgent)||1)/100))) * Math.max(1, Math.ceil((parseInt(req.options.vuserPerAgent)||1)/100))) * (parseInt(req.options.agentCount)||1);
-  if (!confirm(`[${s.title}] 테스트를 시작합니다.\n\n대상: ${req.params.BASE_URL}\n가상 사용자: 총 ${total}명, ${req.options.durationMinutes}분\n\n대상 서버에 실제 부하가 발생합니다. 허락받은 테스트 서버가 맞나요?`)) return;
+  const req = request();
+  $("formMsg").innerHTML = "";
+  if (curType === "unit"){
+    $("btnRun").disabled = true; $("unitResult").innerHTML = `<div class="msg">단위테스트 실행 중…</div>`;
+    try{ renderUnit(await api("POST", "scenario/unit", req)); }
+    catch(e){ $("unitResult").innerHTML = `<div class="msg err">${esc(e.message)}</div>`; }
+    $("btnRun").disabled = false; return;
+  }
+  const {options, sla} = collectOpts();
+  const what = curType === "integration" ? `가상 사용자 1명 × ${options.runCount}회`
+    : curType === "performance" ? `에이전트 ${options.agentCount}대 × Vuser ${options.vuserPerAgent}명, ${options.durationMinutes}분`
+    : $("bpPlan").textContent;
+  if (!confirm(`[${TYPES[curType].title} · ${SCENARIOS[current].title}] 시작합니다.\n\n대상: ${req.params.BASE_URL}\n${what}\n\n대상 서버에 실제 요청이 발생합니다. 허락받은 테스트 서버가 맞나요?`)) return;
   $("btnRun").disabled = true;
-  $("formMsg").innerHTML = `<div class="msg">스크립트를 nGrinder에 올리고 테스트를 만드는 중…</div>`;
   try{
-    const r = await api("POST", "scenario/run", req);
-    $("formMsg").innerHTML = `<div class="msg">테스트 #${r.testId} 를 시작했습니다. 아래 ④에서 진행 상황을 볼 수 있습니다.\n스크립트 위치(nGrinder): ${esc(r.scriptPath)}</div>`;
-    const runs = store.get("sd.runs", []);
-    runs.unshift({id: r.testId, name: r.testName, scenario: current, totalVuser: r.totalVuser, url: r.ngrinderTestUrl, at: Date.now()});
-    store.set("sd.runs", runs.slice(0, 20));
-    renderRuns(); poll();
+    const job = await api("POST", "scenario/job", {...req, type: curType, options, sla});
+    $("formMsg").innerHTML = `<div class="msg">${esc(TYPES[curType].title)}를 시작했습니다 (작업 #${job.id}). ⑤에서 진행 상황을 볼 수 있습니다.</div>`;
+    pollJobs();
   }catch(e){ $("formMsg").innerHTML = `<div class="msg err">시작 실패: ${esc(e.message)}</div>`; }
   $("btnRun").disabled = false;
 };
 
-/* ===================== 실행 결과 ===================== */
-const live = {};   // id -> {tps:[], data}
-const statusName = (s) => (s && typeof s === "object") ? (s.name || "") : (s || "");
-function category(s){
-  if (s && typeof s === "object" && s.category) return typeof s.category === "object" ? s.category.name : s.category;
-  return "";
+/* ===================== 결과: 단위테스트 ===================== */
+function renderUnit(r){
+  const rows = r.steps.map((s, i) => `<tr><td>${i+1}</td><td>${esc(s.name)}</td><td class="small">${esc(s.method||"")} ${esc(s.url||"")}</td>
+    <td class="num">${s.status ?? "–"}</td><td class="num">${s.ms ?? "–"} ms</td>
+    <td>${s.ok ? '<span class="badge good">통과</span>' : '<span class="badge bad">실패</span>'}</td>
+    <td class="small">${esc(s.error || s.detail || "")}</td></tr>`).join("");
+  $("unitResult").innerHTML = `<div class="job"><div class="row" style="justify-content:space-between;align-items:center">
+      <div><b>단위테스트</b> · ${esc(SCENARIOS[current].title)} · ${new Date().toLocaleTimeString("ko-KR")}</div>
+      ${r.ok ? '<span class="badge good verdict">전체 통과</span>' : '<span class="badge bad verdict">실패 있음</span>'}</div>
+    <div class="tw"><table><thead><tr><th>#</th><th>단계</th><th>요청</th><th class="num">응답코드</th><th class="num">시간</th><th>결과</th><th>내용</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="small muted" style="margin-top:6px">${esc(r.note)}</div></div>`;
 }
-const running = (s) => ["TESTING","PROGRESSING","PREPARE","ABNORMAL_TESTING"].includes(category(s));
-function badge(s){
-  const c = category(s), cls = {TESTING:"run",PROGRESSING:"run",PREPARE:"run",FINISHED:"good",WARNED:"warn",ERROR:"bad",ABNORMAL_TESTING:"bad",STOP:"warn"}[c] || "";
-  const ko = {READY:"시작 대기",SAVED:"저장됨",TESTING:"테스트 중",FINISHED:"완료",FINISHED_WITH_WARNING:"완료(경고)",STOP_BY_ERROR:"오류로 중지",STOP_ON_ERROR:"오류로 중지",CANCELED:"취소됨"}[statusName(s)];
-  return `<span class="badge ${cls}">${esc(ko || statusName(s) || "확인 중")}</span>`;
+
+/* ===================== 결과: 통합·성능·임계 작업 ===================== */
+const STATUS_KO = {RUNNING:["진행 중","run"], PASSED:["통과","good"], FAILED:["실패","bad"], STOPPED:["중지됨","warn"], ERROR:["오류","bad"]};
+const T_STATUS = {READY:"시작 대기",SAVED:"저장됨",TESTING:"테스트 중",FINISHED:"완료",FINISHED_WITH_WARNING:"완료(경고)",STOP_BY_ERROR:"오류로 중지",STOP_ON_ERROR:"오류로 중지",CANCELED:"취소됨",START_TESTING:"시작 중",PREPARE_DISTRIBUTION:"준비 중",DISTRIBUTE_FILES:"파일 배포 중",START_AGENTS:"에이전트 시작 중",START_CONSOLE:"준비 중",CHECKOUT_SCRIPT:"스크립트 준비 중"};
+const live = {};
+let jobs = [];
+
+function bpChart(steps){
+  const d = steps.filter(s => s.tps != null && s.totalVuser);
+  if (d.length < 2) return "";
+  const W = 600, H = 160, P = 36, xs = d.map(s => s.totalVuser), maxX = Math.max(...xs), minX = Math.min(...xs);
+  const maxT = Math.max(...d.map(s => s.tps)) * 1.1 || 1, maxM = Math.max(...d.map(s => s.mtt)) * 1.1 || 1;
+  const X = v => P + (v - minX) / ((maxX - minX) || 1) * (W - 2*P), Y = (v, m) => H - 20 - v / m * (H - 30);
+  const line = (k, m, c) => `<polyline fill="none" stroke="${c}" stroke-width="2" points="${d.map(s => `${X(s.totalVuser)},${Y(s[k], m)}`).join(" ")}"/>` +
+    d.map(s => `<circle cx="${X(s.totalVuser)}" cy="${Y(s[k], m)}" r="3.5" fill="${s.verdict === "한계" ? "var(--bad)" : c}"><title>Vuser ${s.totalVuser}: ${k === "tps" ? "TPS " + s.tps : "응답 " + s.mtt + "ms"}</title></circle>`).join("");
+  const labels = d.map(s => `<text x="${X(s.totalVuser)}" y="${H-4}" font-size="10" text-anchor="middle" fill="var(--muted)">${s.totalVuser}</text>`).join("");
+  return `<div class="small muted" style="margin-top:8px"><span style="color:var(--accent)">━ TPS</span> · <span style="color:var(--warn)">━ 평균 응답시간</span> · 가로축: 총 Vuser · 빨간 점: 한계 단계</div>
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;max-width:700px;height:auto">${line("tps", maxT, "var(--accent)")}${line("mtt", maxM, "var(--warn)")}${labels}</svg>`;
+}
+
+function renderJobs(){
+  if (!jobs.length){ $("jobs").innerHTML = `<div class="muted small">아직 실행한 통합·성능·임계 테스트가 없습니다.</div>`; return; }
+  $("jobs").innerHTML = jobs.map(j => {
+    const [sk, sc] = STATUS_KO[j.status] || [j.status, ""];
+    const verdictWord = j.type === "performance" ? (j.status === "PASSED" ? "합격" : j.status === "FAILED" ? "불합격" : sk) : sk;
+    const L = j.currentTestId ? live[j.currentTestId] : null, perf = L?.perf;
+    const rows = j.steps.map(s => {
+      const st = T_STATUS[s.status] || s.status || "–";
+      const vb = s.verdict ? `<span class="badge ${["통과","합격"].includes(s.verdict) ? "good" : "bad"}">${esc(s.verdict)}</span>` : "";
+      return `<tr><td>${esc(s.label)}</td><td>${s.testId ? `<a href="${esc(s.ngrinderTestUrl)}" target="_blank" rel="noopener">#${s.testId}</a>` : "–"}</td>
+        <td class="num">${s.totalVuser ?? "–"}</td><td>${esc(st)}</td><td class="num">${s.tps ?? "–"}</td><td class="num">${s.mtt != null ? s.mtt + " ms" : "–"}</td>
+        <td class="num">${s.tests ?? "–"}</td><td class="num">${s.errors != null ? `${s.errors} (${s.errorRate}%)` : "–"}</td><td>${vb} <span class="small">${esc(s.reason || s.error || "")}</span></td></tr>
+        ${s.log && (s.log.hint || s.log.firstError) ? `<tr><td colspan="9"><div class="msg warn" style="margin:4px 0">원인 추정: ${esc(s.log.hint || "아래 로그를 확인하세요")}</div>
+          ${s.log.firstError ? `<div class="logbox">${esc(s.log.firstError)}${(s.log.causes||[]).length ? "\n" + esc(s.log.causes.join("\n")) : ""}</div>` : ""}</td></tr>` : ""}`;
+    }).join("");
+    const liveBox = perf ? `<div class="kpis">${kpi("현재 TPS", fmt(perf.tpsChartData))}${kpi("평균 TPS", fmt(perf.totalStatistics?.["TPS"]))}${kpi("평균 응답시간", fmt(perf.totalStatistics?.["Mean_Test_Time_(ms)"]) + " ms")}${kpi("에러", fmt(perf.totalStatistics?.["Errors"], 0))}${kpi("경과", fmtTime(perf.testTime))}</div>${spark(L.tps || [])}` : "";
+    return `<div class="job">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <div><span class="badge">${esc(TYPES[j.type]?.title || j.type)}</span> <b>${esc(j.name)}</b> <span class="muted small">· ${esc(SCENARIOS[j.scenario]?.title || j.scenario)} · 작업 #${j.id} · ${new Date(j.createdAt).toLocaleString("ko-KR")}</span></div>
+        <div class="row" style="align-items:center"><span class="badge ${sc} verdict">${esc(verdictWord)}</span>
+          ${j.status === "RUNNING" ? `<button class="danger small" data-stop="${j.id}">중지</button>` : ""}
+          ${j.steps.length ? `<a href="monitor/index.html?test=${j.steps[j.steps.length-1].testId || ""}">모니터에서 보기</a>` : ""}</div>
+      </div>
+      ${j.conclusion ? `<div class="msg ${j.status === "PASSED" ? "" : j.status === "RUNNING" ? "" : "err"}">${esc(j.conclusion)}</div>` : ""}
+      ${liveBox}
+      <div class="tw"><table><thead><tr><th>단계</th><th>nGrinder</th><th class="num">총 Vuser</th><th>상태</th><th class="num">TPS</th><th class="num">평균 응답</th><th class="num">성공</th><th class="num">에러(율)</th><th>판정</th></tr></thead><tbody>${rows}</tbody></table></div>
+      ${j.type === "breakpoint" ? bpChart(j.steps) : ""}
+    </div>`;
+  }).join("");
+  $("jobs").querySelectorAll("[data-stop]").forEach(b => b.onclick = async () => {
+    if (!confirm(`작업 #${b.dataset.stop}을(를) 중지할까요? (진행 중인 nGrinder 테스트도 중지)`)) return;
+    try{ await api("POST", `scenario/job/${b.dataset.stop}/stop`, {}); pollJobs(); }catch(e){ alert("중지 실패: " + e.message); }
+  });
 }
 function spark(arr){
   const v = arr.filter(x => x != null); if (v.length < 2) return "";
@@ -373,58 +537,22 @@ function spark(arr){
 }
 function kpi(l, v){ return `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`; }
 
-function renderRuns(){
-  const runs = store.get("sd.runs", []);
-  if (!runs.length){ $("runs").innerHTML = `<div class="muted small">아직 이 화면에서 시작한 테스트가 없습니다.</div>`; return; }
-  $("runs").innerHTML = runs.map(r => {
-    const L = live[r.id] || {}, t = L.test || {}, perf = L.sample?.perf, st = L.sample?.status || t.status;
-    const isRun = running(st);
-    const ts = perf?.totalStatistics || {};
-    const tps = isRun ? ts["TPS"] : t.tps, mtt = isRun ? ts["Mean_Test_Time_(ms)"] : t.meanTestTime;
-    const tests = isRun ? ts["Tests"] : t.tests, errors = isRun ? ts["Errors"] : t.errors;
-    const er = (tests||0) + (errors||0) ? (errors||0) / ((tests||0)+(errors||0)) * 100 : null;
-    const msg = (statusName(st) === "STOP_BY_ERROR" || statusName(st) === "STOP_ON_ERROR") && t.lastProgressMessage
-      ? `<div class="msg err">${esc(String(t.lastProgressMessage).replace(/<[^>]+>/g," ").slice(0,400))}</div>` : "";
-    return `<div class="run">
-      <div class="row" style="justify-content:space-between;align-items:center">
-        <div><b>#${r.id}</b> ${esc(r.name)} <span class="muted small">· ${esc(SCENARIOS[r.scenario]?.title || r.scenario)} · 총 Vuser ${r.totalVuser} · ${new Date(r.at).toLocaleString("ko-KR")}</span></div>
-        <div class="row" style="align-items:center">${badge(st)}
-          <button class="danger small" data-stop="${r.id}" ${isRun ? "" : "disabled"}>중지</button>
-          <a href="monitor/index.html?test=${r.id}">모니터에서 자세히</a>
-          <a href="${esc(r.url)}" target="_blank" rel="noopener">nGrinder에서 보기</a></div>
-      </div>
-      <div class="kpis">${kpi(isRun ? "현재 TPS" : "평균 TPS", fmt(isRun ? perf?.tpsChartData : tps))}${kpi("평균 TPS", fmt(tps))}${kpi("평균 응답시간", mtt==null?"–":fmt(mtt)+" ms")}
-        ${kpi("성공 건수", fmt(tests,0))}${kpi("에러", errors==null?"–":`${fmt(errors,0)} (${er==null?"–":er<0.01&&er>0?"<0.01":fmt(er,2)}%)`)}${kpi(isRun?"경과":"Peak TPS", isRun ? fmtTime(perf?.testTime) : fmt(t.peakTps))}</div>
-      ${isRun ? spark(L.tps || []) : ""}${msg}
-    </div>`;
-  }).join("");
-  $("runs").querySelectorAll("[data-stop]").forEach(b => b.onclick = async () => {
-    if (!confirm(`#${b.dataset.stop} 테스트를 중지할까요?`)) return;
-    try{ await api("PUT", `api/perftest/api/${b.dataset.stop}?action=stop`); }catch(e){ alert("중지 실패: " + e.message); }
-  });
-}
-
 let pollTimer = null;
-async function poll(){
+async function pollJobs(){
   clearTimeout(pollTimer);
-  const runs = store.get("sd.runs", []);
-  let anyActive = false;
-  for (const r of runs.slice(0, 5)){
-    const L = live[r.id] = live[r.id] || {tps: []};
-    if (L.done) continue;
-    try{
-      L.test = await api("GET", `api/perftest/api/${r.id}`);
-      if (running(L.test.status) || ["READY"].includes(statusName(L.test.status))){
-        anyActive = true;
-        L.sample = await api("GET", `api/perftest/api/${r.id}/sample`);
-        if (L.sample?.perf){ L.tps.push(L.sample.perf.tpsChartData); if (L.tps.length > 150) L.tps.shift(); }
-      } else { L.sample = null; L.done = true; }
-    }catch(e){ L.error = e.message; }
-  }
-  renderRuns();
-  pollTimer = setTimeout(poll, anyActive ? 3000 : 15000);
+  try{
+    jobs = await api("GET", "scenario/jobs") || [];
+    for (const j of jobs.filter(j => j.currentTestId)){
+      try{
+        const smp = await api("GET", `api/perftest/api/${j.currentTestId}/sample`);
+        const L = live[j.currentTestId] = live[j.currentTestId] || {tps: []};
+        if (smp?.perf){ L.perf = smp.perf; L.tps.push(smp.perf.tpsChartData); if (L.tps.length > 150) L.tps.shift(); }
+      }catch(e){}
+    }
+    renderJobs();
+  }catch(e){ $("jobs").innerHTML = `<div class="msg err">작업 목록을 가져오지 못했습니다: ${esc(e.message)}</div>`; }
+  pollTimer = setTimeout(pollJobs, jobs.some(j => j.status === "RUNNING") ? 3000 : 20000);
 }
-$("btnClearRuns").onclick = () => { if (confirm("이 화면의 목록만 비웁니다 (nGrinder의 테스트 기록은 그대로)")){ store.set("sd.runs", []); renderRuns(); } };
 
 $("themeBtn").onclick = () => {
   const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
@@ -432,7 +560,7 @@ $("themeBtn").onclick = () => {
 };
 const savedTheme = store.get("ngr.theme", null); if (savedTheme) document.documentElement.dataset.theme = savedTheme;
 
-renderTabs(); renderForm(); loadInfo(); renderRuns(); poll();
+renderTabs(); renderForm(); renderTypes(); vuserHelp(); loadInfo(); pollJobs();
 </script>
 </body>
 </html>

@@ -9,8 +9,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -58,14 +56,16 @@ public class ScenarioServlet extends HttpServlet {
 			"CSRF_COOKIE_HEADER", "TARGET_PATH", "SUCCESS_TEXT", "ACTION_PAGE_PATH", "ACTION_PATH"));
 	}
 
-	private static final String ROOT_FOLDER = "loadtest_dashboard";
-
 	@Override
 	protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
-		if ("/info".equals(req.getPathInfo())) {
-			send(resp, 200, info());
-		} else {
-			send(resp, 404, error("없는 주소"));
+		String p = req.getPathInfo() == null ? "" : req.getPathInfo();
+		try {
+			if (p.equals("/info")) send(resp, 200, info());
+			else if (p.equals("/jobs")) send(resp, 200, TestJobs.list());
+			else if (p.matches("/job/\\d+")) send(resp, 200, TestJobs.get(Long.parseLong(p.substring(5))));
+			else send(resp, 404, error("없는 주소"));
+		} catch (IllegalArgumentException e) {
+			send(resp, 404, error(e.getMessage()));
 		}
 	}
 
@@ -88,10 +88,24 @@ public class ScenarioServlet extends HttpServlet {
 				case "/preview":
 					send(resp, 200, generate(in));
 					return;
-				case "/run":
-					send(resp, 200, run(in));
+				case "/unit": {
+					// 단위테스트: 이 WAS에서 요청을 1건씩 직접 보내 점검
+					Map<String, Object> gen = generate(in);   // 입력값 검사 겸용
+					send(resp, 200, UnitTester.run(Json.str(in, "scenario", ""), params(in), Json.str(in, "users", "")));
 					return;
+				}
+				case "/job": {
+					// 통합·성능·임계 테스트: nGrinder로 실행 (백그라운드 작업)
+					Map<String, Object> gen = generate(in);
+					send(resp, 200, TestJobs.start(Json.str(in, "type", ""), Json.str(in, "scenario", ""), gen,
+						obj(in, "options"), obj(in, "sla")));
+					return;
+				}
 				default:
+					if (p.matches("/job/\\d+/stop")) {
+						send(resp, 200, TestJobs.stop(Long.parseLong(p.substring(5, p.length() - 5))));
+						return;
+					}
 					send(resp, 404, error("없는 주소"));
 			}
 		} catch (IllegalArgumentException | IllegalStateException e) {
@@ -220,84 +234,13 @@ public class ScenarioServlet extends HttpServlet {
 		return "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "\\$") + "\"";
 	}
 
-	// ------------------------------------------------------------------ 실행
-
 	@SuppressWarnings("unchecked")
-	private Map<String, Object> run(Map<String, Object> in) throws IOException {
-		Map<String, Object> gen = generate(in);
-		String id = Json.str(in, "scenario", "");
-		Map<String, Object> opt = in.get("options") instanceof Map ? (Map<String, Object>) in.get("options") : new LinkedHashMap<>();
-
-		String testName = Json.str(opt, "testName", "");
-		if (testName.isEmpty()) throw new IllegalArgumentException("테스트 이름을 입력하세요");
-		int agents = Json.integer(opt, "agentCount", 1);
-		int vuser = Json.integer(opt, "vuserPerAgent", 10);
-		int minutes = Json.integer(opt, "durationMinutes", 1);
-		String targetIp = Json.str(opt, "targetHostIp", "");
-		if (agents < 1) throw new IllegalArgumentException("에이전트 수는 1 이상이어야 합니다");
-		if (vuser < 1) throw new IllegalArgumentException("에이전트당 Vuser는 1 이상이어야 합니다");
-		if (minutes < 1 || minutes > 600) throw new IllegalArgumentException("테스트 시간은 1~600분 사이로 입력하세요");
-		if (!targetIp.isEmpty() && !targetIp.matches("[0-9a-fA-F.:]+")) throw new IllegalArgumentException("모니터 대상 IP 형식이 올바르지 않습니다: " + targetIp);
-
-		// nGrinder 규칙: vuserPerAgent = processes × threads (스레드 100개 이하로 나눔)
-		int processes = Math.max(1, (int) Math.ceil(vuser / 100.0));
-		int threads = (int) Math.ceil(vuser / (double) processes);
-		int vuserPerAgent = processes * threads;
-
-		// 실행마다 새 폴더 → 각 테스트가 어떤 스크립트로 돌았는지 그대로 남음
-		String folder = ROOT_FOLDER + "/" + id + "/run_" + LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-		String scriptFile = id + ".groovy";
-		NGrinderClient.Resp up = NGrinderClient.upload(folder, scriptFile, ((String) gen.get("script")).getBytes(StandardCharsets.UTF_8),
-			"loadtest dashboard: " + testName);
-		check(up, "스크립트 업로드");
-		if (gen.containsKey("users")) {
-			check(NGrinderClient.upload(folder + "/resources", "users.csv", ((String) gen.get("users")).getBytes(StandardCharsets.UTF_8),
-				"accounts"), "계정 파일 업로드");
-		}
-
-		Map<String, Object> test = new LinkedHashMap<>();
-		test.put("testName", testName);
-		test.put("tagString", "loadtest_dashboard," + id);
-		test.put("description", "시나리오 대시보드에서 실행 (" + id + ")");
-		test.put("scriptName", folder + "/" + scriptFile);
-		test.put("agentCount", agents);
-		test.put("vuserPerAgent", vuserPerAgent);
-		test.put("processes", processes);
-		test.put("threads", threads);
-		test.put("threshold", "D");
-		test.put("duration", minutes * 60_000L);
-		test.put("targetHosts", targetIp);
-		test.put("samplingInterval", 2);
-		test.put("status", "READY");   // READY = 저장 후 바로 실행 대기열에 넣음
-		NGrinderClient.Resp created = NGrinderClient.json("POST", "/perftest/api", test);
-		check(created, "테스트 생성");
-		Map<String, Object> t = Json.parseObject(created.text());
-
-		Map<String, Object> out = new LinkedHashMap<>();
-		out.put("testId", t.get("id"));
-		out.put("testName", testName);
-		out.put("scriptPath", folder + "/" + scriptFile);
-		out.put("agentCount", agents);
-		out.put("processes", processes);
-		out.put("threads", threads);
-		out.put("vuserPerAgent", vuserPerAgent);
-		out.put("totalVuser", vuserPerAgent * agents);
-		out.put("ngrinderTestUrl", NGrinderClient.url() + "/perftest/" + t.get("id"));
-		return out;
+	private static Map<String, Object> obj(Map<String, Object> in, String key) {
+		return in.get(key) instanceof Map ? (Map<String, Object>) in.get(key) : new LinkedHashMap<>();
 	}
 
-	private static void check(NGrinderClient.Resp r, String step) {
-		if (r.looksLikeLoginPage()) throw new IllegalArgumentException(step + " 실패: nGrinder 로그인 실패 (연결 설정의 아이디/비밀번호 확인)");
-		if (!r.ok()) {
-			String msg = r.text();
-			try {
-				Object o = Json.parse(msg);
-				if (o instanceof Map && ((Map<?, ?>) o).get("message") != null) msg = String.valueOf(((Map<?, ?>) o).get("message"));
-			} catch (RuntimeException ignore) {
-				// 그대로 사용
-			}
-			throw new IllegalArgumentException(step + " 실패 (HTTP " + r.code + "): " + (msg.length() > 300 ? msg.substring(0, 300) : msg));
-		}
+	private static Map<String, Object> params(Map<String, Object> in) {
+		return obj(in, "params");
 	}
 
 	private static Map<String, Object> error(String msg) {

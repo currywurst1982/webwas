@@ -29,15 +29,35 @@
       <version>5.0.0</version>
       <scope>provided</scope>
     </dependency>
+    <!-- 코드 자체의 자동 테스트 (mvn test). WAR에는 포함되지 않음 -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>5.10.2</version>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
     <finalName>loadtest</finalName>
+    <!-- 테스트에서도 템플릿(../ngrinder-scripts/*.groovy)을 읽을 수 있게 -->
+    <testResources>
+      <testResource>
+        <directory>../ngrinder-scripts</directory>
+        <targetPath>templates</targetPath>
+        <includes><include>*.groovy</include></includes>
+      </testResource>
+    </testResources>
     <plugins>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.11.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

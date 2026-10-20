@@ -35,7 +35,7 @@ class TestRunner {
 	static String PW_FIELD    = "password"                 // 로그인 API에 보내는 비밀번호 항목 이름
 	static String TOKEN_FIELD = "accessToken"              // 로그인 응답 JSON에서 토큰이 들어있는 항목 이름
 	static String API1_PATH   = "/api/me"                  // 측정할 API 1
-	static String API2_PATH   = "/api/orders"              // 측정할 API 2
+	static String API2_PATH   = "/api/orders"              // 측정할 API 2 (없으면 "" 로 비워두기)
 	// ====================================================================
 
 	public static GTest test1
@@ -64,7 +64,7 @@ class TestRunner {
 	@BeforeThread
 	public void beforeThread() {
 		test1.record(this, "test1")
-		test2.record(this, "test2")
+		if (API2_PATH) test2.record(this, "test2")   // 비어 있으면 측정하지 않음
 		grinder.statistics.delayReports = true
 
 		def account = users[GrinderUtils.getThreadUniqId() % users.size()]
@@ -74,10 +74,10 @@ class TestRunner {
 		HTTPResponse res = request.POST(BASE_URL + LOGIN_PATH,
 			[(ID_FIELD): account[0], (PW_FIELD): account[1]],
 			["Content-Type": "application/json"])
-		assertThat("로그인 API 실패: " + myId + " / " + res.bodyText, res.statusCode, is(200))
+		assertThat("[LOGIN_FAILED] 로그인 API 실패: " + myId + " / " + text(res), res.statusCode, is(200))
 
-		def token = new JsonSlurper().parseText(res.bodyText)[TOKEN_FIELD]
-		assertNotNull("응답에서 토큰(" + TOKEN_FIELD + ")을 찾지 못했습니다: " + res.bodyText, token)
+		def token = new JsonSlurper().parseText(text(res))[TOKEN_FIELD]
+		assertNotNull("[NO_TOKEN] 응답에서 토큰(" + TOKEN_FIELD + ")을 찾지 못했습니다: " + text(res), token)
 		authHeaders = ["Authorization": "Bearer " + token]
 		grinder.logger.info("{} 로그인 성공", myId)
 	}
@@ -90,7 +90,23 @@ class TestRunner {
 
 	@Test
 	public void test2() {
+		if (!API2_PATH) return
 		HTTPResponse res = request.GET(BASE_URL + API2_PATH, [:], authHeaders)
 		assertThat(res.statusCode, is(200))
+	}
+
+	/**
+	 * 응답 본문을 글자로 바꾸기. 서버가 알려준 문자셋(Content-Type의 charset, 없으면 UTF-8)을 씀.
+	 * ⚠ nGrinder의 res.bodyText 는 "에이전트 PC의 기본 문자셋"을 써서, 한국어 Windows(MS949)나
+	 *   로캘 설정이 없는 리눅스(Java 11 이하)에서는 한글이 깨져 글자 비교가 실패함 (실제 에이전트에서 확인)
+	 */
+	static String text(HTTPResponse res) {
+		String ct = res.getHeader("Content-Type")?.value ?: ""
+		def m = (ct =~ /(?i)charset=([\w.-]+)/)
+		java.nio.charset.Charset cs = java.nio.charset.StandardCharsets.UTF_8
+		if (m.find()) {
+			try { cs = java.nio.charset.Charset.forName(m.group(1)) } catch (Exception ignored) { }
+		}
+		return res.getBodyText(cs)
 	}
 }

@@ -249,7 +249,7 @@ $("mode").value = mode;
 
 const live = {
   async req(method, path, body){
-    const res = await fetch("/api" + path, {method, headers: body ? {"Content-Type":"application/json"} : {}, body: body ? JSON.stringify(body) : undefined});
+    const res = await fetch("api" + path, {method, headers: body ? {"Content-Type":"application/json"} : {}, body: body ? JSON.stringify(body) : undefined});
     const text = await res.text();
     if (!res.ok) throw new Error(`HTTP ${res.status} ${text.slice(0,200)}`);
     if (text.trim().startsWith("<")) throw new Error("JSON 대신 HTML이 돌아왔습니다. 로그인 실패(계정/비밀번호)일 가능성이 높습니다.");
@@ -563,7 +563,11 @@ async function loadTests(){
     tests = await api().listTests(Number($("listSize").value)) || [];
     $("connInfo").innerHTML = mode === "demo" ? '<span class="badge warn">데모 데이터</span> 실제 nGrinder와 연결되지 않은 상태입니다.' : `<span class="badge good">연결됨</span> ${esc(window.__cfg?.ngrinderUrl || "")}`;
     showMsg("");
-    if (selectedId == null){ const r = tests.find(t => isRunning(t.status)) || tests[0]; if (r) selectedId = r.id; }
+    if (selectedId == null){
+      const want = Number(new URLSearchParams(location.search).get("test"));   // monitor?test=123 으로 특정 테스트 바로 보기
+      const r = tests.find(t => t.id === want) || tests.find(t => isRunning(t.status)) || tests[0];
+      if (r) selectedId = r.id;
+    }
     renderTests(); renderSaturation();
   }catch(e){
     $("connInfo").innerHTML = '<span class="badge bad">연결 실패</span>';
@@ -661,7 +665,7 @@ window.addEventListener("resize", () => { renderSaturation(); lastSeriesId = nul
 /* ===================== 시작 ===================== */
 (async () => {
   try{
-    const r = await fetch("/config.json"); window.__cfg = r.ok ? await r.json() : null;
+    const r = await fetch("config.json"); window.__cfg = r.ok ? await r.json() : null;
     if (window.__cfg && !window.__cfg.hasUser && mode === "live"){ mode = "demo"; $("mode").value = "demo"; }
   }catch(e){ if (mode === "live"){ mode = "demo"; $("mode").value = "demo"; } }  // server.py 없이 파일만 연 경우
   restart();

@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>부하테스트 시나리오 대시보드</title>
+<style>
+:root{
+  --bg:#f5f6f8; --panel:#ffffff; --text:#1d2330; --muted:#6b7385; --line:#e3e6ec;
+  --accent:#2f6fdb; --good:#1f9d55; --warn:#c98a00; --bad:#d64545; --chip:#eef1f6; --code:#f3f5f8;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#12151b; --panel:#1b1f27; --text:#e6e9ef; --muted:#9aa3b5; --line:#2c323d;
+    --accent:#6a9cff; --good:#3ecf7e; --warn:#f0b429; --bad:#ff6b6b; --chip:#252a35; --code:#161a21;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#12151b; --panel:#1b1f27; --text:#e6e9ef; --muted:#9aa3b5; --line:#2c323d;
+  --accent:#6a9cff; --good:#3ecf7e; --warn:#f0b429; --bad:#ff6b6b; --chip:#252a35; --code:#161a21;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;padding:14px 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+h1{font-size:18px;margin:0} h2{font-size:15px;margin:0 0 12px} h3{font-size:14px;margin:0 0 6px}
+main{max-width:1180px;margin:0 auto;padding:16px}
+a{color:var(--accent)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.muted{color:var(--muted)} .small{font-size:12px}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:var(--chip);color:var(--muted);white-space:nowrap}
+.badge.good{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
+.badge.bad{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
+.badge.warn{background:color-mix(in srgb,var(--warn) 20%,transparent);color:var(--warn)}
+.badge.run{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent)}
+button,select,input,textarea{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:7px 10px}
+button{cursor:pointer} button:hover{border-color:var(--accent)} button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.danger{border-color:var(--bad);color:var(--bad)}
+label.f{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted);flex:1 1 220px;min-width:0}
+label.f input,label.f textarea,label.f select{width:100%}
+label.f .help{font-size:11px;color:var(--muted)}
+.tabs{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.tab{border:1px solid var(--line);border-radius:10px;padding:12px;cursor:pointer;background:var(--panel);text-align:left}
+.tab.sel{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 25%,transparent)}
+.tab .t{font-weight:600} .tab .d{font-size:12px;color:var(--muted);margin-top:4px}
+.flow{font-size:12px;color:var(--muted);background:var(--chip);border-radius:8px;padding:8px 10px;margin-bottom:12px}
+fieldset{border:1px solid var(--line);border-radius:8px;padding:12px;margin:0 0 12px}
+legend{font-size:12px;color:var(--muted);padding:0 6px}
+details summary{cursor:pointer;color:var(--muted);font-size:13px;margin:4px 0 10px}
+pre{background:var(--code);border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;max-height:420px;font-size:12px;line-height:1.45}
+.msg{padding:10px 12px;border-radius:8px;background:var(--chip);margin:10px 0;font-size:13px;white-space:pre-wrap}
+.msg.err{background:color-mix(in srgb,var(--bad) 15%,transparent);color:var(--bad)}
+.msg.warn{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+.run{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin:10px 0}
+.kpi{border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.kpi .l{font-size:11px;color:var(--muted)} .kpi .v{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums}
+svg.spark{width:100%;height:60px;display:block}
+@media (max-width:600px){header{padding:12px 16px} main{padding:12px 16px}}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>부하테스트 시나리오 대시보드</h1>
+    <div class="small muted">시나리오를 고르고 → 항목 몇 개만 입력하고 → 버튼을 누르면 nGrinder에서 테스트가 시작됩니다.</div>
+  </div>
+  <div class="row" style="align-items:center">
+    <a href="monitor/index.html">실시간 모니터 화면 ↗</a>
+    <a href="demo/">테스트 대상 예제 ↗</a>
+    <button id="themeBtn" title="밝게/어둡게">테마</button>
+  </div>
+</header>
+
+<main>
+  <!-- ① 연결 -->
+  <section class="panel">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h2 style="margin:0">① nGrinder 연결</h2>
+      <span id="connBadge" class="badge">확인 중…</span>
+    </div>
+    <div class="row">
+      <label class="f">nGrinder 주소<input id="ngUrl" placeholder="http://10.0.0.5:8080"></label>
+      <label class="f" style="flex:0 1 160px">아이디<input id="ngUser" autocomplete="username"></label>
+      <label class="f" style="flex:0 1 180px">비밀번호<input id="ngPw" type="password" autocomplete="current-password"></label>
+      <button id="btnConn">저장하고 연결 확인</button>
+    </div>
+    <div id="connMsg"></div>
+  </section>
+
+  <!-- ② 시나리오 -->
+  <section class="panel">
+    <h2>② 시나리오 선택</h2>
+    <div class="tabs" id="tabs"></div>
+  </section>
+
+  <!-- ③ 입력 -->
+  <section class="panel">
+    <h2 id="formTitle">③ 입력</h2>
+    <div class="flow" id="flow"></div>
+    <fieldset>
+      <legend>테스트 대상</legend>
+      <div class="row" id="mainFields"></div>
+      <div id="baseWarn"></div>
+    </fieldset>
+    <details id="advBox"><summary>고급 설정 (입력칸 이름 등 — 예제 앱이면 그대로 두세요)</summary>
+      <div class="row" id="advFields"></div>
+    </details>
+    <fieldset id="usersBox">
+      <legend>테스트 계정 (한 줄에 "아이디,비밀번호")</legend>
+      <textarea id="users" rows="4" style="width:100%;font-family:ui-monospace,Consolas,monospace"></textarea>
+      <div class="small muted">가상 사용자마다 위에서부터 차례로 계정을 나눠 씁니다. <b>운영 고객 계정은 절대 넣지 마세요.</b></div>
+    </fieldset>
+    <fieldset>
+      <legend>부하 크기</legend>
+      <div class="row" style="align-items:flex-start">
+        <label class="f">테스트 이름<input id="testName"><span class="help">같은 이름으로 Vuser만 바꿔 여러 번 실행하면 모니터 화면에서 포화점 비교가 됩니다</span></label>
+        <label class="f" style="flex:0 1 120px">에이전트 수<input id="agentCount" type="number" min="1" value="1"><span class="help" id="agentHelp"></span></label>
+        <label class="f" style="flex:0 1 150px">에이전트당 Vuser<input id="vuser" type="number" min="1" value="10"><span class="help" id="vuserHelp"></span></label>
+        <label class="f" style="flex:0 1 120px">시간(분)<input id="minutes" type="number" min="1" max="600" value="1"></label>
+        <label class="f" style="flex:0 1 200px">대상 서버 IP (선택)<input id="targetIp" placeholder="모니터 에이전트용"><span class="help">대상 서버에 nGrinder 모니터를 설치했을 때만</span></label>
+      </div>
+    </fieldset>
+    <div class="row" style="align-items:center">
+      <button id="btnPreview">스크립트 미리보기</button>
+      <button id="btnRun" class="primary">▶ nGrinder에 올리고 테스트 시작</button>
+      <span class="small muted">처음엔 Vuser 10명, 1분처럼 작게 시작하세요.</span>
+    </div>
+    <div id="formMsg"></div>
+    <div id="previewBox" style="display:none">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-top:12px">
+        <h3 style="margin:0">생성될 스크립트</h3><button id="btnCopy">복사</button>
+      </div>
+      <pre id="previewScript"></pre>
+      <div id="previewUsersWrap"><h3>resources/users.csv</h3><pre id="previewUsers"></pre></div>
+    </div>
+  </section>
+
+  <!-- ④ 결과 -->
+  <section class="panel">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 style="margin:0">④ 실행한 테스트</h2>
+      <button id="btnClearRuns" class="small">목록 비우기</button>
+    </div>
+    <div id="runs"><div class="muted small">아직 이 화면에서 시작한 테스트가 없습니다.</div></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); }catch(e){ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
+};
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = (n, d = 1) => (n === null || n === undefined || isNaN(n)) ? "–" : Number(n).toLocaleString("ko-KR", {maximumFractionDigits: d});
+const fmtTime = (sec) => { sec = Math.max(0, Math.floor(sec||0)); return String(Math.floor(sec/60)).padStart(2,"0")+":"+String(sec%60).padStart(2,"0"); };
+
+/* 이 화면이 배포된 주소 (예: http://was:8080/loadtest) → 예제 앱을 기본 대상으로 */
+const APP_BASE = location.origin + location.pathname.replace(/\/[^/]*$/, "");
+
+async function api(method, path, body){
+  const r = await fetch(path, {method, headers: body ? {"Content-Type":"application/json"} : {}, body: body ? JSON.stringify(body) : undefined});
+  const t = await r.text();
+  let j = null; try{ j = t ? JSON.parse(t) : null; }catch(e){}
+  if (!r.ok) throw new Error((j && (j.error || j.message)) || `HTTP ${r.status}`);
+  if (j === null && t.trim().startsWith("<")) throw new Error("nGrinder 로그인 실패로 보입니다 (연결 설정 확인)");
+  return j;
+}
+
+/* ===================== 시나리오 정의 =====================
+   main: 화면에 바로 보이는 항목 / adv: 고급 설정
+   key 는 nGrinder 스크립트의 ★ 설정 이름과 같아야 함 (서버가 그 값만 바꿔 넣음) */
+const SCENARIOS = {
+  get: {
+    title: "단순 조회", desc: "로그인 없이 페이지·API를 반복 조회",
+    flow: "매 반복: 아래 주소들 중 하나를 골라 GET → 응답코드 200 확인",
+    main: [
+      {key:"PATHS", label:"호출할 주소들 (쉼표로 구분)", def:"/demo/products,/demo/products/1,/demo/products/2"},
+      {key:"SUCCESS_TEXT", label:"응답에 꼭 있어야 하는 글자 (선택)", def:""},
+    ], adv: [], users: false, name: "데모_단순조회",
+  },
+  form_login: {
+    title: "폼 로그인 (세션 쿠키)", desc: "로그인 화면에서 로그인 → 로그인 후 페이지 반복",
+    flow: "가상 사용자마다 1번: 로그인(POST, 폼) → 쿠키 저장  /  매 반복: 로그인 후 페이지 GET → '성공 글자' 확인",
+    main: [
+      {key:"LOGIN_PATH", label:"로그인 요청 주소 (POST)", def:"/demo/form/login"},
+      {key:"TARGET_PATH", label:"로그인 후 측정할 페이지", def:"/demo/form/mypage"},
+      {key:"SUCCESS_TEXT", label:"로그인 성공 시 그 페이지에 있는 글자", def:"님 환영합니다"},
+    ],
+    adv: [
+      {key:"ID_FIELD", label:"아이디 입력칸 이름", def:"username"},
+      {key:"PW_FIELD", label:"비밀번호 입력칸 이름", def:"password"},
+    ], users: true, name: "데모_폼로그인",
+  },
+  token_api: {
+    title: "토큰 로그인 (API)", desc: "로그인 API로 토큰 받기 → Bearer 토큰으로 API 반복",
+    flow: "가상 사용자마다 1번: 로그인 API(POST, JSON) → 토큰 저장  /  매 반복: API 1, API 2를 'Authorization: Bearer 토큰'으로 GET",
+    main: [
+      {key:"LOGIN_PATH", label:"로그인 API 주소 (POST)", def:"/demo/api/login"},
+      {key:"API1_PATH", label:"측정할 API 1", def:"/demo/api/me"},
+      {key:"API2_PATH", label:"측정할 API 2 (없으면 비우기)", def:"/demo/api/orders"},
+    ],
+    adv: [
+      {key:"ID_FIELD", label:"아이디 항목 이름", def:"username"},
+      {key:"PW_FIELD", label:"비밀번호 항목 이름", def:"password"},
+      {key:"TOKEN_FIELD", label:"응답 JSON의 토큰 항목 이름", def:"accessToken"},
+    ], users: true, name: "데모_토큰API",
+  },
+  csrf_login: {
+    title: "CSRF 로그인", desc: "로그인 화면의 CSRF 토큰을 읽어 로그인 → 페이지·주문(POST)",
+    flow: "가상 사용자마다 1번: 로그인 화면 GET → 토큰 찾기 → 로그인(POST)  /  매 반복: 로그인 후 페이지 GET + (선택) 새 토큰 읽어 주문 POST",
+    main: [
+      {key:"LOGIN_PAGE_PATH", label:"로그인 화면 주소 (토큰이 있는 곳)", def:"/demo/csrf/login"},
+      {key:"LOGIN_PATH", label:"로그인 요청 주소 (POST)", def:"/demo/csrf/login"},
+      {key:"TARGET_PATH", label:"로그인 후 측정할 페이지", def:"/demo/csrf/mypage"},
+      {key:"SUCCESS_TEXT", label:"로그인 성공 시 그 페이지에 있는 글자", def:"님 환영합니다"},
+      {key:"ACTION_PATH", label:"(선택) 로그인 후 POST 주소", def:"/demo/csrf/order"},
+      {key:"ACTION_PARAMS", label:"(선택) POST로 보낼 값 (a=1&b=2)", def:"item=book"},
+    ],
+    adv: [
+      {key:"ACTION_PAGE_PATH", label:"POST 전에 새 토큰을 읽을 화면", def:"/demo/csrf/mypage"},
+      {key:"ID_FIELD", label:"아이디 입력칸 이름", def:"username"},
+      {key:"PW_FIELD", label:"비밀번호 입력칸 이름", def:"password"},
+      {key:"CSRF_NAME", label:"CSRF 토큰 이름", def:"_csrf"},
+      {key:"CSRF_COOKIE", label:"토큰 쿠키 이름 (쿠키 방식일 때)", def:"XSRF-TOKEN"},
+      {key:"CSRF_COOKIE_HEADER", label:"쿠키 토큰을 보낼 헤더", def:"X-XSRF-TOKEN"},
+    ], users: true, name: "데모_CSRF로그인",
+  },
+};
+const DEFAULT_USERS = Array.from({length: 10}, (_, i) => `loadtest${String(i+1).padStart(3,"0")},Test1234!`).join("\n");
+
+let current = store.get("sd.scenario", "form_login");
+if (!SCENARIOS[current]) current = "form_login";
+let info = null;
+
+/* ===================== 화면 그리기 ===================== */
+function renderTabs(){
+  $("tabs").innerHTML = Object.entries(SCENARIOS).map(([id, s]) =>
+    `<button class="tab ${id===current?"sel":""}" data-id="${id}"><div class="t">${esc(s.title)}</div><div class="d">${esc(s.desc)}</div></button>`).join("");
+  $("tabs").querySelectorAll(".tab").forEach(b => b.onclick = () => { saveForm(); current = b.dataset.id; store.set("sd.scenario", current); renderTabs(); renderForm(); });
+}
+
+function field(f, v){
+  return `<label class="f">${esc(f.label)}<input data-key="${f.key}" value="${esc(v)}"></label>`;
+}
+
+function renderForm(){
+  const s = SCENARIOS[current], saved = store.get("sd.form." + current, {});
+  $("formTitle").textContent = `③ 입력 — ${s.title}`;
+  $("flow").textContent = "동작: " + s.flow;
+  $("mainFields").innerHTML = field({key:"BASE_URL", label:"대상 서버 주소 (에이전트에서 접속 가능한 주소)"}, saved.BASE_URL ?? APP_BASE)
+    + s.main.map(f => field(f, saved[f.key] ?? f.def)).join("");
+  $("advFields").innerHTML = s.adv.map(f => field(f, saved[f.key] ?? f.def)).join("");
+  $("advBox").style.display = s.adv.length ? "" : "none";
+  $("usersBox").style.display = s.users ? "" : "none";
+  $("users").value = saved.__users ?? DEFAULT_USERS;
+  $("testName").value = saved.__testName ?? s.name;
+  ["agentCount","vuser","minutes","targetIp"].forEach(k => { if (saved["__"+k] != null) $(k).value = saved["__"+k]; });
+  $("previewBox").style.display = "none"; $("formMsg").innerHTML = "";
+  document.querySelectorAll("#mainFields input, #advFields input").forEach(i => i.addEventListener("input", () => { saveForm(); checkBase(); }));
+  checkBase(); vuserHelp();
+}
+
+function collect(){
+  const params = {};
+  document.querySelectorAll("#mainFields input, #advFields input").forEach(i => params[i.dataset.key] = i.value.trim());
+  return params;
+}
+function saveForm(){
+  const p = collect();
+  p.__users = $("users").value; p.__testName = $("testName").value;
+  ["agentCount","vuser","minutes","targetIp"].forEach(k => p["__"+k] = $(k).value);
+  store.set("sd.form." + current, p);
+}
+["users","testName","agentCount","vuser","minutes","targetIp"].forEach(id => $(id).addEventListener("input", () => { saveForm(); vuserHelp(); }));
+
+function checkBase(){
+  const v = (document.querySelector('#mainFields input[data-key="BASE_URL"]')?.value || "");
+  let host = ""; try{ host = new URL(v).hostname; }catch(e){}
+  $("baseWarn").innerHTML = /^(localhost|127\.|::1)/.test(host)
+    ? `<div class="msg warn">대상 주소가 ${esc(host)} 입니다. 부하는 <b>nGrinder 에이전트</b>가 보내므로, 에이전트가 다른 서버에 있으면 이 주소로 접속할 수 없습니다. 에이전트에서 접속 가능한 IP나 도메인으로 바꾸세요.</div>` : "";
+}
+function vuserHelp(){
+  const v = Math.max(1, parseInt($("vuser").value)||1), a = Math.max(1, parseInt($("agentCount").value)||1);
+  const p = Math.max(1, Math.ceil(v/100)), t = Math.ceil(v/p);
+  $("vuserHelp").textContent = `프로세스 ${p} × 스레드 ${t}${p*t!==v ? ` (=${p*t}명으로 맞춤)` : ""} · 총 ${p*t*a}명`;
+}
+
+/* ===================== 연결 ===================== */
+async function loadInfo(){
+  try{
+    info = await api("GET", "scenario/info");
+    $("ngUrl").value = info.ngrinderUrl || ""; $("ngUser").value = info.user || "";
+    $("ngPw").placeholder = info.hasPassword ? "(저장됨 — 바꿀 때만 입력)" : "";
+    if (info.connected){
+      $("connBadge").className = "badge good";
+      $("connBadge").textContent = `연결됨 · 사용 가능 에이전트 ${info.readyAgents}/${info.agents}대`;
+      $("agentHelp").textContent = `사용 가능 ${info.readyAgents}대`;
+      $("connMsg").innerHTML = info.readyAgents ? "" : `<div class="msg warn">연결은 됐지만 사용 가능한(READY·승인) 에이전트가 없습니다. 에이전트를 실행하고 nGrinder에서 승인하세요.</div>`;
+    } else {
+      $("connBadge").className = "badge bad"; $("connBadge").textContent = "연결 안 됨";
+      $("connMsg").innerHTML = `<div class="msg err">${esc(info.message || "nGrinder에 연결할 수 없습니다")}</div>`;
+    }
+  }catch(e){
+    $("connBadge").className = "badge bad"; $("connBadge").textContent = "오류";
+    $("connMsg").innerHTML = `<div class="msg err">${esc(e.message)}</div>`;
+  }
+}
+$("btnConn").onclick = async () => {
+  $("btnConn").disabled = true;
+  try{ await api("POST", "scenario/settings", {url: $("ngUrl").value, user: $("ngUser").value, password: $("ngPw").value}); $("ngPw").value = ""; await loadInfo(); }
+  catch(e){ $("connMsg").innerHTML = `<div class="msg err">${esc(e.message)}</div>`; }
+  $("btnConn").disabled = false;
+};
+
+/* ===================== 미리보기 / 실행 ===================== */
+function request(){
+  return {
+    scenario: current, params: collect(), users: $("users").value,
+    options: {testName: $("testName").value.trim(), agentCount: $("agentCount").value, vuserPerAgent: $("vuser").value,
+              durationMinutes: $("minutes").value, targetHostIp: $("targetIp").value.trim()},
+  };
+}
+$("btnPreview").onclick = async () => {
+  try{
+    const r = await api("POST", "scenario/preview", request());
+    $("previewScript").textContent = r.script;
+    $("previewUsersWrap").style.display = r.users ? "" : "none";
+    $("previewUsers").textContent = r.users || "";
+    $("previewBox").style.display = ""; $("formMsg").innerHTML = "";
+  }catch(e){ $("formMsg").innerHTML = `<div class="msg err">${esc(e.message)}</div>`; }
+};
+$("btnCopy").onclick = () => { navigator.clipboard?.writeText($("previewScript").textContent); $("btnCopy").textContent = "복사됨"; setTimeout(() => $("btnCopy").textContent = "복사", 1500); };
+
+$("btnRun").onclick = async () => {
+  const req = request(), s = SCENARIOS[current];
+  const total = (Math.ceil((parseInt(req.options.vuserPerAgent)||1) / Math.max(1, Math.ceil((parseInt(req.options.vuserPerAgent)||1)/100))) * Math.max(1, Math.ceil((parseInt(req.options.vuserPerAgent)||1)/100))) * (parseInt(req.options.agentCount)||1);
+  if (!confirm(`[${s.title}] 테스트를 시작합니다.\n\n대상: ${req.params.BASE_URL}\n가상 사용자: 총 ${total}명, ${req.options.durationMinutes}분\n\n대상 서버에 실제 부하가 발생합니다. 허락받은 테스트 서버가 맞나요?`)) return;
+  $("btnRun").disabled = true;
+  $("formMsg").innerHTML = `<div class="msg">스크립트를 nGrinder에 올리고 테스트를 만드는 중…</div>`;
+  try{
+    const r = await api("POST", "scenario/run", req);
+    $("formMsg").innerHTML = `<div class="msg">테스트 #${r.testId} 를 시작했습니다. 아래 ④에서 진행 상황을 볼 수 있습니다.\n스크립트 위치(nGrinder): ${esc(r.scriptPath)}</div>`;
+    const runs = store.get("sd.runs", []);
+    runs.unshift({id: r.testId, name: r.testName, scenario: current, totalVuser: r.totalVuser, url: r.ngrinderTestUrl, at: Date.now()});
+    store.set("sd.runs", runs.slice(0, 20));
+    renderRuns(); poll();
+  }catch(e){ $("formMsg").innerHTML = `<div class="msg err">시작 실패: ${esc(e.message)}</div>`; }
+  $("btnRun").disabled = false;
+};
+
+/* ===================== 실행 결과 ===================== */
+const live = {};   // id -> {tps:[], data}
+const statusName = (s) => (s && typeof s === "object") ? (s.name || "") : (s || "");
+function category(s){
+  if (s && typeof s === "object" && s.category) return typeof s.category === "object" ? s.category.name : s.category;
+  return "";
+}
+const running = (s) => ["TESTING","PROGRESSING","PREPARE","ABNORMAL_TESTING"].includes(category(s));
+function badge(s){
+  const c = category(s), cls = {TESTING:"run",PROGRESSING:"run",PREPARE:"run",FINISHED:"good",WARNED:"warn",ERROR:"bad",ABNORMAL_TESTING:"bad",STOP:"warn"}[c] || "";
+  const ko = {READY:"시작 대기",SAVED:"저장됨",TESTING:"테스트 중",FINISHED:"완료",FINISHED_WITH_WARNING:"완료(경고)",STOP_BY_ERROR:"오류로 중지",STOP_ON_ERROR:"오류로 중지",CANCELED:"취소됨"}[statusName(s)];
+  return `<span class="badge ${cls}">${esc(ko || statusName(s) || "확인 중")}</span>`;
+}
+function spark(arr){
+  const v = arr.filter(x => x != null); if (v.length < 2) return "";
+  const max = Math.max(...v) * 1.1 || 1, W = 300, H = 60;
+  const pts = arr.map((x, i) => `${(i/(arr.length-1)*W).toFixed(1)},${(H - (x||0)/max*H).toFixed(1)}`).join(" ");
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${pts}"/></svg>`;
+}
+function kpi(l, v){ return `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div></div>`; }
+
+function renderRuns(){
+  const runs = store.get("sd.runs", []);
+  if (!runs.length){ $("runs").innerHTML = `<div class="muted small">아직 이 화면에서 시작한 테스트가 없습니다.</div>`; return; }
+  $("runs").innerHTML = runs.map(r => {
+    const L = live[r.id] || {}, t = L.test || {}, perf = L.sample?.perf, st = L.sample?.status || t.status;
+    const isRun = running(st);
+    const ts = perf?.totalStatistics || {};
+    const tps = isRun ? ts["TPS"] : t.tps, mtt = isRun ? ts["Mean_Test_Time_(ms)"] : t.meanTestTime;
+    const tests = isRun ? ts["Tests"] : t.tests, errors = isRun ? ts["Errors"] : t.errors;
+    const er = (tests||0) + (errors||0) ? (errors||0) / ((tests||0)+(errors||0)) * 100 : null;
+    const msg = (statusName(st) === "STOP_BY_ERROR" || statusName(st) === "STOP_ON_ERROR") && t.lastProgressMessage
+      ? `<div class="msg err">${esc(String(t.lastProgressMessage).replace(/<[^>]+>/g," ").slice(0,400))}</div>` : "";
+    return `<div class="run">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <div><b>#${r.id}</b> ${esc(r.name)} <span class="muted small">· ${esc(SCENARIOS[r.scenario]?.title || r.scenario)} · 총 Vuser ${r.totalVuser} · ${new Date(r.at).toLocaleString("ko-KR")}</span></div>
+        <div class="row" style="align-items:center">${badge(st)}
+          <button class="danger small" data-stop="${r.id}" ${isRun ? "" : "disabled"}>중지</button>
+          <a href="monitor/index.html?test=${r.id}">모니터에서 자세히</a>
+          <a href="${esc(r.url)}" target="_blank" rel="noopener">nGrinder에서 보기</a></div>
+      </div>
+      <div class="kpis">${kpi(isRun ? "현재 TPS" : "평균 TPS", fmt(isRun ? perf?.tpsChartData : tps))}${kpi("평균 TPS", fmt(tps))}${kpi("평균 응답시간", mtt==null?"–":fmt(mtt)+" ms")}
+        ${kpi("성공 건수", fmt(tests,0))}${kpi("에러", errors==null?"–":`${fmt(errors,0)} (${er==null?"–":er<0.01&&er>0?"<0.01":fmt(er,2)}%)`)}${kpi(isRun?"경과":"Peak TPS", isRun ? fmtTime(perf?.testTime) : fmt(t.peakTps))}</div>
+      ${isRun ? spark(L.tps || []) : ""}${msg}
+    </div>`;
+  }).join("");
+  $("runs").querySelectorAll("[data-stop]").forEach(b => b.onclick = async () => {
+    if (!confirm(`#${b.dataset.stop} 테스트를 중지할까요?`)) return;
+    try{ await api("PUT", `api/perftest/api/${b.dataset.stop}?action=stop`); }catch(e){ alert("중지 실패: " + e.message); }
+  });
+}
+
+let pollTimer = null;
+async function poll(){
+  clearTimeout(pollTimer);
+  const runs = store.get("sd.runs", []);
+  let anyActive = false;
+  for (const r of runs.slice(0, 5)){
+    const L = live[r.id] = live[r.id] || {tps: []};
+    if (L.done) continue;
+    try{
+      L.test = await api("GET", `api/perftest/api/${r.id}`);
+      if (running(L.test.status) || ["READY"].includes(statusName(L.test.status))){
+        anyActive = true;
+        L.sample = await api("GET", `api/perftest/api/${r.id}/sample`);
+        if (L.sample?.perf){ L.tps.push(L.sample.perf.tpsChartData); if (L.tps.length > 150) L.tps.shift(); }
+      } else { L.sample = null; L.done = true; }
+    }catch(e){ L.error = e.message; }
+  }
+  renderRuns();
+  pollTimer = setTimeout(poll, anyActive ? 3000 : 15000);
+}
+$("btnClearRuns").onclick = () => { if (confirm("이 화면의 목록만 비웁니다 (nGrinder의 테스트 기록은 그대로)")){ store.set("sd.runs", []); renderRuns(); } };
+
+$("themeBtn").onclick = () => {
+  const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  document.documentElement.dataset.theme = cur === "dark" ? "light" : "dark"; store.set("ngr.theme", document.documentElement.dataset.theme);
+};
+const savedTheme = store.get("ngr.theme", null); if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+
+renderTabs(); renderForm(); loadInfo(); renderRuns(); poll();
+</script>
+</body>
+</html>

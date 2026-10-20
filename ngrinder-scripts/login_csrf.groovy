@@ -85,10 +85,10 @@ class TestRunner {
 
 		// 1) 로그인 화면 열기 → 토큰 찾기 (이때 받은 세션 쿠키는 자동으로 보관됨)
 		HTTPResponse page = request.GET(BASE_URL + LOGIN_PAGE_PATH)
-		assertThat("로그인 화면을 열지 못했습니다", page.statusCode, is(200))
+		assertThat("[LOGIN_PAGE_FAILED] 로그인 화면을 열지 못했습니다", page.statusCode, is(200))
 		Map csrf = findCsrf(page)
-		assertNotNull("로그인 화면에서 CSRF 토큰을 찾지 못했습니다. CSRF_NAME/CSRF_COOKIE 설정을 확인하세요.\n화면 앞부분: "
-			+ page.bodyText.take(500), csrf)
+		assertNotNull("[NO_CSRF_TOKEN] 로그인 화면에서 CSRF 토큰을 찾지 못했습니다. CSRF_NAME/CSRF_COOKIE 설정을 확인하세요.\n화면 앞부분: "
+			+ text(page).take(500), csrf)
 		grinder.logger.info("{} CSRF 토큰 발견 (위치: {})", myId, csrf.where)
 
 		// 2) 아이디/비밀번호 + 토큰으로 로그인
@@ -99,7 +99,7 @@ class TestRunner {
 
 		loginCookies = CookieManager.getCookies()
 		grinder.logger.info("{} 로그인 응답코드 {}", myId, res.statusCode)
-		assertThat("로그인 요청이 거부됐습니다(403이면 CSRF 토큰 문제일 가능성 큼): " + myId, res.statusCode, isOneOf(200, 302, 303))
+		assertThat("[LOGIN_FAILED] 로그인 요청이 거부됐습니다(403이면 CSRF 토큰 문제일 가능성 큼): " + myId, res.statusCode, isOneOf(200, 302, 303))
 	}
 
 	@Before
@@ -111,7 +111,7 @@ class TestRunner {
 	public void test1() {
 		HTTPResponse res = request.GET(BASE_URL + TARGET_PATH)
 		assertThat(res.statusCode, is(200))
-		assertThat("로그인이 안 된 상태입니다: " + myId, res.bodyText, containsString(SUCCESS_TEXT))
+		assertThat("[NOT_LOGGED_IN] 로그인이 안 된 상태입니다: " + myId, text(res), containsString(SUCCESS_TEXT))
 	}
 
 	/** (선택) 로그인 후 POST: 로그인하면 토큰이 새로 바뀌는 서비스가 많아서, 매번 화면에서 새 토큰을 읽어 보냄 */
@@ -120,18 +120,18 @@ class TestRunner {
 		if (!ACTION_PATH) return
 		HTTPResponse page = request.GET(BASE_URL + (ACTION_PAGE_PATH ?: TARGET_PATH))
 		Map csrf = findCsrf(page)
-		assertNotNull("POST 전에 새 CSRF 토큰을 찾지 못했습니다", csrf)
+		assertNotNull("[NO_CSRF_TOKEN] POST 전에 새 CSRF 토큰을 찾지 못했습니다", csrf)
 		Map<String, String> headers = ["Content-Type": "application/x-www-form-urlencoded"]
 		if (csrf.header) headers.put(csrf.header, csrf.token)
 		HTTPResponse res = request.POST(BASE_URL + ACTION_PATH, ACTION_PARAMS + [(CSRF_NAME): csrf.token], headers)
-		assertThat("POST 실패(403이면 CSRF 토큰 문제): " + myId, res.statusCode, isOneOf(200, 201, 302, 303))
+		assertThat("[POST_FAILED] POST 실패(403이면 CSRF 토큰 문제): " + myId, res.statusCode, isOneOf(200, 201, 302, 303))
 	}
 
 	// ---------------- 아래는 토큰 찾기 도우미 (고칠 필요 없음) ----------------
 
 	/** 응답에서 CSRF 토큰 찾기. 못 찾으면 null. 결과: [token: 값, header: 같이 보낼 헤더이름 또는 null, where: 찾은 위치] */
 	static Map findCsrf(HTTPResponse res) {
-		String html = res.bodyText ?: ""
+		String html = text(res) ?: ""
 		// ① <input type="hidden" name="_csrf" value="...">
 		String v = attrOfTag(html, "input", "name", CSRF_NAME, "value")
 		if (v) return [token: v, header: null, where: "숨은 입력칸(input)"]
@@ -176,5 +176,20 @@ class TestRunner {
 			?.replaceAll(/&#x([0-9a-fA-F]+);/) { all, hex -> new String(Character.toChars(Integer.parseInt(hex, 16))) }
 			?.replaceAll(/&#(\d+);/) { all, dec -> new String(Character.toChars(Integer.parseInt(dec))) }
 			?.replace("&amp;", "&")
+	}
+
+	/**
+	 * 응답 본문을 글자로 바꾸기. 서버가 알려준 문자셋(Content-Type의 charset, 없으면 UTF-8)을 씀.
+	 * ⚠ nGrinder의 res.bodyText 는 "에이전트 PC의 기본 문자셋"을 써서, 한국어 Windows(MS949)나
+	 *   로캘 설정이 없는 리눅스(Java 11 이하)에서는 한글이 깨져 글자 비교가 실패함 (실제 에이전트에서 확인)
+	 */
+	static String text(HTTPResponse res) {
+		String ct = res.getHeader("Content-Type")?.value ?: ""
+		def m = (ct =~ /(?i)charset=([\w.-]+)/)
+		java.nio.charset.Charset cs = java.nio.charset.StandardCharsets.UTF_8
+		if (m.find()) {
+			try { cs = java.nio.charset.Charset.forName(m.group(1)) } catch (Exception ignored) { }
+		}
+		return res.getBodyText(cs)
 	}
 }

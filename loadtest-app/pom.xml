@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  nGrinder 시나리오 대시보드 + 부하테스트 대상 예제 앱 (WAS 배포용 WAR)
+
+  빌드:  mvn package   →  target/loadtest.war
+  배포:  WAS(Tomcat 10.1+, WildFly 27+ 등 Jakarta EE 9+ 지원 WAS)에 loadtest.war 를 올리면
+         http://WAS주소:포트/loadtest/  로 접속
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>webwas</groupId>
+  <artifactId>loadtest</artifactId>
+  <version>1.0.0</version>
+  <packaging>war</packaging>
+
+  <properties>
+    <maven.compiler.release>11</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <dependencies>
+    <!-- WAS가 제공하므로 WAR에는 포함하지 않음 (provided) -->
+    <dependency>
+      <groupId>jakarta.servlet</groupId>
+      <artifactId>jakarta.servlet-api</artifactId>
+      <version>5.0.0</version>
+      <scope>provided</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <finalName>loadtest</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.11.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-war-plugin</artifactId>
+        <version>3.4.0</version>
+        <configuration>
+          <failOnMissingWebXml>false</failOnMissingWebXml>
+          <webResources>
+            <!-- 검증된 nGrinder 스크립트(../ngrinder-scripts)를 템플릿으로 WAR 안에 포함 -->
+            <resource>
+              <directory>../ngrinder-scripts</directory>
+              <targetPath>WEB-INF/classes/templates</targetPath>
+              <includes><include>*.groovy</include></includes>
+            </resource>
+            <!-- 실시간 모니터 화면(../ngrinder-dashboard/index.html)을 monitor.html 로 포함 -->
+            <resource>
+              <directory>../ngrinder-dashboard</directory>
+              <includes><include>index.html</include></includes>
+              <targetPath>monitor</targetPath>
+            </resource>
+          </webResources>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -4,6 +4,7 @@
 |---|---|
 | `login_session_cookie.groovy` | 로그인 **화면(폼)**에서 로그인하고, 서버가 준 **쿠키(예: JSESSIONID)**로 로그인 상태가 유지되는 웹사이트 |
 | `login_token_api.groovy` | 로그인 **API**가 `{"accessToken":"..."}` 같은 **토큰**을 돌려주고, 이후 요청에 `Authorization: Bearer 토큰`을 붙이는 서비스 |
+| `simple_get.groovy` | 로그인 없이 페이지·API를 반복 조회 (가장 기본) |
 | `login_csrf.groovy` | 로그인할 때 아이디·비밀번호 말고 **CSRF 토큰**(`_csrf` 등)도 함께 보내야 하는 웹사이트 (Spring Security 등) |
 | `resources/users.csv` | 테스트용 계정 목록 (한 줄에 `아이디,비밀번호`) |
 
@@ -113,6 +114,17 @@ Spring Security 6부터는 "The `CsrfToken` now includes randomness on every req
 | `로그인 요청이 거부됐습니다 ... 403` | 토큰을 보내는 이름/헤더가 서버 기대와 다름. 개발자 도구에서 로그인 요청이 토큰을 Payload로 보내는지, 어떤 헤더로 보내는지 다시 확인 |
 | `POST 실패 ... 403` | `ACTION_PAGE_PATH` 화면에 토큰이 없음 → 토큰이 있는 화면 주소로 바꾸기 |
 
+## 오류 코드 (에이전트 로그에서 한글이 깨져도 이 코드는 보임)
+| 코드 | 의미 |
+|---|---|
+| `[LOGIN_FAILED]` | 로그인 요청이 실패 (주소·입력칸 이름·계정 확인, CSRF면 403 여부) |
+| `[NO_LOGIN_COOKIE]` | 로그인했는데 쿠키를 못 받음 |
+| `[NOT_LOGGED_IN]` | 로그인 후 페이지에 "성공 글자"가 없음 (글자 오타, 동시 로그인 제한 등) |
+| `[NO_TOKEN]` | 로그인 API 응답에서 토큰 항목을 못 찾음 |
+| `[LOGIN_PAGE_FAILED]` / `[NO_CSRF_TOKEN]` | 로그인 화면을 못 열었거나 CSRF 토큰을 못 찾음 |
+| `[POST_FAILED]` | 로그인 후 POST 실패 (403이면 CSRF 토큰 문제) |
+| `[BAD_STATUS]` / `[TEXT_NOT_FOUND]` / `[NO_PATHS]` | 단순 조회: 응답코드 이상 / 기대 글자 없음 / 주소 목록 비어 있음 |
+
 ## 자주 나는 오류
 
 | 로그 메시지 | 원인 / 해결 |
@@ -127,6 +139,12 @@ Spring Security 6부터는 "The `CsrfToken` now includes randomness on every req
 
 ## 꼭 알아야 할 함정 (검증하며 발견)
 
+- **응답 본문은 `res.bodyText` 대신 스크립트 안의 `text(res)` 로 읽습니다.**
+  nGrinder의 `getBodyText()` 는 `getBodyText(Charset.defaultCharset())`, 즉 **에이전트 PC의 기본 문자셋**으로 글자를 만듭니다.
+  실제 nGrinder 에이전트(Java 11, 로캘 미설정 리눅스)에서 돌렸을 때 응답의 "님 환영합니다"가 깨져 **로그인 성공인데도 실패로 처리**됐습니다.
+  한국어 Windows(MS949) 에이전트에서도 같은 일이 생길 수 있습니다. `text(res)` 는 서버가 알려준 문자셋(없으면 UTF-8)을 씁니다.
+- **에이전트 로그의 한글이 `????` 로 깨질 수 있습니다.** 그래서 오류 메시지 앞에 영문 코드(`[NOT_LOGGED_IN]` 등)를 붙였습니다. 아래 표로 의미를 찾으세요.
+
 - **폼 로그인에는 `Content-Type: application/x-www-form-urlencoded` 를 반드시 직접 지정해야 합니다.**
   nGrinder 3.5.x는 `request.POST(주소, [항목:값])` 처럼 헤더 없이 부르면 **JSON으로 보냅니다**
   (소스 `ContentTypeUtils.getContentType()` 의 기본값이 `ContentType.APPLICATION_JSON`).
@@ -135,6 +153,8 @@ Spring Security 6부터는 "The `CsrfToken` now includes randomness on every req
   아주 오래된 서버나 일부 보안장비가 거부하면 로그인이 실패할 수 있습니다.
 
 ## 어떻게 검증했나 (한계 포함)
+- **실제 nGrinder 3.5.9-p1 컨트롤러 + 에이전트(Java 11)** 에서 4개 스크립트를 모두 1분씩 실행해 완료 확인
+  (대상: `loadtest-app` 예제 기능, Tomcat 10.1 / WildFly 39). 결과는 `../loadtest-app/README.md` 참고.
 - CSRF 예제: Spring Security처럼 동작하는 가짜 서버(토큰 없으면 403, 로그인하면 세션·토큰 교체)를 ①숨은 입력칸 ②meta+헤더 ③쿠키+헤더 세 방식으로 만들어
   각각 로그인 1번 → 로그인 후 페이지 3번 + 로그인 후 POST 3번이 모두 성공함을 확인. `CSRF_NAME` 을 틀리게 넣으면 위 오류 메시지가 나오는 것도 확인.
 - Maven 중앙 저장소의 **nGrinder 3.5.9-p1 실행 라이브러리**로 두 스크립트를 컴파일·실행하고, 가짜 로그인 서버(쿠키 방식 + 토큰 방식)에 붙여 확인했습니다.

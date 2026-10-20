@@ -78,8 +78,8 @@ class TestRunner {
 
 		grinder.logger.info("{} 로그인 응답코드 {}, 받은 쿠키 {}개", myId, res.statusCode, loginCookies.size())
 		// 로그인 실패면 이 가상 사용자는 여기서 멈춤 (잘못된 계정을 바로 알 수 있게)
-		assertThat("로그인 응답코드가 이상합니다: " + myId, res.statusCode, isOneOf(200, 302))
-		assertThat("로그인 쿠키를 받지 못했습니다: " + myId, loginCookies.size(), greaterThan(0))
+		assertThat("[LOGIN_FAILED] 로그인 응답코드가 이상합니다: " + myId, res.statusCode, isOneOf(200, 302))
+		assertThat("[NO_LOGIN_COOKIE] 로그인 쿠키를 받지 못했습니다: " + myId, loginCookies.size(), greaterThan(0))
 	}
 
 	/** 매 반복 직전: nGrinder가 반복마다 쿠키를 지우므로, 저장해 둔 로그인 쿠키를 다시 넣음 */
@@ -94,6 +94,21 @@ class TestRunner {
 		HTTPResponse res = request.GET(BASE_URL + TARGET_PATH)
 		assertThat(res.statusCode, is(200))
 		// 응답코드만 보면 "로그인 화면이 200으로 돌아온 경우"를 놓칠 수 있어 내용까지 확인
-		assertThat("로그인이 풀린 것 같습니다: " + myId, res.bodyText, containsString(SUCCESS_TEXT))
+		assertThat("[NOT_LOGGED_IN] 로그인이 풀린 것 같습니다: " + myId, text(res), containsString(SUCCESS_TEXT))
+	}
+
+	/**
+	 * 응답 본문을 글자로 바꾸기. 서버가 알려준 문자셋(Content-Type의 charset, 없으면 UTF-8)을 씀.
+	 * ⚠ nGrinder의 res.bodyText 는 "에이전트 PC의 기본 문자셋"을 써서, 한국어 Windows(MS949)나
+	 *   로캘 설정이 없는 리눅스(Java 11 이하)에서는 한글이 깨져 글자 비교가 실패함 (실제 에이전트에서 확인)
+	 */
+	static String text(HTTPResponse res) {
+		String ct = res.getHeader("Content-Type")?.value ?: ""
+		def m = (ct =~ /(?i)charset=([\w.-]+)/)
+		java.nio.charset.Charset cs = java.nio.charset.StandardCharsets.UTF_8
+		if (m.find()) {
+			try { cs = java.nio.charset.Charset.forName(m.group(1)) } catch (Exception ignored) { }
+		}
+		return res.getBodyText(cs)
 	}
 }

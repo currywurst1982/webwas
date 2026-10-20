@@ -102,8 +102,11 @@ details summary{cursor:pointer;color:var(--muted)}
       <label class="f">목표 TPS (이상)<input type="number" id="slaTps" min="0" step="1"></label>
       <label class="f">평균 응답시간 MTT (ms 이하)<input type="number" id="slaMtt" min="0" step="1"></label>
       <label class="f">에러율 (% 이하)<input type="number" id="slaErr" min="0" step="0.1"></label>
-      <span class="small muted">기준은 이 브라우저에만 저장되며, 아래 표와 지표 카드의 합격/불합격 표시에 쓰입니다.</span>
+      <label class="f">테스트 대상 서버 대수<input type="number" id="slaServers" min="1" step="1"></label>
+      <label class="f">웜업 제외 구간 (초)<input type="number" id="slaWarmup" min="0" step="10"></label>
     </div>
+    <p class="small muted" style="margin:8px 0 0">기준은 이 브라우저에만 저장되며, 아래 표와 지표 카드의 합격/불합격 표시에 쓰입니다.
+      "대상 서버 대수"는 서버 1대당 TPS와 목표 TPS에 필요한 서버 수를 추정할 때, "웜업 제외 구간"은 완료된 테스트에서 시작 직후 불안정한 구간을 빼고 안정 구간 평균을 낼 때 씁니다.</p>
   </section>
 
   <!-- 2. 실시간 모니터 -->
@@ -118,11 +121,15 @@ details summary{cursor:pointer;color:var(--muted)}
         <button id="btnStop" class="danger" disabled>테스트 중지</button>
       </div>
     </div>
+    <div class="small muted" id="cfgLine" style="margin-bottom:10px"></div>
     <div class="grid kpis" id="kpis"></div>
+    <div class="small" id="steadyLine" style="margin-top:10px"></div>
     <div class="grid charts" style="margin-top:12px">
       <div class="chart"><div class="title"><span id="chartATitle">TPS (초당 처리 건수)</span><span id="chartANote"></span></div><svg id="chartA"></svg></div>
       <div class="chart"><div class="title"><span id="chartBTitle">평균 응답시간 MTT (ms)</span><span id="chartBNote"></span></div><svg id="chartB"></svg></div>
     </div>
+    <h2 style="margin:16px 0 8px">대상 서버 자원 (nGrinder 모니터 에이전트)</h2>
+    <div id="monitorBox" class="small muted"></div>
   </section>
 
   <!-- 3. 테스트 목록 -->
@@ -153,6 +160,7 @@ details summary{cursor:pointer;color:var(--muted)}
         <select id="satName"></select></label>
     </div>
     <div class="chart"><div class="title"><div class="legend"><span><i style="background:var(--s1)"></i>TPS (왼쪽 축)</span><span><i style="background:var(--s2)"></i>MTT ms (오른쪽 축)</span></div><span class="muted">가로축: 총 Vuser</span></div><svg id="satChart" style="height:240px"></svg></div>
+    <div id="satVerdict" class="msg" style="margin:10px 0 0"></div>
     <p class="small muted" style="margin:8px 0 0">완료된(FINISHED) 테스트만 사용합니다. Vuser를 늘려도 TPS가 더 오르지 않고 응답시간만 늘어나는 구간이 시스템의 처리 한계(포화점)일 가능성이 높습니다. 같은 스크립트·같은 환경에서 Vuser만 바꿔 여러 번 실행해야 비교가 의미 있습니다.</p>
   </section>
 
@@ -176,7 +184,11 @@ details summary{cursor:pointer;color:var(--muted)}
       <li><b>Peak TPS</b>: 테스트 중 가장 높았던 TPS.</li>
       <li><b>MTT (Mean Test Time)</b>: 테스트 1건의 평균 소요시간(ms). 응답시간이라고 보면 됩니다.</li>
       <li><b>에러율</b>: 에러 수 ÷ (성공 테스트 수 + 에러 수) × 100.</li>
+      <li><b>Ramp-up</b>: 부하를 한 번에 주지 않고 프로세스나 스레드를 정해진 간격마다 늘려 가는 설정.</li>
+      <li><b>웜업</b>: 서버를 새로 띄운 직후의 불안정한 상태가 결과에 섞이지 않도록 본 측정 전에 미리 부하를 주는 것.</li>
+      <li><b>모니터 에이전트</b>: 테스트 대상 서버에 설치해 CPU·메모리를 nGrinder로 보내는 프로그램. 설치하지 않으면 ② 아래 "대상 서버 자원"이 비어 있습니다.</li>
     </ul>
+    <p class="small muted">테스트 진행 권장 순서: ① 스모크(아주 적은 Vuser로 스크립트·연결이 정상인지 확인) → ② Vuser를 단계적으로 늘려 가며 반복 실행(④ 그래프로 포화점 확인) → ③ 목표 부하로 30분 이상 유지하며 메모리가 계속 늘어나는지(누수) 확인.</p>
   </details>
 </main>
 
@@ -215,11 +227,12 @@ const fmtTime = (sec) => { sec = Math.max(0, Math.floor(sec||0)); const h=Math.f
 const fmtDate = (v) => { if(!v) return "–"; const d = new Date(v); return isNaN(d) ? String(v) : d.toLocaleString("ko-KR",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}); };
 
 /* ===================== 합격 기준 ===================== */
-const sla = store.get("ngr.sla", {tps: 100, mtt: 500, err: 1});
-$("slaTps").value = sla.tps; $("slaMtt").value = sla.mtt; $("slaErr").value = sla.err;
-["slaTps","slaMtt","slaErr"].forEach(id => $(id).addEventListener("change", () => {
+const sla = Object.assign({tps: 100, mtt: 500, err: 1, servers: 1, warmup: 60}, store.get("ngr.sla", {}));
+$("slaTps").value = sla.tps; $("slaMtt").value = sla.mtt; $("slaErr").value = sla.err; $("slaServers").value = sla.servers; $("slaWarmup").value = sla.warmup;
+["slaTps","slaMtt","slaErr","slaServers","slaWarmup"].forEach(id => $(id).addEventListener("change", () => {
   sla.tps = parseFloat($("slaTps").value)||0; sla.mtt = parseFloat($("slaMtt").value)||0; sla.err = parseFloat($("slaErr").value)||0;
-  store.set("ngr.sla", sla); renderTests(); renderKpis();
+  sla.servers = Math.max(1, parseInt($("slaServers").value)||1); sla.warmup = Math.max(0, parseFloat($("slaWarmup").value)||0);
+  store.set("ngr.sla", sla); renderTests(); renderKpis(); lastSeriesId = null; refreshSelected();
 }));
 function judge(tps, mtt, er){
   if (tps == null || mtt == null) return {ok:null, html:'<span class="badge">–</span>'};
@@ -248,6 +261,7 @@ const live = {
   stop: (id) => live.req("PUT", `/perftest/api/${id}?action=stop`),
   cloneAndStart: (id, agentCount) => live.req("POST", `/perftest/api/${id}/clone_and_start`, {agentCount}),
   agents: () => live.req("GET", `/agent/api/list`),
+  monitor: (id, ip) => live.req("GET", `/perftest/api/${id}/monitor?targetIP=${encodeURIComponent(ip)}&imgWidth=800`),
 };
 
 /* 데모: nGrinder 없이 화면을 확인하기 위한 가짜 데이터 */
@@ -255,12 +269,14 @@ const demo = (() => {
   const now = Date.now();
   const base = (id, name, agents, vpa, tps, mtt, errors, status, minsAgo) => ({
     id, testName: name, status: {name: status}, agentCount: agents, vuserPerAgent: vpa, processes: 2, threads: vpa/2,
-    startTime: new Date(now - minsAgo*60000).toISOString(), duration: 600000,
+    startTime: new Date(now - minsAgo*60000).toISOString(), duration: 600000, samplingInterval: 2,
+    useRampUp: true, rampUpType: "PROCESS", rampUpInitCount: 0, rampUpStep: 1, rampUpIncrementInterval: 30000,
+    targetHosts: "api.example.local:10.0.2.21,10.0.2.22",
     tps, peakTps: tps ? tps*1.18 : null, meanTestTime: mtt, tests: tps ? Math.round(tps*600) : null, errors,
   });
   const tests = [
     base(108, "주문API_부하", 2, 200, null, null, null, "TESTING", 3),
-    base(107, "주문API_부하", 2, 150, 1480, 201, 120, "FINISHED", 40),
+    base(107, "주문API_부하", 2, 150, 1450, 201, 120, "FINISHED", 40),
     base(106, "주문API_부하", 2, 100, 1395, 142, 12, "FINISHED", 70),
     base(105, "주문API_부하", 1, 100, 1010, 98, 3, "FINISHED", 100),
     base(104, "주문API_부하", 1, 50, 590, 84, 0, "FINISHED", 130),
@@ -277,7 +293,8 @@ const demo = (() => {
     const sec = (Date.now() - t0)/1000 + 180;
     const tps = Math.max(0, tpsAt(sec)), mtt = 210 + Math.random()*40 + Math.max(0, tps-1300)*0.3;
     const totalTests = Math.round(1350*sec), totalErr = Math.round(sec*0.4);
-    return {status: t.status, perf: {
+    const mon = (cpu) => ({cpuUsedPercentage: cpu, totalMemory: 16*1024*1024, freeMemory: Math.max(1, 6 - sec/600)*1024*1024});
+    return {status: t.status, monitor: {"10.0.2.21": mon(70 + Math.random()*15), "10.0.2.22": mon(64 + Math.random()*15)}, perf: {
       testTime: sec, process: 4, thread: 400, tpsChartData: tps,
       totalStatistics: {"TPS": totalTests/sec, "Peak_TPS": 1690, "Mean_Test_Time_(ms)": 225, "Tests": totalTests, "Errors": totalErr},
       lastSampleStatistics: [{"testNumber":1, "TPS": tps, "Mean_Test_Time_(ms)": mtt, "Tests": tps, "Errors": Math.random()<.3?1:0}],
@@ -294,11 +311,18 @@ const demo = (() => {
       chartInterval: 10,
     };
   };
+  const monitor = (id, ip) => {
+    const t = tests.find(x => x.id === id); const load = Math.min(1, (t.agentCount*t.vuserPerAgent)/300);
+    const mk = (f) => Array.from({length:60}, (_, i) => f(i));
+    return {cpu: mk(i => (10 + 80*load*Math.min(1,i/8) + Math.random()*6).toFixed(1)),
+            memory: mk(i => Math.round((7 + i*0.02*load + Math.random()*0.2)*1024*1024)), interval: "10"};
+  };
   return {
     listTests: async (size) => tests.slice(0, size),
     sample: async (id) => sample(id),
     perf: async (id) => perf(id),
     stop: async (id) => { const t = tests.find(x => x.id === id); t.status = {name:"CANCELED"}; },
+    monitor: async (id, ip) => monitor(id, ip),
     cloneAndStart: async (id, agentCount) => {
       const src = tests.find(x => x.id === id); const nid = Math.max(...tests.map(x=>x.id)) + 1;
       const t = {...src, id: nid, agentCount, status:{name:"TESTING"}, tps:null, peakTps:null, meanTestTime:null, tests:null, errors:null, startTime:new Date().toISOString()};
@@ -406,7 +430,74 @@ function renderKpis(){
     kpi("에러율", fmtPct(er), `에러 ${fmt(errors,0)}건 / 목표 ${fmt(sla.err,2)}% 이하`, c(er==null?null:er <= sla.err)) +
     kpi("Vuser", fmt(vuser,0), isRunning(t.status) ? "실행 중 스레드" : "설정값", "") +
     kpi("누적 테스트 건수", fmt(tcount,0), "", "") +
-    kpi(isRunning(t.status) ? "경과 시간" : "설정 시간", time==null?"–":fmtTime(time), "", "");
+    kpi(isRunning(t.status) ? "경과 시간" : "설정 시간", time==null?"–":fmtTime(time), "", "") +
+    kpi("서버 1대당 TPS", tps==null?"–":fmt(tps / sla.servers), `평균 TPS ÷ 대상 서버 ${sla.servers}대`, "") +
+    kpi("목표 TPS에 필요한 서버", tps ? `${Math.ceil(sla.tps / (tps / sla.servers))}대` : "–", "단순 비례 추정 (아래 주의 참고)", "");
+}
+
+/* 테스트 대상 IP 목록 (nGrinder PerfTest.getTargetHostIP()와 같은 규칙: "도메인:IP" 또는 "IP") */
+function targetIPs(t){
+  return String(t?.targetHosts || "").split(",").map(s => s.trim()).filter(Boolean).map(h => {
+    const a = h.split(":"); return a.length <= 2 ? a[a.length-1] : h.substring(h.indexOf(":") + 1);
+  });
+}
+
+function renderConfigLine(){
+  const t = tests.find(x => x.id === selectedId);
+  if (!t){ $("cfgLine").textContent = ""; return; }
+  const parts = [`설정: 에이전트 ${fmt(t.agentCount,0)}대 × (프로세스 ${fmt(t.processes,0)} × 스레드 ${fmt(t.threads,0)}) = 총 Vuser ${fmt((t.agentCount||0)*(t.vuserPerAgent||0),0)}`];
+  if (t.useRampUp) parts.push(`Ramp-up 사용 (${t.rampUpType === "THREAD" ? "스레드" : "프로세스"} 단위, 시작 ${fmt(t.rampUpInitCount,0)} → ${fmt(t.rampUpIncrementInterval/1000,0)}초마다 +${fmt(t.rampUpStep,0)})`);
+  else parts.push("Ramp-up 미사용 (처음부터 전체 부하)");
+  parts.push(t.duration ? `기간 ${fmtTime(t.duration/1000)}` : t.runCount ? `반복 ${fmt(t.runCount,0)}회` : "");
+  if (t.targetHosts) parts.push(`대상: ${t.targetHosts}`);
+  $("cfgLine").textContent = parts.filter(Boolean).join(" · ");
+}
+
+/* 웜업 구간을 뺀 안정 구간 평균 */
+function renderSteady(series){
+  const box = $("steadyLine");
+  if (!series){ box.innerHTML = ""; return; }
+  const pick = (k) => { const v = series[k]; if (Array.isArray(v)) return v; if (v && typeof v === "object"){ const f = Object.values(v)[0]; return Array.isArray(f) ? f : []; } return []; };
+  const iv = Number(series.chartInterval) || 1, skip = Math.ceil(sla.warmup / iv);
+  const avg = (a) => { const v = a.slice(skip).map(Number).filter(x => isFinite(x)); return v.length ? v.reduce((s,x)=>s+x,0)/v.length : null; };
+  const tps = avg(pick("TPS")), mtt = avg(pick("Mean_Test_Time_(ms)"));
+  if (tps == null){ box.innerHTML = `<span class="muted">웜업 ${sla.warmup}초를 빼면 남는 데이터가 없습니다.</span>`; return; }
+  const j = judge(tps, mtt, null);
+  box.innerHTML = `안정 구간(처음 ${sla.warmup}초 제외) 평균: TPS <b>${fmt(tps)}</b> · MTT <b>${fmt(mtt)} ms</b> ${j.html} <span class="muted">— 그래프 점(약 ${iv}초 간격)으로 계산한 값이라 nGrinder 공식 평균과 조금 다를 수 있습니다.</span>`;
+}
+
+/* 대상 서버 CPU·메모리 */
+async function renderMonitor(t){
+  const box = $("monitorBox");
+  if (!t){ box.innerHTML = ""; return; }
+  const none = `대상 서버 자원 데이터가 없습니다. 대상 서버에 nGrinder 모니터 에이전트를 설치·실행하고, 테스트 설정의 "대상 호스트"에 그 서버 IP를 넣어야 표시됩니다.`;
+  if (isRunning(t.status)){
+    const mon = selectedSample?.monitor || {};
+    const keys = Object.keys(mon);
+    if (!keys.length){ box.innerHTML = none; return; }
+    box.innerHTML = `<div class="grid kpis">` + keys.map(k => {
+      const m = mon[k] || {}, memPct = m.totalMemory ? (m.totalMemory - m.freeMemory) / m.totalMemory * 100 : null;
+      return kpi(`${esc(k)} CPU`, fmt(m.cpuUsedPercentage) + "%", "", m.cpuUsedPercentage >= 90 ? "bad" : "") +
+             kpi(`${esc(k)} 메모리`, memPct==null?"–":fmt(memPct)+"%", "사용률", memPct >= 90 ? "bad" : "");
+    }).join("") + `</div>`;
+    return;
+  }
+  const ips = targetIPs(t);
+  if (!ips.length){ box.innerHTML = none; return; }
+  if (box.dataset.for === String(t.id)) return;   // 완료된 테스트는 한 번만 그림
+  box.dataset.for = String(t.id);
+  box.innerHTML = `<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr))">` + ips.map((ip, i) => `
+    <div class="chart"><div class="title"><span>${esc(ip)} CPU 사용률 (%)</span></div><svg id="monCpu${i}"></svg></div>
+    <div class="chart"><div class="title"><span>${esc(ip)} 사용 메모리 (MB)</span><span>계속 오르기만 하면 누수 의심</span></div><svg id="monMem${i}"></svg></div>`).join("") + `</div>`;
+  for (let i = 0; i < ips.length; i++){
+    try{
+      const d = await api().monitor(t.id, ips[i]) || {};
+      const cpu = (d.cpu || []).map(Number), mem = (d.memory || []).map(v => v == null ? null : Number(v) / 1024);
+      const iv = Number(d.interval) || 1, lab = (k) => fmtTime(k*iv);
+      lineChart($("monCpu"+i), [{data: cpu, color:"--s3"}], {xLabels: lab});
+      lineChart($("monMem"+i), [{data: mem, color:"--s2"}], {xLabels: lab});
+    }catch(e){ $("monCpu"+i).outerHTML = `<div class="muted">불러오지 못함: ${esc(e.message)}</div>`; }
+  }
 }
 
 function renderMonitorCharts(series){
@@ -418,7 +509,9 @@ function renderMonitorCharts(series){
     $("chartANote").textContent = "전체 구간"; $("chartBNote").textContent = "전체 구간";
     lineChart($("chartA"), [{data: pick("TPS"), color:"--s1"}], {xLabels: lab, hline: sla.tps, hlineLabel: "목표 TPS"});
     lineChart($("chartB"), [{data: pick("Mean_Test_Time_(ms)"), color:"--s2"}], {xLabels: lab, hline: sla.mtt, hlineLabel: "목표 MTT"});
+    renderSteady(series);
   } else {
+    renderSteady(null);
     $("chartANote").textContent = t && isRunning(t.status) ? `실시간 · 최근 ${liveTps.length}개 샘플` : "";
     $("chartBNote").textContent = $("chartANote").textContent;
     lineChart($("chartA"), [{data: liveTps, color:"--s1"}], {hline: sla.tps, hlineLabel: "목표 TPS"});
@@ -429,6 +522,7 @@ function renderMonitorCharts(series){
 function renderMonitorHeader(){
   const t = tests.find(x => x.id === selectedId);
   $("monTitle").textContent = t ? `#${t.id} ${t.testName}` : "";
+  renderConfigLine();
   $("monStatus").outerHTML = `<span id="monStatus">${t ? statusBadge(selectedSample?.status || t.status) : '<span class="badge">테스트를 선택하세요</span>'}</span>`;
   $("btnStop").disabled = !(t && isRunning(selectedSample?.status || t.status));
   $("btnClone").disabled = !t;
@@ -447,6 +541,20 @@ function renderSaturation(){
     {data: done.map(d => d.mtt), color:"--s2", axis:"right"},
   ], {x: done.map(d => d.vu), right: true, dots: true, xLabels: (i) => String(done[i].vu),
       dotTitle: (i) => `#${done[i].id} · Vuser ${done[i].vu} · TPS ${fmt(done[i].tps)} · MTT ${fmt(done[i].mtt)}ms`});
+  $("satVerdict").innerHTML = saturationVerdict(done);
+}
+
+/* 포화점 자동 판정: Vuser를 늘렸는데 TPS 증가가 5% 미만(또는 감소)이고 MTT가 10% 이상 늘어난 첫 구간 */
+function saturationVerdict(d){
+  if (d.length < 3) return `완료된 테스트가 ${d.length}개뿐입니다. Vuser를 바꿔 3번 이상 실행해야 추세를 볼 수 있습니다.`;
+  for (let i = 1; i < d.length; i++){
+    const a = d[i-1], b = d[i];
+    if (b.vu <= a.vu) continue;
+    const tg = (b.tps - a.tps) / a.tps * 100, mg = a.mtt ? (b.mtt - a.mtt) / a.mtt * 100 : 0;
+    if (tg < 0) return `<b>Vuser ${a.vu} → ${b.vu}</b> 구간에서 TPS가 오히려 ${fmt(-tg)}% 줄었습니다 (${fmt(a.tps)} → ${fmt(b.tps)}). 처리 한계를 넘어 처리량이 떨어지는 구간일 가능성이 높습니다. 최대 처리량은 Vuser ${a.vu} 부근으로 추정됩니다.`;
+    if (tg < 5 && mg >= 10) return `<b>Vuser ${a.vu} → ${b.vu}</b> 구간에서 TPS는 ${fmt(tg)}%만 늘었는데 응답시간(MTT)은 ${fmt(mg)}% 늘었습니다. 이 부근이 포화점일 가능성이 높습니다.`;
+  }
+  return "아직 뚜렷한 포화 구간이 보이지 않습니다 (Vuser를 늘리면 TPS도 5% 이상 늘고 있음). 더 높은 Vuser로 테스트해 보세요.";
 }
 
 /* ===================== 데이터 갱신 ===================== */
@@ -466,7 +574,7 @@ async function loadTests(){
 
 async function refreshSelected(){
   const t = tests.find(x => x.id === selectedId);
-  if (!t){ renderMonitorHeader(); renderKpis(); renderMonitorCharts(); return; }
+  if (!t){ renderMonitorHeader(); renderKpis(); renderMonitorCharts(); renderMonitor(null); return; }
   try{
     if (isRunning(t.status)){
       selectedSample = await api().sample(t.id);
@@ -489,6 +597,8 @@ async function refreshSelected(){
     }
   }catch(e){ showMsg(`테스트 #${t.id} 정보를 가져오지 못했습니다: ${esc(e.message)}`, true); }
   renderMonitorHeader(); renderKpis();
+  if (isRunning(t.status)) delete $("monitorBox").dataset.for;
+  renderMonitor(t);
 }
 
 async function loadAgents(){
@@ -507,7 +617,7 @@ async function loadAgents(){
 }
 
 function selectTest(id){
-  if (id !== selectedId){ liveTps = []; liveMtt = []; lastSeriesId = null; selectedSample = null; delete $("agentCount").dataset.touched; }
+  if (id !== selectedId){ liveTps = []; liveMtt = []; lastSeriesId = null; selectedSample = null; delete $("agentCount").dataset.touched; delete $("monitorBox").dataset.for; }
   selectedId = id; renderTests(); refreshSelected();
 }
 
@@ -543,10 +653,10 @@ $("mode").onchange = () => { mode = $("mode").value; store.set("ngr.mode", mode)
 $("themeBtn").onclick = () => {
   const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
   document.documentElement.dataset.theme = cur === "dark" ? "light" : "dark";
-  store.set("ngr.theme", document.documentElement.dataset.theme); lastSeriesId = null; renderSaturation(); refreshSelected();
+  store.set("ngr.theme", document.documentElement.dataset.theme); lastSeriesId = null; delete $("monitorBox").dataset.for; renderSaturation(); refreshSelected();
 };
 const savedTheme = store.get("ngr.theme", null); if (savedTheme) document.documentElement.dataset.theme = savedTheme;
-window.addEventListener("resize", () => { renderSaturation(); lastSeriesId = null; refreshSelected(); });
+window.addEventListener("resize", () => { renderSaturation(); lastSeriesId = null; delete $("monitorBox").dataset.for; refreshSelected(); });
 
 /* ===================== 시작 ===================== */
 (async () => {

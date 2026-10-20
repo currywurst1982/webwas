@@ -125,17 +125,20 @@ public class ScenarioServlet extends HttpServlet {
 		try {
 			NGrinderClient.Resp r = NGrinderClient.call("GET", "/agent/api/list", null, null);
 			if (r.ok() && !r.looksLikeLoginPage()) {
-				int total = 0, ready = 0;
+				int total = 0, ready = 0, busy = 0;
 				for (Object o : (List<?>) Json.parse(r.text())) {
 					Map<?, ?> a = (Map<?, ?>) o;
 					total++;
 					Object st = a.get("state");
 					String cat = st instanceof Map ? String.valueOf(((Map<?, ?>) st).get("category")) : String.valueOf(st);
 					if ("READY".equals(cat) && Boolean.TRUE.equals(a.get("approved"))) ready++;
+					String stName = st instanceof Map ? String.valueOf(((Map<?, ?>) st).get("name")) : "";
+					if ("BUSY".equals(stName) || "PROGRESSING".equals(cat)) busy++;   // 실제 값: name=BUSY, category=PROGRESSING
 				}
 				m.put("connected", true);
 				m.put("agents", total);
 				m.put("readyAgents", ready);
+				m.put("busyAgents", busy);
 			} else {
 				m.put("connected", false);
 				m.put("message", r.looksLikeLoginPage() || r.code == 401 ? "로그인 실패 (아이디/비밀번호 확인)" : "HTTP " + r.code);

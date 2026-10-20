@@ -233,8 +233,13 @@ public final class TestJobs {
 			Map<String, Object> t = NGrinderTests.get(id);
 			Map<String, Object> s = NGrinderTests.summary(t);
 			s.put("totalVuser", created.get("totalVuser"));
+			boolean done = NGrinderTests.isDone(t);
+			if (!done) {
+				// nGrinder는 TPS·응답시간 등을 테스트가 끝나야 채움 → 진행 중에는 비워 둠 (화면에 0 대신 "–")
+				for (String k : new String[]{"tps", "peakTps", "mtt", "tests", "errors", "errorRate"}) s.put(k, null);
+			}
 			step.putAll(s);
-			if (NGrinderTests.isDone(t)) break;
+			if (done) break;
 			if (job.stopRequested) NGrinderTests.stop(id);
 		}
 		job.currentTestId = null;

@@ -352,9 +352,11 @@ async function loadInfo(){
     $("ngPw").placeholder = info.hasPassword ? "(저장됨 — 바꿀 때만 입력)" : "";
     if (info.connected){
       $("connBadge").className = "badge good";
-      $("connBadge").textContent = `연결됨 · 사용 가능 에이전트 ${info.readyAgents}/${info.agents}대`;
+      $("connBadge").textContent = `연결됨 · 사용 가능 에이전트 ${info.readyAgents}/${info.agents}대` + (info.busyAgents ? ` (테스트 중 ${info.busyAgents}대)` : "");
       document.querySelectorAll(".agentHelp").forEach(e => e.textContent = `사용 가능 ${info.readyAgents}대`);
-      $("connMsg").innerHTML = info.readyAgents ? "" : `<div class="msg warn">연결은 됐지만 사용 가능한(READY·승인) 에이전트가 없습니다. 에이전트를 실행하고 nGrinder에서 승인하세요.</div>`;
+      $("connMsg").innerHTML = info.readyAgents ? ""
+        : info.busyAgents ? `<div class="msg">에이전트가 모두 테스트를 실행 중입니다. 새로 시작하는 테스트는 끝날 때까지 "시작 대기" 상태로 기다립니다.</div>`
+        : `<div class="msg warn">연결은 됐지만 사용 가능한(READY·승인) 에이전트가 없습니다. 에이전트를 실행하고 nGrinder에서 승인하세요.</div>`;
     } else {
       $("connBadge").className = "badge bad"; $("connBadge").textContent = "연결 안 됨";
       $("connMsg").innerHTML = `<div class="msg err">${esc(info.message || "nGrinder에 연결할 수 없습니다")}</div>`;

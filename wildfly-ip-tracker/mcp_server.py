@@ -41,6 +41,13 @@ TOOLS = [
             "maxEvents": {"type": "integer", "description": "돌려줄 최근 이력 수 (기본 50)"}}},
     },
     {
+        "name": "scanIncidents",
+        "description": "모든 IP의 침해 시도(웹셸, SQL 인젝션, 무차별 대입, 민감 파일 등)와 성공 여부(성공 정황/확인 필요/실패·차단), "
+                       "근거, 확인할 것, 공격 뒤 배포·재시작 이력을 돌려준다.",
+        "inputSchema": {"type": "object", "properties": {
+            "includeFailed": {"type": "boolean", "description": "실패·차단된 시도도 포함 (기본 false)"}}},
+    },
+    {
         "name": "createIpTimetable",
         "description": "특정 IP의 날짜×시간대 타임테이블 HTML과 CSV 파일을 만들고 경로를 돌려준다.",
         "inputSchema": {"type": "object", "required": ["ip"], "properties": {
@@ -60,6 +67,13 @@ def call_tool(name: str, args: dict) -> str:
         n = int(args.get("maxEvents", 50))
         r["recent_events"] = [e.to_dict() for e in ev[-n:]]
         return json.dumps(r, ensure_ascii=False, default=str)
+    if name == "scanIncidents":
+        res = t.scan_incidents(LOG_DIRS)
+        fs = [f for f in res["findings"] if args.get("includeFailed") or f["verdict"] != "fail"]
+        return json.dumps({"note": "로그 기반 추정입니다. 확정하려면 서버 파일·DB·네트워크 기록 확인이 필요합니다.",
+                           "findings": t.findings_dicts(fs),
+                           "server_changes": [{**d, "time": d["time"].isoformat()} for d in res["sys"]]},
+                          ensure_ascii=False)
     if name == "createIpTimetable":
         ev = t.collect(args["ip"], LOG_DIRS, args.get("since"), args.get("until"))
         r = t.analyze(ev, args["ip"])

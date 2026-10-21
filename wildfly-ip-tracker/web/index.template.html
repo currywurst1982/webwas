@@ -98,6 +98,16 @@ pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:6px
 .g-try{background:rgba(var(--heat-bad),.15);color:var(--hi)}
 .g-odd{background:color-mix(in srgb,var(--mid) 18%,transparent);color:var(--mid)}
 .tlf.on{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+.vb{display:inline-block;font-size:11px;font-weight:700;border-radius:4px;padding:1px 7px;white-space:nowrap}
+.v-success{background:var(--hi);color:var(--panel)}
+.v-check{background:color-mix(in srgb,var(--mid) 20%,transparent);color:var(--mid)}
+.v-fail{background:var(--bg);color:var(--mut);border:1px solid var(--line)}
+.vsum{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.inc td{vertical-align:top}.inc td.w{font-family:var(--f-body);min-width:260px}.inc td:nth-child(2),.inc td:nth-child(3){min-width:96px}.inc td:first-child{white-space:nowrap}.inc .next{margin-top:4px;color:var(--mut);font-size:12px}
+.incrow{cursor:pointer}.incrow:hover{background:var(--accent-soft)}.incrow:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.incbox{max-height:520px;overflow:auto}
+#incident .diag{margin-top:10px}
+.iprow .vb{font-size:10px;padding:0 5px;margin-left:4px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -114,6 +124,8 @@ pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:6px
     <input id="file" type="file" multiple hidden accept=".log,.txt,.gz,text/plain">
     <div class="files" id="files"></div>
   </label>
+
+  <section class="panel" id="incident" hidden></section>
 
   <div class="main">
     <aside class="panel">
@@ -197,17 +209,18 @@ function parseLine(line,file,base){
   return {kind:"other",evs:ips.map(ip=>tag({time,ip,src:"other",file,level:"",msg:line.slice(0,500),status:0,method:"",path:"",raw:line}))};
 }
 function parseText(text,file,lastModified){
-  const out=[];const st={total:0,access:0,server:0,other:0,none:0,notime:0,samples:[]};
+  const out=[],sys=[];const st={total:0,access:0,server:0,other:0,none:0,notime:0,samples:[]};
   let base=fileDate(file,lastModified);
   for(const line of text.split(/\r?\n/)){
     if(!line.trim())continue;
     st.total++;
     const r=parseLine(line,file,base);
     st[r.kind]++;
+    if(r.kind==="server"&&!r.evs.length){const se=sysEvent(line,base);if(se){se.file=file;sys.push(se);base=se.time}}
     if(r.evs.length){out.push(...r.evs);base=r.evs[0].time}   // 날짜 없는 줄은 직전 줄의 날짜를 이어받음
     else if(r.kind==="notime"&&st.samples.length<3)st.samples.push(line.slice(0,300));
   }
-  return {events:out,st};
+  return {events:out,st,sys};
 }
 async function readFile(f){
   if(/\.gz$/i.test(f.name)){
@@ -353,6 +366,173 @@ const hms=d=>`${hm(d)}:${pad(d.getSeconds())}`;
 // 같은 분 안이면 초까지, 아니면 분까지
 const span=b=>+b.end===+b.start?hms(b.start):Math.floor(b.start/60e3)===Math.floor(b.end/60e3)?`${hms(b.start)}~${hms(b.end)}`:`${hm(b.start)}~${hm(b.end)}`;
 const dur=ms=>ms<60e3?`${Math.max(1,Math.round(ms/1000))}초`:ms<3600e3?`${Math.round(ms/60e3)}분`:ms<86400e3?`${(ms/3600e3).toFixed(1)}시간`:`${(ms/86400e3).toFixed(1)}일`;
+// ---------- 침해 시도 판정: 시도 유형별로 "성공했는가"를 로그 근거로 판단 ----------
+// 판정: success = 성공 정황(로그에 성공 근거 있음) / check = 확인 필요(로그만으로 판단 불가) / fail = 실패·차단
+const VERDICT={success:{t:"성공 정황",c:"v-success",o:0},check:{t:"확인 필요",c:"v-check",o:1},fail:{t:"실패·차단",c:"v-fail",o:2}};
+const SIGS=[
+  {id:"webshell",name:"웹셸·명령 실행 시도",re:/(^|[?&;])(cmd|exec|command|execute|run)=|whoami|\/bin\/(ba)?sh|cmd\.exe|powershell|[;|`]\s*(id|uname|ls)\b|\b(wget|curl)\s+https?:|\/(shell|cmd|backdoor|webshell|jspspy|behinder|godzilla)\w*\.jspx?/i},
+  {id:"jboss",name:"JBoss·WildFly 알려진 취약 경로",re:/\/invoker\/(JMXInvokerServlet|EJBInvokerServlet|readonly)|\/jmx-console|\/web-console|\/admin-console|\/jbossmq-httpil|\/status\?full/i},
+  {id:"jndi",name:"Log4Shell(JNDI) 시도",re:/\$\{\s*(jndi|lower|upper|env|sys|::-)/i,ua:true},
+  {id:"sqli",name:"SQL 인젝션 시도",re:/union\s+(all\s+)?select|(\s|')or\s+'?1'?\s*=\s*'?1|sleep\s*\(|benchmark\s*\(|waitfor\s+delay|information_schema|'\s*--/i},
+  {id:"xss",name:"스크립트 삽입(XSS) 시도",re:/<script|javascript:|onerror\s*=|onload\s*=|<svg/i},
+  {id:"traversal",name:"경로 조작(상위 폴더·시스템 파일)",re:/\.\.[\/\\]|\/etc\/(passwd|shadow)|win\.ini|WEB-INF\/(web|jboss-web)\.xml/i},
+  {id:"sensitive",name:"민감 파일 탐색",re:/\/\.env\b|\/\.git\/|\/\.svn|\/\.DS_Store|\.(bak|old|swp|sql|tar|tgz|zip)(\?|$)|\/backup|\/config\.(php|json|ya?ml)|\/server-status|\/phpinfo/i},
+  {id:"admin",name:"관리 화면 접근",re:/\/manager\/html|\/console(\/|$)|wp-admin|wp-login|phpmyadmin|\/admin(\/|$)|\/actuator/i},
+];
+const LOGIN_RE=/login|signin|j_security_check/i;
+const LOGIN_OK_RE=/login (success|succeeded)|logged in/i;
+const USER_RE=/user(?:name)?\s*[:=]?\s*'?([\w.@-]+)'?/i;
+// server.log 에 남는 서버 변경 기록 (WildFly 37 실제 메시지 코드로 확인)
+const SYS_RULES=[
+  [/WFLYDR0001|Content added at location/,"배포 파일 추가","deploy"],
+  [/WFLYUT0021|Registered web context/,"새 웹 경로 등록","deploy"],
+  [/WFLYSRV0010|Deployed "/,"배포 완료","deploy"],
+  [/WFLYSRV0016|Replaced deployment/,"배포 교체","deploy"],
+  [/WFLYSRV0153|Failed to process phase/,"배포 실패","deploy"],
+  [/WFLYSRV0009|Undeployed "/,"배포 제거","undeploy"],
+  [/WFLYDR0002|Content removed from location/,"배포 파일 삭제","undeploy"],
+  [/WFLYSRV0241|Shutting down in response to management/,"관리 명령으로 종료","restart"],
+  [/WFLYSRV0050/,"서버 종료","restart"],
+  [/WFLYSRV0025|WFLYSRV0026/,"서버 시작","restart"],
+  [/WFLYCTL0013/,"관리 작업 실패","mgmt"],
+];
+function sysEvent(line,base){
+  const s=SERVER_RE.exec(line.replace(ANSI_RE,""));if(!s)return null;
+  const rule=SYS_RULES.find(([re])=>re.test(s[9]));if(!rule)return null;
+  let time;
+  if(s[1]){const [y,mo,d]=s[1].split("-").map(Number);time=new Date(y,mo-1,d,+s[2],+s[3],+s[4])}
+  else if(base)time=new Date(base.getFullYear(),base.getMonth(),base.getDate(),+s[2],+s[3],+s[4]);
+  if(!time)return null;
+  const target=(/"([^"]+)"|'([^']+)'/.exec(s[9])||[])[1]||(/'([^']+)'/.exec(s[9])||[])[1]||"";
+  return {time,label:rule[1],cat:rule[2],target,msg:s[9].slice(0,300)};
+}
+const decodeSafe=x=>{try{return decodeURIComponent((x||"").replace(/\+/g," "))}catch(e){return x||""}};
+function statusSummary(A){const c={};for(const e of A)c[e.status||"-"]=(c[e.status||"-"]||0)+1;return Object.entries(c).map(([k,v])=>`${k}×${v}`).join(", ")}
+const short=x=>{x=decodeSafe(x);return x.length>70?x.slice(0,67)+"…":x};
+const kb=n=>n>=1048576?(n/1048576).toFixed(1)+"MB":n>=1024?(n/1024).toFixed(1)+"KB":n+"바이트";
+let BASE={};   // 주소별 평소 응답 크기(정상 요청의 중앙값)
+const median=v=>{v=v.slice().sort((a,b)=>a-b);return v[Math.floor(v.length/2)]};
+function buildBaseline(all){ // 한 IP가 많이 요청해도 기준이 쏠리지 않게, IP별 중앙값을 모아 다시 중앙값
+  const m={};for(const e of all)if(e.src==="access"&&e.status>=200&&e.status<300&&!e.tags.length){const k=e.path.split("?")[0];((m[k]??={})[e.ip]??=[]).push(e.size)}
+  BASE={};for(const [k,byIp] of Object.entries(m))BASE[k]=median(Object.values(byIp).map(median));
+}
+function judge(id,A,hits){
+  const ok=A.filter(e=>e.status>=200&&e.status<300),redir=A.filter(e=>e.status>=300&&e.status<400),err=A.filter(e=>e.status>=500);
+  const okSized=ok.filter(e=>e.size>0);
+  const failMsg=A.length?`${A.length}건 모두 실패·차단 (${statusSummary(A)})`:`서버 로그에만 ${hits.length}줄 기록`;
+  const ex=e=>`${hms(e.time)} ${short(e.path)} → ${e.status}, ${kb(e.size)}`;
+  switch(id){
+  case "webshell":
+    if(ok.length)return ["success",`명령 실행 형태의 요청이 200으로 응답됨 ${ok.length}건 (예: ${ex(ok[0])})`,
+      "해당 파일이 서버에 실제로 있는지 즉시 확인(배포 폴더, 업로드 폴더). 있으면 서버를 네트워크에서 분리하고 파일·로그를 지우지 말고 보존한 뒤 보안 담당에 보고하세요."];
+    if(err.length)return ["check",`서버 오류(5xx) ${err.length}건 — 명령이 일부 처리됐을 수 있음`,"같은 시각 server.log의 ERROR 내용을 확인하세요."];
+    return ["fail",failMsg,""];
+  case "jboss":
+    if(ok.length)return ["success",`알려진 취약 관리 경로가 200으로 응답 ${ok.length}건 (예: ${ex(ok[0])})`,"이 경로를 외부에서 즉시 막고, 같은 시각 이후 server.log의 배포·관리 기록(아래 '서버 변경 이력')을 확인하세요."];
+    if(redir.length)return ["check",`다른 페이지로 이동(3xx) ${redir.length}건 — 로그인 화면으로 보냈을 가능성`,"해당 주소를 브라우저로 열어 무엇이 나오는지 확인하세요."];
+    return ["fail",failMsg,""];
+  case "jndi":
+    return ["check",`${A.length||hits.length}건${A.length?` (응답: ${statusSummary(A)})`:""} — 웹 로그만으로는 성공 여부를 알 수 없음`,
+      "같은 시각에 서버에서 외부로 나간 연결(LDAP 389·1389, RMI 1099, 의심 도메인 DNS 조회)이 있었는지 방화벽·DNS 로그를 확인하고, 배포된 앱에 log4j-core 2.0~2.14.1이 들어 있는지 확인하세요."];
+  case "sqli":{
+    const big=ok.filter(e=>{const b=BASE[e.path.split("?")[0]];return b!=null&&e.size>Math.max(b*1.5,b+1024)});
+    if(big.length){const e=big[0];return ["success",`평소 응답(${kb(BASE[e.path.split("?")[0]])})보다 훨씬 큰 응답 ${big.length}건 (예: ${ex(e)}) → 데이터가 추가로 나갔을 가능성`,
+      "해당 기능이 어떤 테이블을 조회하는지 개발 담당과 확인하고, DB 접근 기록을 확인하세요. 개인정보가 포함됐다면 유출 신고 대상인지 검토가 필요합니다."];}
+    if(ok.length)return ["check",`200 응답 ${ok.length}건 — 응답 크기로는 데이터 노출 여부를 판단할 수 없음`,"해당 요청을 개발 환경에서 재현해 결과가 달라지는지 확인하세요."];
+    if(err.length)return ["check",`서버 오류(500) 유발 ${err.length}건 → 입력값이 DB 쿼리에 들어갔을 가능성(취약점 단서)`,"이후 같은 주소로 반복 시도가 있었는지, 응답 크기가 달라진 요청이 있는지 확인하세요."];
+    return ["fail",failMsg,""];}
+  case "xss":
+    if(ok.length)return ["check",`200 응답 ${ok.length}건 — 입력값이 화면에 그대로 나오면 다른 사용자가 피해를 볼 수 있음`,"같은 주소에 해당 입력을 넣었을 때 스크립트가 실행되는지 개발 담당이 확인하세요."];
+    return ["fail",failMsg,""];
+  case "traversal":
+    if(okSized.length)return ["success",`상위 폴더·시스템 파일 요청이 200으로 응답 ${okSized.length}건 (예: ${ex(okSized[0])}) → 파일 내용 유출 가능성`,"응답 크기가 실제 파일 크기와 비슷한지 확인하고, 해당 기능을 막으세요."];
+    return ["fail",failMsg,""];
+  case "sensitive":
+    if(okSized.length)return ["success",`민감 파일 요청이 200으로 응답 ${okSized.length}건 (예: ${ex(okSized[0])})`,"해당 파일을 외부에서 받을 수 없게 막고, 파일 안에 있던 비밀번호·접속키를 모두 교체하세요."];
+    return ["fail",failMsg,""];
+  case "admin":
+    if(ok.length)return ["check",`관리 화면이 200으로 응답 ${ok.length}건 (예: ${ex(ok[0])})`,"이 IP가 관리 권한이 있는 사용자인지 확인하고, 관리 화면은 사내 IP만 접근하도록 제한하세요."];
+    return ["fail",failMsg,""];
+  }
+  return ["check","",""];
+}
+function judgeFindings(ip,evs){
+  const F=[];
+  const add=(type,name,list,[v,why,next])=>list.length&&F.push({ip,type,name,verdict:v,why,next,count:list.length,start:list[0].time,end:list[list.length-1].time,evs:list});
+  const claimed=new Set();
+  for(const sig of SIGS){
+    const hits=evs.filter(e=>{if((sig.id==="traversal"||sig.id==="sensitive")&&claimed.has(e))return false;
+      const txt=e.src==="access"?e.path+" "+decodeSafe(e.path)+(sig.ua?" "+(e.agent||""):""):(e.msg||"");return sig.re.test(txt)});
+    if(sig.id==="webshell")hits.forEach(e=>claimed.add(e));
+    if(!hits.length)continue;
+    add(sig.id,sig.name,hits,judge(sig.id,hits.filter(e=>e.src==="access"),hits));
+  }
+  // 로그인 무차별 대입 → 성공했는가
+  const acc=evs.filter(e=>e.src==="access");
+  const posts=acc.filter(e=>e.method==="POST"&&LOGIN_RE.test(e.path));
+  const fails=evs.filter(e=>e.tags.includes("인증실패"));
+  if(fails.length>=3||posts.length>=10){
+    const t0=(fails[0]||posts[0]).time;
+    const accFail=fails.some(f=>f.src==="access");
+    const succ=evs.filter(e=>e.time>=t0&&(e.src==="access"?accFail&&e.method==="POST"&&LOGIN_RE.test(e.path)&&e.status>=200&&e.status<400:LOGIN_OK_RE.test(e.msg||"")));
+    const users=[...new Set(evs.filter(e=>e.src!=="access").map(e=>(USER_RE.exec(e.msg||"")||[])[1]).filter(Boolean))];
+    const okUser=succ.map(e=>(USER_RE.exec(e.msg||"")||[])[1]).find(Boolean);
+    const list=[...new Set([...fails,...posts,...succ])].sort((a,b)=>a.time-b.time);
+    let res;
+    const failTxt=[fails.filter(f=>f.src==="access").length&&`웹 응답 거부 ${fails.filter(f=>f.src==="access").length}회`,fails.filter(f=>f.src!=="access").length&&`서버 로그 실패 기록 ${fails.filter(f=>f.src!=="access").length}줄`].filter(Boolean).join(", ")||`로그인 요청 ${posts.length}회`;
+    if(succ.length)res=["success",`로그인 실패(${failTxt}) 뒤 ${fmt(succ[0].time)} 로그인 성공${okUser?` (계정: ${okUser})`:""}${users.length?` · 시도한 계정: ${users.join(", ")}`:""}`,
+      "해당 계정 비밀번호를 즉시 바꾸고 접속 중인 세션을 끊으세요. 성공 이후 이 IP가 한 일을 '활동 타임라인'에서 확인하세요."];
+    else if(posts.length>=10&&!accFail){
+      const c={};for(const e of posts)c[e.status+"/"+e.size]=(c[e.status+"/"+e.size]||0)+1;
+      const major=Object.entries(c).sort((a,b)=>b[1]-a[1])[0][0];
+      const odd=posts.filter(e=>e.status+"/"+e.size!==major);
+      res=["check",odd.length?`로그인 요청 ${posts.length}건이 상태코드로 실패를 구분할 수 없음. 응답이 다른 요청 ${odd.length}건 (예: ${ex2(odd[0])}) → 이때 성공했을 가능성`:`로그인 요청 ${posts.length}건 — 앱이 실패에도 같은 응답을 줘서 성공 여부 판단 불가`,
+        "앱의 로그인 성공 기록(감사 로그)이나 해당 시각 세션 생성 기록을 확인하세요."];
+    }else res=["fail",`로그인 실패(${failTxt}), 성공 기록 없음${users.length?` · 시도한 계정: ${users.join(", ")}`:""}`,""];
+    add("brute","로그인 무차별 대입",list,res);
+  }
+  // 대량 요청
+  const per={};let peak=0;for(const e of acc){const k=Math.floor(e.time/60000);per[k]=(per[k]||0)+1;peak=Math.max(peak,per[k])}
+  if(peak>=60){const bu=acc.filter(e=>per[Math.floor(e.time/60000)]>=60),ok=bu.filter(e=>e.status>=200&&e.status<300);
+    add("burst","대량 반복 요청",bu,ok.length/bu.length>0.5?["check",`분당 최대 ${peak}회, 성공 응답 ${ok.length}건 (총 ${kb(ok.reduce((a,e)=>a+e.size,0))}) → 자동화된 대량 수집 가능성`,"어떤 데이터를 가져갔는지 해당 주소 기능을 확인하고, 필요하면 요청 횟수 제한을 거세요."]
+      :["fail",`분당 최대 ${peak}회, 대부분 실패 응답`,""]);}
+  // 공격 도구
+  const tools=acc.filter(e=>TOOL_UA_RE.test(e.agent||""));
+  if(tools.length)add("tool","공격·자동화 도구 사용",tools,["check",`User-Agent에 도구 이름: ${[...new Set(tools.map(e=>TOOL_UA_RE.exec(e.agent)[1]))].join(", ")} (${tools.length}건)`,"User-Agent는 조작이 쉬워 참고용입니다. 같은 IP의 다른 시도와 함께 판단하세요."]);
+  return F;
+}
+const ex2=e=>`${hms(e.time)} ${short(e.path)} → ${e.status}, ${kb(e.size)}`;
+// 배포 한 번에 여러 줄(파일 추가·경로 등록·배포 완료)이 남으므로 1분 안의 같은 종류 기록은 한 건으로 묶는다
+function groupSys(sys){
+  const out=[];
+  for(const d of sys){const g=out[out.length-1];
+    if(g&&g.cat===d.cat&&d.time-g.end<=60e3){g.end=d.time;g.labels.add(d.label);if(d.target)g.targets.add(d.target)}
+    else out.push({cat:d.cat,time:d.time,end:d.time,labels:new Set([d.label]),targets:new Set(d.target?[d.target]:[])});}
+  return out.map(g=>({...g,label:[...g.labels].join(" · "),target:[...g.targets].join(", ")}));
+}
+// 공격 시도 뒤 24시간 안에 배포가 있으면(재시작은 성공 정황이 있을 때만) 연결해서 보여준다
+function correlate(findings,sys){
+  const out=[];
+  for(const d of groupSys(sys).filter(x=>x.cat==="deploy"||x.cat==="restart")){
+    const byIp={};
+    for(const f of findings){
+      if(f.verdict==="fail"||f.type==="burst"||f.type==="tool"||!f.evs.length)continue;
+      const before=f.evs.filter(e=>e.time<=d.time);if(!before.length)continue;
+      const last=before[before.length-1].time;if(d.time-last>24*3600e3)continue;
+      const cur=byIp[f.ip];if(!cur||last>cur.last)byIp[f.ip]={last,f,succ:(cur&&cur.succ)||f.verdict==="success"};
+      else if(f.verdict==="success")cur.succ=true;
+    }
+    for(const [ip,x] of Object.entries(byIp)){
+      if(d.cat==="restart"&&!x.succ)continue;
+      out.push({ip,type:"postdeploy",name:"공격 시도 뒤 서버 변경",verdict:x.succ?"success":"check",
+        why:`${fmt(d.time)} ${d.label}${d.target?` "${d.target}"`:""} — 이 IP의 '${x.f.name}' ${dur(d.time-x.last)} 뒤`,
+        next:"이 배포·재시작이 승인된 작업인지 운영 담당에게 확인하세요. 아니라면 배포 파일을 지우지 말고 보존한 뒤 제거하고, WildFly 관리 계정 비밀번호를 바꾸세요.",
+        count:1,start:d.time,end:d.time,evs:[]});
+    }
+  }
+  return out;
+}
+let INC=[],SYS=[];
 function timelineText(label,tl){
   const lines=[`[IP 활동 타임라인] ${label}`];let day="";
   for(const b of tl){
@@ -385,7 +565,9 @@ let ALL=[],BYIP=new Map(),SUMMARY=[],FILES=[],current=null,cellSel=null;
 
 function load(files,isExample){
   ALL=[];FILES=files;const stats=[];
-  for(const f of files){const r=parseText(f.text,f.name,f.lastModified);ALL.push(...r.events);stats.push([f.name,r.st])}
+  SYS=[];
+  for(const f of files){const r=parseText(f.text,f.name,f.lastModified);ALL.push(...r.events);SYS.push(...r.sys);stats.push([f.name,r.st])}
+  SYS.sort((a,b)=>a.time-b.time);
   BYIP=new Map();for(const e of ALL){if(!BYIP.has(e.ip))BYIP.set(e.ip,[]);BYIP.get(e.ip).push(e)}
   SUMMARY=[...BYIP.entries()].map(([ip,evs])=>{const r=analyze(evs.slice(),ip);return {ip,n:evs.length,level:r.level,score:r.score}})
     .sort((a,b)=>b.score-a.score||b.n-a.n);
@@ -398,6 +580,14 @@ function load(files,isExample){
     stats.filter(([,st])=>st.samples.length).map(([n,st])=>`<p class="note">${esc(n)}: IP는 있는데 시각을 못 찾은 줄 예시</p><pre>${esc(st.samples.join("\n"))}</pre>`).join("")+
     `</details>`+
     stats.filter(([,st])=>st.total&&used(st)===0).map(([n])=>`<span style="color:var(--hi);border:0">· ${esc(n)}: IP 기록을 하나도 못 읽었습니다</span>`).join("");
+  buildBaseline(ALL);
+  INC=[];for(const [ip,evs] of BYIP)INC.push(...judgeFindings(ip,evs.slice().sort((a,b)=>a.time-b.time)));
+  INC.push(...correlate(INC,SYS));
+  INC.sort((a,b)=>VERDICT[a.verdict].o-VERDICT[b.verdict].o||a.start-b.start);
+  // 성공 정황이 있는 IP를 목록 맨 위로
+  const sev=ip=>Math.min(3,...INC.filter(f=>f.ip===ip).map(f=>VERDICT[f.verdict].o));
+  SUMMARY.sort((a,b)=>sev(a.ip)-sev(b.ip)||b.score-a.score||b.n-a.n);
+  renderIncident();
   renderList();
   if(SUMMARY.length)select(SUMMARY[0].ip);else $("report").innerHTML='<div class="panel empty">IP가 담긴 줄을 찾지 못했습니다. 위 "파일별 인식 결과"를 열어 확인해 주세요.</div>';
 }
@@ -419,13 +609,51 @@ function rawSearch(q){
       e.ip=q;evs.push(e);
     }}
   return {evs,hits,notime,front,samples};
-}function renderList(){
+}function incidentRows(list,withIp){
+  return list.map((f,i)=>`<tr class="incrow" data-ip="${esc(f.ip)}" tabindex="0"><td><span class="vb ${VERDICT[f.verdict].c}">${VERDICT[f.verdict].t}</span></td>
+    ${withIp?`<td class="mono">${esc(f.ip)}</td>`:""}<td>${esc(f.name)}<div class="note">${f.count}건</div></td>
+    <td class="t">${fmt(f.start)}${+f.end!==+f.start?`<div class="note">~ ${fmt(f.end)}</div>`:""}</td>
+    <td class="w">${esc(f.why)}${f.next?`<div class="next">확인할 것: ${esc(f.next)}</div>`:""}</td></tr>`).join("");
+}
+function incidentText(list,sys,title){
+  const L=[`[침해 시도 점검] ${title}`,`※ 로그 기반 추정입니다. 확정하려면 서버 파일·DB·네트워크 기록 확인이 필요합니다.`];
+  for(const v of ["success","check","fail"]){
+    const fs=list.filter(f=>f.verdict===v);if(!fs.length)continue;
+    L.push(`\n■ ${VERDICT[v].t} (${fs.length})`);
+    for(const f of fs){L.push(`- ${fmt(f.start)}${+f.end!==+f.start?" ~ "+fmt(f.end):""} | ${f.ip} | ${f.name} (${f.count}건)`);
+      L.push(`    근거: ${f.why}`);if(f.next)L.push(`    확인할 것: ${f.next}`)}
+  }
+  if(sys&&sys.length){L.push(`\n■ 서버 변경 이력 (server.log)`);for(const d of sys)L.push(`- ${fmt(d.time)} ${d.label}${d.target?` "${d.target}"`:""}`)}
+  return L.join("\n");
+}
+function renderIncident(){
+  const el=$("incident");
+  if(!ALL.length&&!SYS.length){el.hidden=true;return}el.hidden=false;
+  const n=v=>INC.filter(f=>f.verdict===v).length;
+  const main=INC.filter(f=>f.verdict!=="fail"),fails=INC.filter(f=>f.verdict==="fail");
+  const ts=ALL.map(e=>+e.time);
+  const period=ts.length?`${fmt(new Date(Math.min(...ts)))} ~ ${fmt(new Date(Math.max(...ts)))}`:"-";
+  el.innerHTML=`<div class="toolbar"><h2 style="margin:0">침해 시도 점검 · 전체 IP</h2><button id="inccopy">보고용 텍스트 복사</button></div>
+    <div class="vsum"><span class="vb v-success">성공 정황 ${n("success")}</span><span class="vb v-check">확인 필요 ${n("check")}</span><span class="vb v-fail">실패·차단 ${n("fail")}</span>
+      <span class="note">로그 기간 ${period} · 줄을 누르면 해당 IP로 이동</span></div>
+    ${main.length?`<div class="scroll incbox"><table class="detail inc"><thead><tr><th>판정</th><th>IP</th><th>시도 유형</th><th>시각</th><th>근거 · 확인할 것</th></tr></thead><tbody>${incidentRows(main,true)}</tbody></table></div>`
+      :`<p>성공 정황이나 확인이 필요한 시도는 발견되지 않았습니다. 다만 이 도구가 아는 패턴만 검사하므로 "공격이 없었다"는 뜻은 아닙니다.</p>`}
+    ${fails.length?`<details class="diag"><summary>실패·차단된 시도 ${fails.length}건 보기</summary><div class="scroll"><table class="detail inc"><tbody>${incidentRows(fails,true)}</tbody></table></div></details>`:""}
+    <details class="diag" ${SYS.some(d=>d.cat!=="restart")?"open":""}><summary>서버 변경 이력 (배포·재시작) ${SYS.length}건</summary>
+      ${SYS.length?`<div class="scroll"><table class="detail"><thead><tr><th>시각</th><th>내용</th><th>대상</th><th>원문</th></tr></thead><tbody>${SYS.map(d=>`<tr><td class="t">${fmt(d.time)}</td><td>${esc(d.label)}</td><td class="mono">${esc(d.target)}</td><td class="w note">${esc(d.msg)}</td></tr>`).join("")}</tbody></table></div>
+      <p class="note">공격 시도 뒤 24시간 안에 배포·재시작이 있으면 위 표에 '공격 시도 뒤 서버 변경'으로 따로 표시합니다. 정상 배포도 여기에 나오니 운영 일정과 대조하세요.</p>`
+      :`<p class="note">server.log에서 배포·재시작 기록을 찾지 못했습니다. server.log를 함께 올렸는지 확인하세요.</p>`}</details>
+    <p class="note">판정 기준: 서버 응답코드와 응답 크기로 추정합니다. "성공 정황"은 성공했다는 증거가 로그에 있다는 뜻이고 확정은 아닙니다. "실패·차단"이어도 로그에 안 남는 경로(관리 포트 9990, SSH 등)로 들어왔을 수 있습니다.</p>`;
+  el.querySelectorAll(".incrow").forEach(tr=>{const go=()=>{$("ipq").value="";select(tr.dataset.ip);$("report").scrollIntoView({block:"start"})};tr.onclick=go;tr.onkeydown=e=>{if(e.key==="Enter")go()}});
+  $("inccopy").onclick=ev=>copy(incidentText(INC,SYS,`업로드한 로그 기간 ${period}`),ev.target);
+}
+function renderList(){
   const q=$("ipq").value.trim();
   const m=q.includes("/")?matcher(q):null;
   const list=!q?SUMMARY:SUMMARY.filter(s=>m?m(s.ip):s.ip.includes(q));
   $("ipcount").textContent=`${SUMMARY.length}개`;
   $("iplist").innerHTML=list.map(s=>`<button class="iprow${current===s.ip?" on":""}" data-ip="${esc(s.ip)}">
-    <i class="dot ${s.level}" title="위험도 ${LV[s.level]}"></i><span class="ip">${esc(s.ip)}</span><small>${s.n}건</small></button>`).join("")||'<div class="empty">일치하는 IP 없음</div>';
+    <i class="dot ${s.level}" title="위험도 ${LV[s.level]}"></i><span class="ip">${esc(s.ip)}${INC.some(f=>f.ip===s.ip&&f.verdict==="success")?' <b class="vb v-success">성공 정황</b>':""}</span><small>${s.n}건</small></button>`).join("")||'<div class="empty">일치하는 IP 없음</div>';
 }
 function select(q){
   const m=matcher(q);
@@ -468,6 +696,10 @@ function renderReport(r,note){
     mid:["당분간 지켜보세요. 며칠 뒤 로그를 다시 올려 분석합니다.","같은 패턴이 반복되면 아래 명령으로 차단합니다."],
     lo:["정상 사용자로 보입니다. 조치가 필요 없습니다.","그래도 막아야 한다면 아래 명령을 사용합니다."]}[r.level];
   const tl=buildTimeline(r.evs);const TL_LIMIT=500;
+  const myInc=[...judgeFindings(r.label,r.evs),...INC.filter(f=>f.type==="postdeploy"&&f.ip===r.label)]
+    .sort((a,b)=>VERDICT[a.verdict].o-VERDICT[b.verdict].o||a.start-b.start);
+  const succEvs=new Set(myInc.filter(f=>f.verdict==="success").flatMap(f=>f.evs));
+  for(const b of tl)if(b.evs.some(e=>succEvs.has(e)))b.note.unshift("🔴 침해 성공 정황 포함");
   const GCLS={"업무":"g-work","시도":"g-try","특이사항":"g-odd"};
   let lastDay="";
   const tlRows=tl.slice(0,TL_LIMIT).map((b,i)=>{
@@ -486,11 +718,16 @@ function renderReport(r,note){
       반대로 맨 앞 IP를 차단하면 모든 사용자가 막힐 수 있습니다.</p>`:`<p>로그 형식이 도구가 아는 형식과 달라 줄 전체를 내용으로 표시합니다. 위험도 판단은 덜 정확합니다.</p>`}
     ${note.notime?`<p class="note">시각을 못 읽어 제외한 줄: ${note.notime}줄</p>`:""}
     <details class="diag"><summary>원문 예시 보기</summary><pre>${esc(note.samples.join("\n"))}</pre></details></div>`:"";
+  const incPanel=`<div class="panel">
+    <div class="toolbar"><h2 style="margin:0">침해 시도 판정 · 이 IP</h2>${myInc.length?`<button id="myinccopy">보고용 텍스트 복사</button>`:""}</div>
+    ${myInc.length?`<div class="scroll"><table class="detail inc"><thead><tr><th>판정</th><th>시도 유형</th><th>시각</th><th>근거 · 확인할 것</th></tr></thead><tbody>${incidentRows(myInc,false)}</tbody></table></div>`
+      :`<p class="note">알려진 공격 패턴은 발견되지 않았습니다. 이 도구가 모르는 방식의 공격일 수 있으니 활동 타임라인도 함께 보세요.</p>`}</div>`;
   el.innerHTML=banner+`
   <div class="panel risk ${r.level}">
     <div><div class="mut" style="font-size:12px">위험도</div><div class="lvl">${LV[r.level]}</div><div class="mut num" style="font-size:12px">${r.score}점</div></div>
     <div style="min-width:0"><h2 class="mono" style="overflow-wrap:anywhere">${esc(r.label)}</h2><ul>${r.why.map(w=>`<li>${esc(w)}</li>`).join("")}</ul></div>
   </div>
+  ${incPanel}
   <div class="stats">
     <div class="stat"><span>최초 접속</span><b>${fmt(first)}</b></div>
     <div class="stat"><span>마지막 접속</span><b>${fmt(last)}</b></div>
@@ -552,6 +789,10 @@ function renderReport(r,note){
     el.querySelectorAll("#tl tbody tr").forEach(tr=>{if(tr.classList.contains("tlday"))return;tr.hidden=!!g&&tr.dataset.g!==g});
     el.querySelectorAll("#tl tr.tlday").forEach(tr=>{let n=tr.nextElementSibling,vis=false;while(n&&!n.classList.contains("tlday")){if(!n.hidden)vis=true;n=n.nextElementSibling}tr.hidden=!vis})});
   el.querySelector("#copytl").onclick=ev=>copy(timelineText(r.label,tl),ev.target);
+  el.querySelector("#myinccopy")?.addEventListener("click",ev=>copy(incidentText(myInc,null,`IP ${r.label}`)+"\n\n"+timelineText(r.label,tl),ev.target));
+  el.querySelectorAll(".incrow").forEach(tr=>{const f=myInc[[...el.querySelectorAll(".incrow")].indexOf(tr)];if(!f||!f.evs.length)return;
+    tr.onclick=()=>{const set=new Set(f.evs);fill(e=>set.has(e),f.name);el.querySelector("#detail").scrollIntoView({block:"nearest"})};
+    tr.onkeydown=ev=>{if(ev.key==="Enter")tr.onclick()}});
   el.querySelectorAll(".grid td button").forEach(b=>b.onclick=()=>{
     el.querySelectorAll(".grid td.sel").forEach(x=>x.classList.remove("sel"));b.parentElement.classList.add("sel");
     const d=b.dataset.d,h=+b.dataset.h;fill(e=>dayKey(e.time)===d&&e.time.getHours()===h,`${d} ${pad(h)}시`)});

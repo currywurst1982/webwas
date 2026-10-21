@@ -75,6 +75,42 @@ class TimelineTest(unittest.TestCase):
         self.assertTrue(all(b["group"] == "업무" for b in r["timeline"]))
 
 
+class IncidentTest(unittest.TestCase):
+    """예시 데이터: 198.51.100.77 은 침입 성공 시나리오, 203.0.113.45 는 대부분 실패한 공격."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.res = t.scan_incidents([SAMPLES])
+
+    def verdicts(self, ip):
+        return {f["type"]: f["verdict"] for f in self.res["findings"] if f["ip"] == ip}
+
+    def test_successful_intruder(self):
+        v = self.verdicts("198.51.100.77")
+        for typ in ("brute", "webshell", "sensitive", "sqli", "postdeploy"):
+            self.assertEqual(v.get(typ), "success", typ)
+
+    def test_failed_attacker(self):
+        v = self.verdicts("203.0.113.45")
+        self.assertEqual(v["brute"], "fail")
+        self.assertEqual(v["sensitive"], "fail")
+        self.assertEqual(v["sqli"], "check")   # 500 응답 = 취약 단서, 성공 확정 아님
+        self.assertEqual(v["jndi"], "check")   # 웹 로그만으로 판단 불가
+        self.assertNotIn("postdeploy", v)      # 재시작은 성공 정황이 있을 때만 연결
+
+    def test_normal_users_clean(self):
+        for ip in ("192.168.10.21", "192.168.10.35", "10.0.5.8"):
+            self.assertEqual(self.verdicts(ip), {}, ip)
+
+    def test_deploy_grouped(self):
+        deploys = [f for f in self.res["findings"] if f["type"] == "postdeploy"]
+        self.assertEqual(len(deploys), 1)
+        self.assertIn("cmd.war", deploys[0]["why"])
+
+    def test_baseline_not_skewed(self):
+        self.assertEqual(self.res["base"]["/app/api/items"], 512)
+
+
 class AnalyzeTest(unittest.TestCase):
     def test_attacker_high(self):
         r = t.analyze(t.collect("203.0.113.45", [SAMPLES]), "203.0.113.45")
@@ -103,7 +139,7 @@ class McpTest(unittest.TestCase):
                              input="\n".join(json.dumps(m) for m in msgs), capture_output=True, text=True,
                              env={**os.environ, "WILDFLY_LOG_DIR": SAMPLES}).stdout.splitlines()
         self.assertEqual(len(out), 3)  # 알림에는 응답 없음
-        self.assertEqual(len(json.loads(out[1])["result"]["tools"]), 3)
+        self.assertEqual(len(json.loads(out[1])["result"]["tools"]), 4)
         body = json.loads(json.loads(out[2])["result"]["content"][0]["text"])
         self.assertEqual(body["risk_level"], "높음")
 

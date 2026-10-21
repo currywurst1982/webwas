@@ -108,6 +108,17 @@ pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:6px
 .incbox{max-height:520px;overflow:auto}
 #incident .diag{margin-top:10px}
 .iprow .vb{font-size:10px;padding:0 5px;margin-left:4px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);overflow-x:auto}
+.tabs button{border:0;border-bottom:3px solid transparent;border-radius:0;background:transparent;padding:10px 14px;font-weight:500;color:var(--mut);white-space:nowrap}
+.tabs button[aria-selected="true"]{color:var(--fg);border-bottom-color:var(--accent);font-weight:700}
+#view-flow,#view-ip{display:flex;flex-direction:column;gap:16px}#view-flow[hidden],#view-ip[hidden]{display:none}
+.flowtbl tr.hit td{background:color-mix(in srgb,var(--hi) 10%,transparent)}.flowtbl tr.hit td:first-child{box-shadow:inset 3px 0 0 var(--hi)}
+.cfg input[type=text]{min-width:260px}.cfg input[type=number]{width:64px;font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:6px;padding:4px 6px}
+.cfg td{vertical-align:middle}.nowrap{white-space:nowrap}
+select{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:6px;padding:3px 6px}
+details.panel>summary{cursor:pointer}
+ul.sig{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:4px}ul.sig .vb{font-size:10px;padding:0 5px}
+.flowsum td.next{font-size:12px;color:var(--mut);min-width:200px}.flowsum td.ipcell{max-width:150px;overflow-wrap:anywhere}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -125,6 +136,14 @@ pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:6px
     <div class="files" id="files"></div>
   </label>
 
+  <nav class="tabs" role="tablist" aria-label="분석 화면">
+    <button role="tab" id="tab-ip" aria-selected="true" aria-controls="view-ip">침해·IP 분석</button>
+    <button role="tab" id="tab-flow" aria-selected="false" aria-controls="view-flow">업무 이상 접속 (회원가입 등)</button>
+  </nav>
+
+  <div id="view-flow" role="tabpanel" aria-labelledby="tab-flow" hidden></div>
+
+  <div id="view-ip" role="tabpanel" aria-labelledby="tab-ip">
   <section class="panel" id="incident" hidden></section>
 
   <div class="main">
@@ -135,6 +154,7 @@ pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:6px
       <div class="iplist" id="iplist"></div>
     </aside>
     <section class="report" id="report"></section>
+  </div>
   </div>
 </div>
 
@@ -613,6 +633,80 @@ pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:6px
 198.51.100.77 - - [21/Oct/2026:03:04:00 +0900] "GET /.env HTTP/1.1" 200 412 "-" "python-requests/2.31.0"
 198.51.100.77 - - [21/Oct/2026:03:04:05 +0900] "GET /app/api/items?id=1%20union%20select%20username,password%20from%20users-- HTTP/1.1" 200 48210 "-" "python-requests/2.31.0"
 198.51.100.77 - - [21/Oct/2026:03:26:10 +0900] "GET /cmd/index.jsp?cmd=id HTTP/1.1" 200 31 "-" "python-requests/2.31.0"
+192.168.10.35 - - [21/Oct/2026:10:12:05 +0900] "GET /app/join HTTP/1.1" 200 8120 "https://shop.example.com/app/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36"
+192.168.10.35 - - [21/Oct/2026:10:12:06 +0900] "GET /app/static/join.js HTTP/1.1" 200 4210 "https://shop.example.com/app/join" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36"
+192.168.10.35 - - [21/Oct/2026:10:12:06 +0900] "GET /app/static/main.css HTTP/1.1" 200 2210 "https://shop.example.com/app/join" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36"
+192.168.10.35 - - [21/Oct/2026:10:12:24 +0900] "GET /app/member/idcheck?id=kimsy HTTP/1.1" 200 15 "https://shop.example.com/app/join" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36"
+192.168.10.35 - - [21/Oct/2026:10:12:36 +0900] "POST /app/sms/send HTTP/1.1" 200 21 "https://shop.example.com/app/join" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36"
+192.168.10.35 - - [21/Oct/2026:10:12:53 +0900] "POST /app/join HTTP/1.1" 302 0 "https://shop.example.com/app/join" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36"
+203.0.113.88 - - [21/Oct/2026:13:00:00 +0900] "GET /app/member/idcheck?id=promo00 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:03 +0900] "GET /app/member/idcheck?id=promo01 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:06 +0900] "GET /app/member/idcheck?id=promo02 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:09 +0900] "GET /app/member/idcheck?id=promo03 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:12 +0900] "GET /app/member/idcheck?id=promo04 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:15 +0900] "GET /app/member/idcheck?id=promo05 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:18 +0900] "GET /app/member/idcheck?id=promo06 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:21 +0900] "GET /app/member/idcheck?id=promo07 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:24 +0900] "GET /app/member/idcheck?id=promo08 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:27 +0900] "GET /app/member/idcheck?id=promo09 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:30 +0900] "GET /app/member/idcheck?id=promo10 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:33 +0900] "GET /app/member/idcheck?id=promo11 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:36 +0900] "GET /app/member/idcheck?id=promo12 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:39 +0900] "GET /app/member/idcheck?id=promo13 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:42 +0900] "GET /app/member/idcheck?id=promo14 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:45 +0900] "GET /app/member/idcheck?id=promo15 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:48 +0900] "GET /app/member/idcheck?id=promo16 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:51 +0900] "GET /app/member/idcheck?id=promo17 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:54 +0900] "GET /app/member/idcheck?id=promo18 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:00:57 +0900] "GET /app/member/idcheck?id=promo19 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:00 +0900] "GET /app/member/idcheck?id=promo20 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:03 +0900] "GET /app/member/idcheck?id=promo21 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:06 +0900] "GET /app/member/idcheck?id=promo22 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:09 +0900] "GET /app/member/idcheck?id=promo23 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:12 +0900] "GET /app/member/idcheck?id=promo24 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:15 +0900] "GET /app/member/idcheck?id=promo25 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:18 +0900] "GET /app/member/idcheck?id=promo26 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:21 +0900] "GET /app/member/idcheck?id=promo27 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:24 +0900] "GET /app/member/idcheck?id=promo28 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:27 +0900] "GET /app/member/idcheck?id=promo29 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:30 +0900] "GET /app/member/idcheck?id=promo30 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:33 +0900] "GET /app/member/idcheck?id=promo31 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:36 +0900] "GET /app/member/idcheck?id=promo32 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:39 +0900] "GET /app/member/idcheck?id=promo33 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:42 +0900] "GET /app/member/idcheck?id=promo34 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:45 +0900] "GET /app/member/idcheck?id=promo35 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:48 +0900] "GET /app/member/idcheck?id=promo36 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:51 +0900] "GET /app/member/idcheck?id=promo37 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:54 +0900] "GET /app/member/idcheck?id=promo38 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:01:57 +0900] "GET /app/member/idcheck?id=promo39 HTTP/1.1" 200 15 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:02:05 +0900] "POST /app/sms/send HTTP/1.1" 200 21 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:02:10 +0900] "POST /app/join HTTP/1.1" 302 0 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:02:35 +0900] "POST /app/sms/send HTTP/1.1" 200 21 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:02:40 +0900] "POST /app/join HTTP/1.1" 302 0 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:03:05 +0900] "POST /app/sms/send HTTP/1.1" 200 21 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:03:10 +0900] "POST /app/join HTTP/1.1" 302 0 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:03:35 +0900] "POST /app/sms/send HTTP/1.1" 200 21 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:03:40 +0900] "POST /app/join HTTP/1.1" 400 0 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:04:05 +0900] "POST /app/sms/send HTTP/1.1" 200 21 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:04:10 +0900] "POST /app/join HTTP/1.1" 302 0 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:04:35 +0900] "POST /app/sms/send HTTP/1.1" 200 21 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:04:40 +0900] "POST /app/join HTTP/1.1" 302 0 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:05:05 +0900] "POST /app/sms/send HTTP/1.1" 200 21 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:05:10 +0900] "POST /app/join HTTP/1.1" 400 0 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:05:35 +0900] "POST /app/sms/send HTTP/1.1" 200 21 "-" "python-requests/2.31.0"
+203.0.113.88 - - [21/Oct/2026:13:05:40 +0900] "POST /app/join HTTP/1.1" 302 0 "-" "python-requests/2.31.0"
+198.18.0.10 - - [21/Oct/2026:13:30:00 +0900] "POST /app/join HTTP/1.1" 302 0 "-" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/120.0 Safari/537.36"
+198.18.0.11 - - [21/Oct/2026:13:30:20 +0900] "POST /app/join HTTP/1.1" 302 0 "-" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/120.0 Safari/537.36"
+198.18.0.12 - - [21/Oct/2026:13:30:40 +0900] "POST /app/join HTTP/1.1" 302 0 "-" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/120.0 Safari/537.36"
+198.18.0.13 - - [21/Oct/2026:13:31:00 +0900] "POST /app/join HTTP/1.1" 302 0 "-" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/120.0 Safari/537.36"
+198.18.0.14 - - [21/Oct/2026:13:31:20 +0900] "POST /app/join HTTP/1.1" 302 0 "-" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/120.0 Safari/537.36"
+198.18.0.10 - - [21/Oct/2026:13:31:50 +0900] "POST /app/join HTTP/1.1" 302 0 "-" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/120.0 Safari/537.36"
+198.18.0.11 - - [21/Oct/2026:13:32:10 +0900] "POST /app/join HTTP/1.1" 302 0 "-" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/120.0 Safari/537.36"
+198.18.0.12 - - [21/Oct/2026:13:32:30 +0900] "POST /app/join HTTP/1.1" 302 0 "-" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/120.0 Safari/537.36"
+198.18.0.13 - - [21/Oct/2026:13:32:50 +0900] "POST /app/join HTTP/1.1" 302 0 "-" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/120.0 Safari/537.36"
+198.18.0.14 - - [21/Oct/2026:13:33:10 +0900] "POST /app/join HTTP/1.1" 302 0 "-" "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/120.0 Safari/537.36"
+100.64.3.7 - - [21/Oct/2026:15:05:00 +0900] "GET /app/join HTTP/1.1" 200 8120 "https://shop.example.com/app/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36"
+100.64.3.7 - - [21/Oct/2026:15:05:01 +0900] "POST /app/join HTTP/1.1" 302 0 "https://shop.example.com/app/join" "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36"
 </script>
 <script type="text/plain" id="sample-server">2026-10-20 02:13:20,101 WARN  [org.example.app.LoginService] (default task-12) Login failed for user 'admin' from 203.0.113.45
 2026-10-20 02:13:35,550 WARN  [org.example.app.LoginService] (default task-14) Login failed for user 'root' from 203.0.113.45
@@ -626,6 +720,13 @@ pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:6px
 2026-10-21 03:25:42,220 INFO  [org.jboss.as.server.deployment] (MSC service thread 1-3) WFLYSRV0027: Starting deployment of "cmd.war" (runtime-name: "cmd.war")
 2026-10-21 03:25:43,010 INFO  [org.wildfly.extension.undertow] (ServerService Thread Pool -- 80) WFLYUT0021: Registered web context: '/cmd' for server 'default-server'
 2026-10-21 03:25:43,120 INFO  [org.jboss.as.server] (management-handler-thread - 2) WFLYSRV0010: Deployed "cmd.war" (runtime-name : "cmd.war")
+2026-10-21 10:12:53,402 INFO  [org.example.app.MemberService] (default task-3) Join success user 'kimsy' from 192.168.10.35
+2026-10-21 13:02:10,210 INFO  [org.example.app.MemberService] (default task-1) Join success user 'promo01' from 203.0.113.88
+2026-10-21 13:02:40,210 INFO  [org.example.app.MemberService] (default task-2) Join success user 'promo02' from 203.0.113.88
+2026-10-21 13:03:10,210 INFO  [org.example.app.MemberService] (default task-3) Join success user 'promo03' from 203.0.113.88
+2026-10-21 13:04:10,210 INFO  [org.example.app.MemberService] (default task-5) Join success user 'promo04' from 203.0.113.88
+2026-10-21 13:04:40,210 INFO  [org.example.app.MemberService] (default task-6) Join success user 'promo05' from 203.0.113.88
+2026-10-21 13:05:40,210 INFO  [org.example.app.MemberService] (default task-8) Join success user 'promo06' from 203.0.113.88
 </script>
 <script>
 "use strict";
@@ -681,7 +782,7 @@ function parseLine(line,file,base){
     if(m){const time=parseAccessTime(m[4]);
       if(time){const rq=m[5].split(" ");
         return {kind:"access",evs:[tag({time,ip:m[1],src:"access",file,method:rq[0]||"",path:rq[1]||"",
-          status:m[6]==="-"?0:+m[6],size:m[7]==="-"?0:+m[7],user:m[3]==="-"?"":m[3],agent:m[9]||"",raw:line})]}}}
+          status:m[6]==="-"?0:+m[6],size:m[7]==="-"?0:+m[7],user:m[3]==="-"?"":m[3],agent:m[9]==="-"?"":(m[9]||""),referer:m[8]===undefined?null:(m[8]==="-"?"":m[8]),raw:line})]}}}
   }
   const s=SERVER_RE.exec(line);
   if(s){let time;
@@ -754,7 +855,7 @@ const LV={hi:"높음",mid:"중간",lo:"낮음"};
 // 같은 종류의 행동이 이어지면 한 덩어리(블록)로 묶는다. 30분 넘게 쉬면 새 접속(세션)으로 본다.
 const SESSION_GAP=30*60e3;
 const STATIC_RE=/\.(css|js|png|jpe?g|gif|svg|ico|woff2?|ttf|map)(\?|$)/i;
-const TOOL_UA_RE=/(sqlmap|nikto|nmap|masscan|zgrab|nuclei|dirbuster|gobuster|wpscan|python-requests|Go-http-client|curl\/|wget\/|libwww-perl|httpclient)/i;
+const TOOL_UA_RE=/(sqlmap|nikto|nmap|masscan|zgrab|nuclei|dirbuster|gobuster|wpscan|python-requests|Go-http-client|curl\/|wget\/|libwww-perl|httpclient|HeadlessChrome|PhantomJS|Selenium|puppeteer|playwright)/i;
 const KIND={
   attack:  {g:"시도",  t:"공격 시도 (인젝션 패턴)"},
   scan:    {g:"시도",  t:"관리·민감 경로 탐색"},
@@ -1075,6 +1176,7 @@ function load(files,isExample){
   const sev=ip=>Math.min(3,...INC.filter(f=>f.ip===ip).map(f=>VERDICT[f.verdict].o));
   SUMMARY.sort((a,b)=>sev(a.ip)-sev(b.ip)||b.score-a.score||b.n-a.n);
   renderIncident();
+  FLOW_RES=null;if(!$("view-flow").hidden)renderFlow();
   renderList();
   if(SUMMARY.length)select(SUMMARY[0].ip);else $("report").innerHTML='<div class="panel empty">IP가 담긴 줄을 찾지 못했습니다. 위 "파일별 인식 결과"를 열어 확인해 주세요.</div>';
 }
@@ -1291,6 +1393,247 @@ function renderReport(r,note){
     copy(csv,ev.target)};
   el.querySelectorAll("[data-copy]").forEach(b=>b.onclick=()=>copy(el.querySelector("#"+b.dataset.copy).textContent,b,el.querySelector("#"+b.dataset.copy)));
 }
+// =====================================================================
+// 업무 이상 접속: 회원가입·중복확인·인증번호·비밀번호 찾기·로그인을
+// 사람이 아닌 방식(반복, 화면 없이 제출, 너무 빠름, 자동화 도구 등)으로 썼는지 본다
+// =====================================================================
+const FLOW_DEFAULT=[
+  {id:"signup", name:"회원가입",       re:"join|sign-?up|register|regist|member/(new|insert|add)|create-?account|enroll", n:3,  win:10, submit:"post"},
+  {id:"idcheck",name:"아이디 중복확인",re:"id-?check|check-?id|dup(licate)?-?check|exists?|availab",                       n:20, win:10, submit:"any"},
+  {id:"sms",    name:"인증번호 발송",  re:"sms|otp|send-?code|certif|auth-?num|verif(y|ication)/send|auth/send",          n:5,  win:10, submit:"any"},
+  {id:"findpw", name:"비밀번호 찾기",  re:"find-?(pw|pass)|reset-?(pw|pass)|password/reset|forgot",                        n:5,  win:10, submit:"post"},
+  {id:"login",  name:"로그인",         re:"login|signin|j_security_check",                                                 n:10, win:10, submit:"post"},
+];
+const FLOW_STORE="ipTracker.flowDefs.v1";
+let FLOW_DEFS=(()=>{try{const v=JSON.parse(localStorage.getItem(FLOW_STORE)||"null");if(Array.isArray(v)&&v.length===FLOW_DEFAULT.length)return v}catch(e){}return FLOW_DEFAULT.map(d=>({...d}))})();
+const saveDefs=()=>{try{localStorage.setItem(FLOW_STORE,JSON.stringify(FLOW_DEFS))}catch(e){}};
+const SEV={high:{t:"위험",c:"v-success",o:0},mid:{t:"주의",c:"v-check",o:1},low:{t:"참고",c:"v-fail",o:2}};
+const SIGNUP_LOG_RE=/join|sign\s?-?up|regist|회원\s*가입|create.?account/i;
+const SIGNUP_OK_RE=/success|succeeded|complete|완료|created/i;
+const ID_RE=/(?:user(?:name)?|id|account)\s*[:=]?\s*'?([\w.@-]{2,})'?/i;
+const isOk=e=>e.status>=200&&e.status<400;
+function compileDefs(){return FLOW_DEFS.map(d=>{let re=null;try{re=new RegExp(d.re,"i")}catch(e){}return {...d,rx:re}})}
+function flowOf(e,defs){
+  if(e.src!=="access")return null;
+  const p=e.path.split("?")[0];if(STATIC_RE.test(p))return null;
+  for(const d of defs)if(d.rx&&d.rx.test(p)){
+    const submit=d.submit==="any"||e.method==="POST"||e.method==="PUT";
+    return {id:d.id,submit};
+  }
+  return null;
+}
+function maxInWindow(times,winMs){let best=0,bi=0,j=0;for(let i=0;i<times.length;i++){while(times[i]-times[j]>winMs)j++;if(i-j+1>best){best=i-j+1;bi=j}}return {count:best,from:times[bi],to:times[Math.min(bi+best-1,times.length-1)]}}
+function seqIds(ids){ // promo01, promo02 … 처럼 앞부분이 같고 숫자만 다른 아이디
+  const g={};for(const id of ids){const m=/^(.*?)(\d+)$/.exec(id);if(m&&m[1])(g[m[1].toLowerCase()]??=[]).push(id)}
+  return Object.values(g).filter(v=>v.length>=3).sort((a,b)=>b.length-a.length)[0]||null;
+}
+function flowAnalyze(){
+  const defs=compileDefs();const byId=Object.fromEntries(defs.map(d=>[d.id,d]));
+  const flows={};          // ip → 업무 관련 이벤트
+  const staticIps=new Set(),pageIps=new Set();
+  for(const e of ALL){
+    if(e.src!=="access")continue;
+    if(STATIC_RE.test(e.path.split("?")[0]))staticIps.add(e.ip);else pageIps.add(e.ip);
+    const f=flowOf(e,defs);if(!f)continue;
+    e.flow=f.id;e.flowSubmit=f.submit;(flows[e.ip]??=[]).push(e);
+  }
+  // 서버 로그의 가입 기록 (아이디 추출)
+  const signLogs={};
+  for(const e of ALL)if(e.src!=="access"&&SIGNUP_LOG_RE.test(e.msg||"")){(signLogs[e.ip]??=[]).push(e)}
+  // 화면 파일 규칙은 "다른 사용자 대부분이 화면 파일을 받는 로그"일 때만 의미가 있다
+  const staticActive=pageIps.size>=3&&[...pageIps].filter(ip=>staticIps.has(ip)).length/pageIps.size>=0.2;
+  // 리퍼러 규칙: 다른 사용자의 가입 제출에 리퍼러가 남는 로그일 때만
+  const signSubs=Object.values(flows).flat().filter(e=>e.flow==="signup"&&e.flowSubmit);
+  const withRef=signSubs.filter(e=>e.referer!==null);
+  const refActive=withRef.length>=3&&withRef.filter(e=>e.referer).length/withRef.length>=0.3;
+  const F=[];
+  const add=(ip,sev,type,name,evs,why,next)=>F.push({ip,sev,type,name,why,next,evs,start:evs[0]?.time,end:evs[evs.length-1]?.time,count:evs.length});
+  for(const [ip,evs0] of Object.entries(flows)){
+    const evs=evs0.sort((a,b)=>a.time-b.time);
+    for(const d of defs){
+      const subs=evs.filter(e=>e.flow===d.id&&e.flowSubmit);if(!subs.length)continue;
+      const w=maxInWindow(subs.map(e=>+e.time),d.win*60e3);
+      const ok=subs.filter(isOk).length;
+      if(w.count>=d.n){
+        const inW=subs.filter(e=>e.time>=w.from&&e.time<=w.to);
+        add(ip,w.count>=d.n*2?"high":"mid","repeat",`${d.name} 단시간 반복`,inW,
+          `${d.win}분 안에 ${d.name} ${w.count}회 (기준 ${d.n}회) · 전체 ${subs.length}회 중 처리됨 ${ok}건, 실패 ${subs.length-ok}건`,
+          {signup:"같은 IP에서 만든 계정들을 찾아 정지·확인하세요. 가입에 횟수 제한(예: IP당 10분에 3회)이나 자동 가입 방지(캡차)를 거세요.",
+           idcheck:"아이디 목록을 대량으로 확인(존재 여부 수집)했을 수 있습니다. 중복확인에 횟수 제한을 거세요.",
+           sms:"문자 발송 비용이 나가고, 다른 사람 번호로 문자 폭탄을 보냈을 수 있습니다. 발송 대상 번호를 확인하고 횟수 제한을 거세요.",
+           findpw:"다른 사람 계정의 비밀번호 재설정을 노렸을 수 있습니다. 대상 계정을 확인하세요.",
+           login:"'침해·IP 분석' 탭의 로그인 무차별 대입 판정에서 성공 여부를 확인하세요."}[d.id]);
+      }
+    }
+    const subs=evs.filter(e=>e.flow==="signup"&&e.flowSubmit);
+    if(!subs.length)continue;
+    const all=(BYIP.get(ip)||[]).filter(e=>e.src==="access");
+    // 여러 계정 생성
+    const okSubs=subs.filter(isOk);
+    const ids=[...new Set((signLogs[ip]||[]).filter(e=>SIGNUP_OK_RE.test(e.msg)).map(e=>(ID_RE.exec(e.msg)||[])[1]).filter(Boolean))];
+    const nAcc=Math.max(okSubs.length,ids.length);
+    if(nAcc>=2)add(ip,nAcc>=3?"high":"mid","multi","한 IP에서 여러 계정 생성",okSubs.length?okSubs:signLogs[ip],
+      `가입 처리됨 ${nAcc}건${ids.length?` · 생성된 아이디: ${ids.slice(0,8).join(", ")}${ids.length>8?` 외 ${ids.length-8}개`:""}`:""}${okSubs.length?` (응답 2xx/3xx 기준)`:""}`,
+      "회사·학교처럼 여러 사람이 같은 IP를 쓰는 경우도 있습니다. 가입 정보(전화번호·이메일)가 비슷한지 확인하세요.");
+    const seq=seqIds(ids);
+    if(seq)add(ip,"high","seq","연속된 아이디로 가입",(signLogs[ip]||[]).filter(e=>seq.some(id=>(e.msg||"").includes(id))),
+      `규칙적으로 번호만 바뀐 아이디 ${seq.length}개: ${seq.slice(0,6).join(", ")}${seq.length>6?" …":""}`,"프로그램으로 계정을 대량 생성한 전형적인 형태입니다. 해당 계정들을 함께 정지·확인하세요.");
+    // 가입 화면 없이 바로 제출 / 너무 빠른 제출
+    const direct=[],fast=[];
+    for(const sub of subs){
+      const form=evs.filter(g=>g.flow==="signup"&&!g.flowSubmit&&g.time<=sub.time&&sub.time-g.time<=30*60e3).pop();
+      if(!form)direct.push(sub);else if(sub.time-form.time<3000)fast.push({sub,gap:sub.time-form.time});
+    }
+    if(direct.length)add(ip,direct.length>=3?"high":"mid","direct","가입 화면 없이 바로 제출",direct,
+      `가입 화면(GET)을 열지 않고 가입 요청(POST)만 보냄 ${direct.length}건 / 전체 ${subs.length}건`,
+      "사람은 보통 가입 화면을 연 뒤 제출합니다. 프로그램이 주소로 직접 보냈을 가능성이 큽니다. (화면 주소가 다르면 위 '업무 주소 설정'에서 맞춰 주세요)");
+    if(fast.length)add(ip,"mid","fast","너무 빠른 가입 제출",fast.map(x=>x.sub),
+      `가입 화면을 연 뒤 ${fast.map(x=>(x.gap/1000).toFixed(0)+"초").join(", ")} 만에 제출 (기준 3초 미만)`,
+      "이름·전화번호·약관 동의를 3초 안에 입력하기는 어렵습니다. 자동 입력 프로그램을 의심할 수 있습니다.");
+    if(staticActive&&!staticIps.has(ip))add(ip,"mid","nostatic","화면 파일을 받지 않음",subs,
+      `이 IP는 화면 파일(css·js·이미지)을 한 번도 요청하지 않음 — 다른 사용자는 요청함`,
+      "브라우저가 아닌 프로그램으로 접속했을 가능성이 큽니다.");
+    const bot=subs.filter(e=>TOOL_UA_RE.test(e.agent||""));
+    if(bot.length)add(ip,"high","ua","자동화 도구로 가입",bot,
+      `User-Agent에 도구 이름: ${[...new Set(bot.map(e=>TOOL_UA_RE.exec(e.agent)[1]))].join(", ")} (${bot.length}건)`,"User-Agent는 조작이 쉬워 참고용이지만, 일반 사용자는 이런 값을 쓰지 않습니다.");
+    else if(subs.some(e=>e.referer!==null)&&subs.every(e=>e.referer!==null&&!(e.agent||"")))
+      add(ip,"mid","ua","브라우저 정보 없이 가입",subs,"가입 요청에 User-Agent가 비어 있음","일반 브라우저는 항상 User-Agent를 보냅니다.");
+    if(refActive){const noRef=subs.filter(e=>e.referer==="");if(noRef.length===subs.length)
+      add(ip,"low","noref","이전 화면 정보 없이 가입",noRef,`가입 요청 ${noRef.length}건 모두 Referer(어느 화면에서 왔는지)가 비어 있음 — 다른 사용자는 대부분 남음`,"단독으로는 약한 신호입니다. 다른 항목과 함께 보세요.");}
+    const night=subs.filter(e=>e.time.getHours()<6);
+    if(night.length)add(ip,"low","night","새벽 시간대 가입",night,`0~6시 가입 시도 ${night.length}건`,"단독으로는 약한 신호입니다.");
+  }
+  // 여러 IP가 짧은 시간에 동시에 가입 (분산 봇)
+  const subsAll=signSubs.slice().sort((a,b)=>a.time-b.time);
+  const used=new Set();
+  for(let i=0;i<subsAll.length;i++){
+    if(used.has(subsAll[i]))continue;
+    const win=subsAll.filter(e=>e.time>=subsAll[i].time&&e.time-subsAll[i].time<=5*60e3);
+    const ips=new Set(win.map(e=>e.ip));
+    if(win.length>=8&&ips.size>=3){
+      win.forEach(e=>used.add(e));
+      const ua={};for(const e of win)if(e.agent)ua[e.agent]=(ua[e.agent]||0)+1;
+      const top=Object.entries(ua).sort((a,b)=>b[1]-a[1])[0];
+      add([...ips].join(", "),top&&top[1]>=win.length*0.7?"high":"mid","burst","여러 IP에서 동시 가입",win,
+        `5분 안에 IP ${ips.size}개에서 가입 ${win.length}회${top&&top[1]>=win.length*0.7?` · 같은 User-Agent ${top[1]}건 (${top[0].slice(0,60)}…)`:""}`,
+        "IP를 바꿔 가며 가입하는 봇일 수 있습니다. 이 시간대에 만들어진 계정을 함께 확인하세요.");
+    }
+  }
+  F.sort((a,b)=>SEV[a.sev].o-SEV[b.sev].o||a.start-b.start);
+  return {F,flows,staticActive,refActive,signSubs,defs};
+}
+// 같은 IP(또는 같은 IP 묶음)의 판정을 한 줄로 합친다
+function groupFlow(F){
+  const g={};
+  for(const f of F){const x=g[f.ip]??={ip:f.ip,items:[],evs:new Set()};x.items.push(f);f.evs?.forEach(e=>x.evs.add(e))}
+  return Object.values(g).map(x=>{
+    const evs=[...x.evs].sort((a,b)=>a.time-b.time);
+    x.items.sort((a,b)=>SEV[a.sev].o-SEV[b.sev].o);
+    return {...x,evs,sev:x.items[0].sev,start:evs[0]?.time,end:evs[evs.length-1]?.time,
+      next:[...new Set(x.items.map(i=>i.next))]};
+  }).sort((a,b)=>SEV[a.sev].o-SEV[b.sev].o||b.ip.split(", ").length-a.ip.split(", ").length||b.items.length-a.items.length||a.start-b.start);
+}
+let FLOW_RES=null;
+function renderFlow(){
+  const el=$("view-flow");
+  const R=FLOW_RES=flowAnalyze();R.G=groupFlow(R.F);
+  const n=k=>R.G.filter(f=>f.sev===k).length;
+  const subs=R.signSubs,okN=subs.filter(isOk).length;
+  const signIps=new Set(subs.map(e=>e.ip));
+  const flaggedIps=new Set(R.F.flatMap(f=>f.ip.split(", ")));
+  // 날짜×시간 가입 분포
+  const grid={},bad={};const flaggedSubs=new Set(R.F.flatMap(f=>f.evs));
+  for(const e of subs){const k=dayKey(e.time),h=e.time.getHours();(grid[k]??=Array(24).fill(0))[h]++;if(flaggedSubs.has(e))(bad[k]??=Array(24).fill(0))[h]++}
+  const days=Object.keys(grid).sort();const vmax=Math.max(1,...Object.values(grid).flat());
+  const rows=days.map(k=>`<tr><th class="day">${k.slice(5)} (${"일월화수목금토"[new Date(+k.slice(0,4),+k.slice(5,7)-1,+k.slice(8,10)).getDay()]})</th>${grid[k].map((v,h)=>{const b=(bad[k]||[])[h]||0;
+    const st=v?`background:rgba(var(${b?"--heat-bad":"--heat"}),${(0.12+0.78*v/vmax).toFixed(2)})`:"";
+    return `<td class="${b?"bad":""}" style="${st}" title="${k} ${pad(h)}시 · 가입 시도 ${v}건${b?` (이상 ${b}건)`:""}">${v||""}</td>`}).join("")}</tr>`).join("");
+  // 로그에서 많이 쓰인 업무 주소 (설정 도우미)
+  const pc={};for(const e of ALL)if(e.src==="access"&&!STATIC_RE.test(e.path)){const k=`${e.method} ${e.path.split("?")[0]}`;pc[k]=(pc[k]||0)+1}
+  const topPaths=Object.entries(pc).sort((a,b)=>b[1]-a[1]).slice(0,20);
+  const catOf=k=>{const [m,p]=k.split(" ");const f=flowOf({src:"access",path:p,method:m},R.defs);return f?f.id:""};
+  el.innerHTML=`
+  <section class="panel">
+    <div class="toolbar"><h2 style="margin:0">회원가입·업무 기능 이상 접속 점검</h2><button id="flowcopy">보고용 텍스트 복사</button></div>
+    <div class="vsum"><span class="vb v-success">위험 ${n("high")}</span><span class="vb v-check">주의 ${n("mid")}</span><span class="vb v-fail">참고 ${n("low")}</span>
+      <span class="note">가입 시도 ${subs.length}건 (처리됨 ${okN}) · 가입한 IP ${signIps.size}개 · 이상 IP ${[...flaggedIps].filter(ip=>signIps.has(ip)||R.F.some(f=>f.ip===ip)).length}개</span></div>
+    ${R.G.length?`<div class="scroll incbox"><table class="detail inc flowsum"><thead><tr><th>판정</th><th>IP</th><th>기간</th><th>이상 징후 · 근거</th><th>확인할 것</th></tr></thead><tbody>
+      ${R.G.map((g,i)=>`<tr class="incrow flowrow" data-i="${i}" tabindex="0"><td><span class="vb ${SEV[g.sev].c}">${SEV[g.sev].t}</span><div class="note">${g.items.length}개 징후</div></td>
+        <td class="mono ipcell">${esc(g.ip.split(", ").length>3?g.ip.split(", ").slice(0,3).join(", ")+` 외 ${g.ip.split(", ").length-3}개`:g.ip)}</td>
+        <td class="t">${g.start?fmt(g.start):"-"}${g.end&&+g.end!==+g.start?`<div class="note">~ ${fmt(g.end)}</div>`:""}</td>
+        <td class="w"><ul class="sig">${g.items.map(f=>`<li><span class="vb ${SEV[f.sev].c}">${SEV[f.sev].t}</span> <b>${esc(f.name)}</b> — ${esc(f.why)}</li>`).join("")}</ul></td>
+        <td class="w next">${g.next.map(x=>`<div>· ${esc(x)}</div>`).join("")}</td></tr>`).join("")}</tbody></table></div>`
+      :`<p>${subs.length?"이상한 가입 패턴을 찾지 못했습니다.":"로그에서 회원가입 요청을 찾지 못했습니다. 아래 '업무 주소 설정'에서 우리 서비스의 가입 주소를 지정해 주세요."}</p>`}
+    <p class="note">줄을 누르면 아래에 그 IP의 업무 흐름(화면 열기 → 중복확인 → 인증번호 → 제출)이 시간순으로 나옵니다.</p>
+  </section>
+  <section class="panel" id="flowdetail" hidden></section>
+  <section class="panel">
+    <h2>가입 시도 시간 분포 · 날짜 × 시간대</h2>
+    ${days.length?`<div class="scroll"><table class="grid"><tr><th></th>${[...Array(24).keys()].map(h=>`<th>${pad(h)}</th>`).join("")}</tr>${rows}</table></div>
+    <div class="legend"><span><i style="background:rgba(var(--heat),.6)"></i>가입 시도 건수 (진할수록 많음)</span><span><i style="background:rgba(var(--heat-bad),.6);box-shadow:inset 0 0 0 2px rgb(var(--heat-bad))"></i>이상 판정된 시도 포함</span></div>`
+    :`<p class="note">가입 시도가 없습니다.</p>`}
+  </section>
+  <details class="panel" id="flowcfg">
+    <summary><b>업무 주소 설정</b> <span class="note">· 우리 서비스 주소가 다르면 여기서 바꾸세요 (이 브라우저에 저장)</span></summary>
+    <p class="note">주소에 아래 글자가 들어 있으면 그 업무로 봅니다. <span class="mono">|</span> 는 "또는"입니다. 화면 열기(GET)와 제출(POST)을 구분하는 업무는 '제출 기준: POST'입니다.</p>
+    <div class="scroll"><table class="detail cfg"><thead><tr><th>업무</th><th>주소 패턴</th><th>반복 기준</th><th>제출 기준</th></tr></thead><tbody>
+      ${FLOW_DEFS.map((d,i)=>`<tr><td><b>${esc(d.name)}</b></td><td><input type="text" id="cfg-re-${d.id}" value="${esc(d.re)}" aria-label="${esc(d.name)} 주소 패턴">${R.defs[i].rx?"":'<div style="color:var(--hi)">패턴 오류</div>'}</td>
+        <td class="nowrap"><input type="number" id="cfg-win-${d.id}" min="1" max="1440" value="${d.win}" aria-label="분">분에 <input type="number" id="cfg-n-${d.id}" min="2" max="9999" value="${d.n}" aria-label="회">회 이상</td>
+        <td>${d.submit==="any"?"모든 요청":"POST·PUT"}</td></tr>`).join("")}</tbody></table></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0"><button class="primary" id="cfgapply">적용</button><button id="cfgreset">기본값으로</button></div>
+    <h2 style="margin-top:14px">이 로그에서 많이 쓰인 주소 (화면 파일 제외)</h2>
+    <p class="note">우리 서비스의 가입 주소가 무엇인지 모를 때 참고하세요. 업무를 고르면 그 주소가 해당 패턴에 추가됩니다.</p>
+    <div class="scroll"><table class="detail"><thead><tr><th>요청</th><th>건수</th><th>업무 지정</th></tr></thead><tbody>
+      ${topPaths.map(([k,c])=>`<tr><td class="w">${esc(k)}</td><td class="num">${c}</td><td><select data-path="${esc(k.split(" ")[1])}" aria-label="업무 지정"><option value="">${catOf(k)?esc(FLOW_DEFS.find(d=>d.id===catOf(k)).name)+" (인식됨)":"— 선택 —"}</option>${FLOW_DEFS.map(d=>`<option value="${d.id}">${esc(d.name)}로 지정</option>`).join("")}</select></td></tr>`).join("")}
+    </tbody></table></div>
+  </details>
+  <p class="note">판정 기준은 일반적인 자동 가입 방지 관점의 단순 규칙입니다. 회사·학교·통신사 공용 IP는 여러 사람이 한 IP를 써서 "여러 계정 생성"으로 잡힐 수 있습니다. 앱이 가입 실패에도 200을 돌려주면 "처리됨" 숫자가 실제보다 많게 나옵니다. 서버 로그에 가입 아이디가 남으면(예: <span class="mono">Join success user 'abc'</span>) 더 정확해집니다.</p>`;
+  el.querySelectorAll(".flowrow").forEach(tr=>{const go=()=>showFlowDetail(R.G[+tr.dataset.i]);tr.onclick=go;tr.onkeydown=e=>{if(e.key==="Enter")go()}});
+  $("flowcopy").onclick=ev=>copy(flowText(R),ev.target);
+  $("cfgapply").onclick=()=>{for(const d of FLOW_DEFS){d.re=$("cfg-re-"+d.id).value.trim()||d.re;d.win=Math.max(1,+$("cfg-win-"+d.id).value||d.win);d.n=Math.max(2,+$("cfg-n-"+d.id).value||d.n)}saveDefs();renderFlow();$("flowcfg").open=true};
+  $("cfgreset").onclick=()=>{FLOW_DEFS=FLOW_DEFAULT.map(d=>({...d}));saveDefs();renderFlow();$("flowcfg").open=true};
+  el.querySelectorAll("select[data-path]").forEach(sel=>sel.onchange=()=>{const d=FLOW_DEFS.find(x=>x.id===sel.value);if(!d)return;
+    const esc2=sel.dataset.path.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");d.re=d.re+"|"+esc2;saveDefs();renderFlow();$("flowcfg").open=true});
+}
+function showFlowDetail(f){
+  const el=$("flowdetail");const ips=f.ip.split(", ");
+  const evs=ALL.filter(e=>ips.includes(e.ip)&&(e.flow||(e.src!=="access"&&SIGNUP_LOG_RE.test(e.msg||""))||(e.src==="access"&&STATIC_RE.test(e.path.split("?")[0])))).sort((a,b)=>a.time-b.time);
+  const name=id=>(FLOW_DEFS.find(d=>d.id===id)||{}).name||"";
+  const mark=new Set(f.evs);
+  let prev=null;
+  const rows=evs.slice(0,800).map(e=>{const gap=prev&&ips.length===1?`+${dur(e.time-prev)}`:"";prev=e.time;
+    const step=e.src!=="access"?"서버 기록":STATIC_RE.test(e.path.split("?")[0])?"화면 파일":`${name(e.flow)} · ${(FLOW_DEFS.find(d=>d.id===e.flow)||{}).submit==="any"?"요청":e.flowSubmit?"제출":"화면 열기"}`;
+    const res=e.src!=="access"?esc(e.level):`<span class="${e.status>=500?"s5":e.status>=400?"s4":""}">${e.status}</span> ${isOk(e)?"처리됨":"실패"}`;
+    return `<tr class="${mark.has(e)?"hit":""}"><td class="t">${fmt(e.time)}</td><td class="t note">${gap}</td>${ips.length>1?`<td class="mono">${esc(e.ip)}</td>`:""}<td>${esc(step)}</td>
+      <td class="w">${e.src==="access"?esc(e.method+" "+e.path):esc(e.msg)}</td><td>${res}</td></tr>`}).join("");
+  el.hidden=false;
+  el.innerHTML=`<div class="toolbar"><h2 style="margin:0">업무 흐름 · ${esc(f.ip)}</h2>${ips.length===1?`<button id="goip">이 IP 전체 분석 보기</button>`:""}</div>
+    <p class="note">강조된 줄이 위 판정의 근거입니다. 정상 사용자는 보통 "화면 열기 → 화면 파일 → 중복확인 → 인증번호 → 제출" 순서이고 단계 사이에 수 초~수십 초가 걸립니다.</p>
+    <div class="scroll detailbox"><table class="detail flowtbl"><thead><tr><th>시각</th><th>간격</th>${ips.length>1?"<th>IP</th>":""}<th>단계</th><th>요청</th><th>결과</th></tr></thead><tbody>${rows}</tbody></table></div>
+    ${evs.length>800?`<p class="note">${evs.length}건 중 처음 800건만 표시</p>`:""}`;
+  $("goip")?.addEventListener("click",()=>{showTab("ip");$("ipq").value="";select(f.ip);$("report").scrollIntoView({block:"start"})});
+  el.scrollIntoView({block:"nearest"});
+}
+function flowText(R){
+  const ts=R.signSubs.map(e=>+e.time);
+  const L=[`[회원가입·업무 이상 접속 점검] 가입 시도 ${R.signSubs.length}건 (처리됨 ${R.signSubs.filter(isOk).length})${ts.length?` · ${fmt(new Date(Math.min(...ts)))} ~ ${fmt(new Date(Math.max(...ts)))}`:""}`,
+    "※ 로그 기반 추정입니다. 공용 IP(회사·통신사)는 여러 사람이 같은 IP를 씁니다. 계정 정보(전화번호·이메일)와 함께 확인하세요."];
+  for(const k of ["high","mid","low"]){const gs=R.G.filter(g=>g.sev===k);if(!gs.length)continue;
+    L.push(`\n■ ${SEV[k].t} (${gs.length}개 IP·묶음)`);
+    for(const g of gs){L.push(`- ${g.ip} | ${g.start?fmt(g.start):"-"}${g.end&&+g.end!==+g.start?" ~ "+fmt(g.end):""}`);
+      for(const f of g.items)L.push(`    [${SEV[f.sev].t}] ${f.name}: ${f.why}`);
+      for(const x of g.next)L.push(`    → 확인할 것: ${x}`)}}
+  return L.join("\n");
+}
+function showTab(which){
+  const ip=which==="ip";
+  $("tab-ip").setAttribute("aria-selected",ip);$("tab-flow").setAttribute("aria-selected",!ip);
+  $("view-ip").hidden=!ip;$("view-flow").hidden=ip;
+  if(!ip&&!FLOW_RES)renderFlow();
+  try{localStorage.setItem("ipTracker.tab",which)}catch(e){}
+}
+$("tab-ip").onclick=()=>showTab("ip");$("tab-flow").onclick=()=>showTab("flow");
+$("tab-ip").onkeydown=$("tab-flow").onkeydown=e=>{if(e.key==="ArrowRight"||e.key==="ArrowLeft"){const t=e.target.id==="tab-ip"?"flow":"ip";showTab(t);$("tab-"+t).focus()}};
 function copy(text,btn,pre){
   const done=ok=>{const o=btn.textContent;btn.textContent=ok?"복사됨":"직접 선택해 복사하세요";setTimeout(()=>btn.textContent=o,1600)};
   try{navigator.clipboard.writeText(text).then(()=>done(true),()=>{sel(pre);done(false)})}catch(e){sel(pre);done(false)}
@@ -1312,5 +1655,6 @@ const drop=$("drop");
 ["dragleave","drop"].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove("over")}));
 drop.addEventListener("drop",e=>handleFiles(e.dataTransfer.files));
 
+try{if(localStorage.getItem("ipTracker.tab")==="flow")setTimeout(()=>showTab("flow"),0)}catch(e){}
 load([{name:"access_log.example.log",text:$("sample-access").textContent.trim()},{name:"server.log",text:$("sample-server").textContent.trim()}],true);
 </script>

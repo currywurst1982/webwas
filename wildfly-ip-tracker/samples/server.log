@@ -10,3 +10,10 @@
 2026-10-21 03:25:42,220 INFO  [org.jboss.as.server.deployment] (MSC service thread 1-3) WFLYSRV0027: Starting deployment of "cmd.war" (runtime-name: "cmd.war")
 2026-10-21 03:25:43,010 INFO  [org.wildfly.extension.undertow] (ServerService Thread Pool -- 80) WFLYUT0021: Registered web context: '/cmd' for server 'default-server'
 2026-10-21 03:25:43,120 INFO  [org.jboss.as.server] (management-handler-thread - 2) WFLYSRV0010: Deployed "cmd.war" (runtime-name : "cmd.war")
+2026-10-21 10:12:53,402 INFO  [org.example.app.MemberService] (default task-3) Join success user 'kimsy' from 192.168.10.35
+2026-10-21 13:02:10,210 INFO  [org.example.app.MemberService] (default task-1) Join success user 'promo01' from 203.0.113.88
+2026-10-21 13:02:40,210 INFO  [org.example.app.MemberService] (default task-2) Join success user 'promo02' from 203.0.113.88
+2026-10-21 13:03:10,210 INFO  [org.example.app.MemberService] (default task-3) Join success user 'promo03' from 203.0.113.88
+2026-10-21 13:04:10,210 INFO  [org.example.app.MemberService] (default task-5) Join success user 'promo04' from 203.0.113.88
+2026-10-21 13:04:40,210 INFO  [org.example.app.MemberService] (default task-6) Join success user 'promo05' from 203.0.113.88
+2026-10-21 13:05:40,210 INFO  [org.example.app.MemberService] (default task-8) Join success user 'promo06' from 203.0.113.88

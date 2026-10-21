@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 모든 페이지에 로그인을 요구한다. 역할(role) 이름: ip-tracker-user -->
+<web-app xmlns="https://jakarta.ee/xml/ns/jakartaee"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee https://jakarta.ee/xml/ns/jakartaee/web-app_6_0.xsd"
+         version="6.0">
+    <display-name>WildFly IP Tracker</display-name>
+
+    <!-- 위에서 지정하지 않은 HTTP 메서드(PUT, DELETE 등)는 모두 거부 -->
+    <deny-uncovered-http-methods/>
+
+    <security-constraint>
+        <web-resource-collection>
+            <web-resource-name>all</web-resource-name>
+            <url-pattern>/*</url-pattern>
+            <http-method>GET</http-method>
+            <http-method>HEAD</http-method>
+        </web-resource-collection>
+        <auth-constraint>
+            <role-name>ip-tracker-user</role-name>
+        </auth-constraint>
+    </security-constraint>
+
+    <login-config>
+        <auth-method>BASIC</auth-method>
+        <realm-name>IP Tracker</realm-name>
+    </login-config>
+
+    <security-role>
+        <role-name>ip-tracker-user</role-name>
+    </security-role>
+
+    <welcome-file-list>
+        <welcome-file>index.html</welcome-file>
+    </welcome-file-list>
+</web-app>

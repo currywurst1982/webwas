@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 접속 주소: http://서버:8080/ip-tracker/
+     security-domain "other" = WildFly 기본 애플리케이션 사용자(add-user.sh -a 로 만든 계정) -->
+<jboss-web xmlns="urn:jboss:jakartaee:1.0"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:schemaLocation="urn:jboss:jakartaee:1.0 https://www.jboss.org/schema/jbossas/jboss-web_15_0.xsd"
+           version="15.0">
+    <context-root>/ip-tracker</context-root>
+    <security-domain>other</security-domain>
+</jboss-web>

@@ -8,6 +8,7 @@ WildFly 로그에서 **특정 IP가 언제, 무엇을 했는지** 뽑아 보여�
 | ① 웹 화면 | `web/index.html` | 로그 파일을 끌어다 놓고 바로 보고 싶을 때 (설치 없음) |
 | ② 명령어 | `ip_tracker.py` | 서버에서 직접 돌리거나, 큰 로그를 처리할 때 |
 | ③ AI 채팅 연동 (MCP) | `mcp_server.py` | Claude Desktop 등에서 "203.0.113.45 이력 보여줘"처럼 말로 물을 때 |
+| ④ 사내망 WAR | `war/dist/ip-tracker.war` | WildFly에 배포해서 여러 사람이 사내 주소로 쓸 때 (사내 IP 제한 + 로그인). 설치법: [war/README.md](war/README.md) |
 
 ---
 
@@ -156,6 +157,7 @@ User-Agent까지 남기려면 `add(pattern=combined)`로 추가하세요.
 ```bash
 python3 -m unittest discover -s tests -v
 python3 web/build.py   # samples/ 를 바꾼 뒤 web/index.html 다시 만들기
+python3 war/build_war.py   # web/index.html 을 바꾼 뒤 WAR 다시 만들기
 ```
 
 ## 출처

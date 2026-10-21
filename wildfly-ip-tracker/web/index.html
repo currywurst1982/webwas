@@ -87,6 +87,17 @@ pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:6px
 .empty{padding:24px;text-align:center;color:var(--mut)}
 .diag{width:100%;font-size:12px}.diag summary{cursor:pointer;color:var(--accent)}.diag table{margin-top:6px}
 .files details{flex-basis:100%}
+.tlbox{max-height:640px;overflow:auto}
+.tl td{vertical-align:top}.tl td.t{white-space:nowrap;font-variant-numeric:tabular-nums}
+.tl td:nth-child(2){min-width:128px}.tl td:nth-child(4){min-width:110px}
+.tl .tlday td{background:var(--bg);font-weight:700;font-size:12px;position:sticky;top:26px}
+.tlrow{cursor:pointer}.tlrow:hover{background:var(--accent-soft)}.tlrow.sel{box-shadow:inset 3px 0 0 var(--accent);background:var(--accent-soft)}
+.tlrow:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.gb{display:inline-block;font-size:11px;font-weight:700;border-radius:4px;padding:1px 6px;white-space:nowrap}
+.g-work{background:var(--accent-soft);color:var(--accent)}
+.g-try{background:rgba(var(--heat-bad),.15);color:var(--hi)}
+.g-odd{background:color-mix(in srgb,var(--mid) 18%,transparent);color:var(--mid)}
+.tlf.on{background:var(--accent);border-color:var(--accent);color:var(--panel)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -699,6 +710,122 @@ function analyze(evs,label){
 }
 const LV={hi:"높음",mid:"중간",lo:"낮음"};
 
+// ---------- 활동 타임라인: 시간순으로 "무엇을 했고 어떻게 처리됐나"를 묶어서 정리 ----------
+// 같은 종류의 행동이 이어지면 한 덩어리(블록)로 묶는다. 30분 넘게 쉬면 새 접속(세션)으로 본다.
+const SESSION_GAP=30*60e3;
+const STATIC_RE=/\.(css|js|png|jpe?g|gif|svg|ico|woff2?|ttf|map)(\?|$)/i;
+const TOOL_UA_RE=/(sqlmap|nikto|nmap|masscan|zgrab|nuclei|dirbuster|gobuster|wpscan|python-requests|Go-http-client|curl\/|wget\/|libwww-perl|httpclient)/i;
+const KIND={
+  attack:  {g:"시도",  t:"공격 시도 (인젝션 패턴)"},
+  scan:    {g:"시도",  t:"관리·민감 경로 탐색"},
+  authfail:{g:"시도",  t:"로그인·인증 실패"},
+  odd:     {g:"시도",  t:"비표준 HTTP 요청"},
+  error:   {g:"특이사항",t:"서버 오류 발생"},
+  notfound:{g:"특이사항",t:"없는 주소 요청"},
+  burst:   {g:"특이사항",t:"과도한 반복 요청"},
+  warn:    {g:"특이사항",t:"서버 경고 기록"},
+  login:   {g:"업무",  t:"로그인"},
+  work:    {g:"업무",  t:"업무 요청"},
+  info:    {g:"업무",  t:"서버 기록 (정상)"},
+};
+function kindOf(e){
+  const t=e.tags;
+  if(t.includes("인젝션시도"))return "attack";
+  if(t.includes("스캔"))return "scan";
+  if(t.includes("인증실패"))return "authfail";
+  if(t.includes("비정상메서드"))return "odd";
+  if(t.includes("서버오류"))return "error";
+  if(e.src==="access"){
+    if(e.status===404)return STATIC_RE.test(e.path)?"work":"notfound";
+    if(/login|signin|j_security_check/i.test(e.path)&&e.method==="POST"&&e.status<400)return "login";
+    return "work";
+  }
+  if(e.level==="WARN")return "warn";
+  if(/login (success|succeeded)|logged in/i.test(e.msg||""))return "login";
+  return "info";
+}
+const VERB={GET:"조회",HEAD:"조회",POST:"등록·처리",PUT:"수정",PATCH:"수정",DELETE:"삭제",OPTIONS:"확인"};
+const normPath=p=>(p||"").split("?")[0].replace(/\/\d+(?=\/|$)/g,"/{번호}").replace(/\/[0-9a-f]{16,}(?=\/|$)/gi,"/{ID}")||"/";
+function topN(obj,n){return Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0,n)}
+function blockDetail(b){
+  const acc=b.evs.filter(e=>e.src==="access"),logs=b.evs.filter(e=>e.src!=="access");
+  const what=[];
+  if(acc.length){
+    if(b.kind==="attack"||b.kind==="scan"||b.kind==="notfound"){
+      const paths=[...new Set(acc.map(e=>e.path))];
+      what.push(paths.slice(0,5).join(", ")+(paths.length>5?` 외 ${paths.length-5}개`:""));
+    }else{
+      const main=acc.filter(e=>!STATIC_RE.test(e.path)),src=main.length?main:acc;
+      const c={};for(const e of src){const k=`${VERB[e.method]||e.method} ${normPath(e.path)}`;c[k]=(c[k]||0)+1}
+      const top=topN(c,3);what.push(top.map(([k,v])=>`${k}${v>1?` ×${v}`:""}`).join(", ")+(Object.keys(c).length>3?` 외 ${Object.keys(c).length-3}종`:"")+
+        (main.length&&main.length<acc.length?` (화면 파일 ${acc.length-main.length}건 제외)`:""));
+    }
+  }
+  if(logs.length){
+    const users=[...new Set(logs.map(e=>(/user(?:name)?\s*[:=]?\s*'?([\w.@-]+)'?/i.exec(e.msg||"")||[])[1]).filter(Boolean))];
+    if(users.length)what.push(`${b.kind==="authfail"?"시도한 계정":"계정"}: ${users.slice(0,5).join(", ")}`);
+    if(!acc.length)what.push((logs[0].msg||"").slice(0,120)+(logs.length>1?` 외 ${logs.length-1}줄`:""));
+  }
+  // 처리 결과 = 서버가 어떻게 응답했나
+  const res=[];
+  if(acc.length){
+    const ok=acc.filter(e=>e.status>=200&&e.status<400).length,deny=acc.filter(e=>e.status===401||e.status===403).length,
+      nf=acc.filter(e=>e.status===404).length,bad=acc.filter(e=>e.status>=400&&e.status<500&&![401,403,404].includes(e.status)).length,
+      err=acc.filter(e=>e.status>=500).length;
+    if(ok)res.push(`성공 ${ok}`);if(deny)res.push(`거부 ${deny}`);if(nf)res.push(`없음(404) ${nf}`);if(bad)res.push(`잘못된 요청 ${bad}`);if(err)res.push(`서버 오류 ${err}`);
+  }
+  if(logs.length){const lv={};for(const e of logs)lv[e.level||"기록"]=(lv[e.level||"기록"]||0)+1;res.push("로그 "+topN(lv,3).map(([k,v])=>`${k} ${v}`).join(", "))}
+  // 특이사항
+  const note=[];
+  const per={};let peak=0;for(const e of acc){const k=Math.floor(e.time/60000);per[k]=(per[k]||0)+1;peak=Math.max(peak,per[k])}
+  if(peak>=60)note.push(`분당 최대 ${peak}회 (사람이 하기 어려운 속도)`);
+  else if(acc.length>=10&&(b.end-b.start)<60e3)note.push(`1분 안에 ${acc.length}회 (자동화 의심)`);
+  const h=b.start.getHours();if(h<6)note.push("새벽 시간대");
+  const tools=[...new Set(acc.map(e=>(TOOL_UA_RE.exec(e.agent||"")||[])[1]).filter(Boolean))];
+  if(tools.length)note.push(`자동화 도구 흔적: ${tools.join(", ")}`);
+  if(b.evs.some(e=>e.tags.includes("프록시경유")))note.push("프록시 경유 기록");
+  if(acc.some(e=>e.status===200)&&(b.kind==="scan"||b.kind==="attack"))note.push("⚠ 일부 요청이 성공(200) — 실제 노출 여부 확인 필요");
+  if(b.kind==="attack"&&acc.some(e=>e.status>=500))note.push("⚠ 서버 오류로 응답 — 공격 입력이 내부(DB 등)까지 전달됐을 수 있음, 개발 담당 확인 필요");
+  return {what:what.join(" · ")||"-",res:res.join(", ")||"-",note};
+}
+function buildTimeline(evs){
+  const out=[];let cur=null,sess=0,prevEnd=null;
+  for(const e of evs){ // evs 는 시간순
+    const k=kindOf(e);
+    const newSess=!prevEnd||e.time-prevEnd>SESSION_GAP;
+    if(newSess)sess++;
+    if(!cur||newSess||cur.kind!==k){
+      cur={kind:k,sess,start:e.time,end:e.time,evs:[],gapBefore:newSess&&prevEnd?e.time-prevEnd:0};out.push(cur);
+    }
+    cur.evs.push(e);cur.end=e.time;prevEnd=e.time;
+  }
+  for(const b of out){
+    if(b.kind==="work"){ // 업무 요청이라도 사람이 하기 어려운 속도면 특이사항
+      const per={};let peak=0;for(const e of b.evs){const k=Math.floor(e.time/60000);per[k]=(per[k]||0)+1;peak=Math.max(peak,per[k])}
+      if(peak>=60)b.kind="burst";
+    }
+    Object.assign(b,blockDetail(b));
+  }
+  return out;
+}
+const hm=d=>`${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const hms=d=>`${hm(d)}:${pad(d.getSeconds())}`;
+// 같은 분 안이면 초까지, 아니면 분까지
+const span=b=>+b.end===+b.start?hms(b.start):Math.floor(b.start/60e3)===Math.floor(b.end/60e3)?`${hms(b.start)}~${hms(b.end)}`:`${hm(b.start)}~${hm(b.end)}`;
+const dur=ms=>ms<60e3?`${Math.max(1,Math.round(ms/1000))}초`:ms<3600e3?`${Math.round(ms/60e3)}분`:ms<86400e3?`${(ms/3600e3).toFixed(1)}시간`:`${(ms/86400e3).toFixed(1)}일`;
+function timelineText(label,tl){
+  const lines=[`[IP 활동 타임라인] ${label}`];let day="";
+  for(const b of tl){
+    const d=dayKey(b.start);if(d!==day){day=d;lines.push(`\n■ ${d}`)}
+    const t=span(b);
+    lines.push(`${t}  [${KIND[b.kind].g}] ${KIND[b.kind].t} (${b.evs.length}건)`);
+    lines.push(`    - 내용: ${b.what}`);
+    lines.push(`    - 처리: ${b.res}`);
+    if(b.note.length)lines.push(`    - 특이: ${b.note.join(" / ")}`);
+  }
+  return lines.join("\n");
+}
+
 function cli(ip){
   const safe=ip.replace(/[^0-9A-Za-z]/g,"_");
   return {
@@ -800,6 +927,17 @@ function renderReport(r,note){
   const steps={hi:["즉시 차단하세요. 아래 명령을 WildFly CLI에 붙여넣으면 이 IP는 403 응답을 받습니다.","방화벽·WAF·로드밸런서에서도 막는 것을 권장합니다. 서버 앞단에서 막아야 서버 부하가 줄어듭니다.","빨간 테두리 시간대를 눌러 무엇을 했는지 확인하고, 같은 시각 server.log ERROR와 앱 로그를 함께 보세요."],
     mid:["당분간 지켜보세요. 며칠 뒤 로그를 다시 올려 분석합니다.","같은 패턴이 반복되면 아래 명령으로 차단합니다."],
     lo:["정상 사용자로 보입니다. 조치가 필요 없습니다.","그래도 막아야 한다면 아래 명령을 사용합니다."]}[r.level];
+  const tl=buildTimeline(r.evs);const TL_LIMIT=500;
+  const GCLS={"업무":"g-work","시도":"g-try","특이사항":"g-odd"};
+  let lastDay="";
+  const tlRows=tl.slice(0,TL_LIMIT).map((b,i)=>{
+    const d=dayKey(b.start);const dayRow=d!==lastDay?`<tr class="tlday"><td colspan="5">${d} (${"일월화수목금토"[b.start.getDay()]})</td></tr>`:"";lastDay=d;
+    const gap=b.gapBefore?`<div class="note">이전 활동 후 ${dur(b.gapBefore)} 만에 접속</div>`:"";
+    const t=esc(span(b));
+    const g=KIND[b.kind].g;
+    return `${dayRow}<tr class="tlrow" data-i="${i}" data-g="${g}" tabindex="0"><td class="t">${t}<div class="note">${b.evs.length}건${b.end-b.start?" · "+dur(b.end-b.start):""}</div>${gap}</td>
+      <td><span class="gb ${GCLS[g]}">${g}</span><div class="note">${esc(KIND[b.kind].t)}</div></td>
+      <td class="w">${esc(b.what)}</td><td>${esc(b.res)}</td><td>${b.note.map(n=>`<div>${esc(n)}</div>`).join("")||'<span class="mut">-</span>'}</td></tr>`}).join("");
   const fronts=note&&note.kind==="raw"?Object.entries(note.front).sort((a,b)=>b[1]-a[1]):[];
   const banner=note&&note.kind==="raw"?`<div class="panel" style="border-color:var(--mid)">
     <h2>자동 인식으로는 못 찾아서, 원문 글자 검색으로 찾은 결과입니다 (${note.hits}줄)</h2>
@@ -820,6 +958,16 @@ function renderReport(r,note){
     <div class="stat"><span>서버·기타 로그</span><b>${r.evs.length-r.acc.length}건</b></div>
     <div class="stat"><span>분당 최대</span><b>${r.peak}회</b></div>
     <div class="stat"><span>응답 코드</span><b style="font-size:13px">${stat}</b></div>
+  </div>
+  <div class="panel">
+    <div class="toolbar"><h2 style="margin:0">활동 타임라인 · 시간순 정리</h2>
+      <div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="구분 필터">
+        <button class="tlf on" data-g="">전체 ${tl.length}</button>
+        ${["업무","시도","특이사항"].map(g=>`<button class="tlf" data-g="${g}">${g} ${tl.filter(b=>KIND[b.kind].g===g).length}</button>`).join("")}
+        <button id="copytl">보고용 텍스트 복사</button></div></div>
+    <p class="note">같은 종류의 행동이 이어지면 한 줄로 묶었습니다. 30분 넘게 기록이 없으면 새 접속으로 나눕니다. 줄을 누르면 아래 상세 이력이 그 구간만 보입니다.</p>
+    <div class="scroll tlbox"><table class="detail tl" id="tl"><thead><tr><th>시간</th><th>구분</th><th>무엇을 했나</th><th>처리 결과</th><th>특이사항</th></tr></thead><tbody>${tlRows}</tbody></table></div>
+    ${tl.length>TL_LIMIT?`<p class="note">${tl.length}개 구간 중 처음 ${TL_LIMIT}개만 표시합니다. 기간을 나눠 보거나 "보고용 텍스트 복사"로 전체를 받으세요.</p>`:""}
   </div>
   <div class="panel">
     <h2>타임테이블 · 날짜 × 시간대</h2>
@@ -855,6 +1003,15 @@ function renderReport(r,note){
     el.querySelector("#dnote").textContent=list.length>LIMIT?`${list.length}건 중 최근 ${LIMIT}건만 표시합니다.`:`${list.length}건`;
   }
   fill(()=>true,"");
+  const pickRow=tr=>{el.querySelectorAll(".tlrow.sel").forEach(x=>x.classList.remove("sel"));tr.classList.add("sel");
+    const b=tl[+tr.dataset.i];const set=new Set(b.evs);fill(e=>set.has(e),`${fmt(b.start)} ~ ${hm(b.end)} · ${KIND[b.kind].t}`);
+    el.querySelector("#detail").scrollIntoView({block:"nearest"})};
+  el.querySelectorAll(".tlrow").forEach(tr=>{tr.onclick=()=>pickRow(tr);tr.onkeydown=ev=>{if(ev.key==="Enter")pickRow(tr)}});
+  el.querySelectorAll(".tlf").forEach(btn=>btn.onclick=()=>{
+    el.querySelectorAll(".tlf").forEach(x=>x.classList.toggle("on",x===btn));const g=btn.dataset.g;
+    el.querySelectorAll("#tl tbody tr").forEach(tr=>{if(tr.classList.contains("tlday"))return;tr.hidden=!!g&&tr.dataset.g!==g});
+    el.querySelectorAll("#tl tr.tlday").forEach(tr=>{let n=tr.nextElementSibling,vis=false;while(n&&!n.classList.contains("tlday")){if(!n.hidden)vis=true;n=n.nextElementSibling}tr.hidden=!vis})});
+  el.querySelector("#copytl").onclick=ev=>copy(timelineText(r.label,tl),ev.target);
   el.querySelectorAll(".grid td button").forEach(b=>b.onclick=()=>{
     el.querySelectorAll(".grid td.sel").forEach(x=>x.classList.remove("sel"));b.parentElement.classList.add("sel");
     const d=b.dataset.d,h=+b.dataset.h;fill(e=>dayKey(e.time)===d&&e.time.getHours()===h,`${d} ${pad(h)}시`)});

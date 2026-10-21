@@ -55,6 +55,26 @@ class FlexibleFormatTest(unittest.TestCase):
         self.assertEqual(rs["events"][0].ip, "198.51.100.9")
 
 
+class TimelineTest(unittest.TestCase):
+    def test_attacker_timeline(self):
+        ev = t.collect("203.0.113.45", [SAMPLES])
+        r = t.analyze(ev, "203.0.113.45")
+        groups = [(b["group"], b["title"]) for b in r["timeline"]]
+        self.assertEqual(groups[0], ("시도", "관리·민감 경로 탐색"))
+        self.assertIn(("시도", "로그인·인증 실패"), groups)
+        self.assertEqual(groups[-1], ("특이사항", "과도한 반복 요청"))
+        fail = next(b for b in r["timeline"] if b["title"] == "로그인·인증 실패")
+        self.assertIn("admin", fail["what"])
+        self.assertIn("거부 30", fail["result"])
+        inj = next(b for b in r["timeline"] if "인젝션" in b["title"])
+        self.assertTrue(any("DB" in n for n in inj["notes"]))
+
+    def test_normal_user_is_work(self):
+        r = t.analyze(t.collect("192.168.10.35", [SAMPLES]), "192.168.10.35")
+        self.assertTrue(r["timeline"])
+        self.assertTrue(all(b["group"] == "업무" for b in r["timeline"]))
+
+
 class AnalyzeTest(unittest.TestCase):
     def test_attacker_high(self):
         r = t.analyze(t.collect("203.0.113.45", [SAMPLES]), "203.0.113.45")

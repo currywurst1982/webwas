@@ -25,6 +25,36 @@ class ParseTest(unittest.TestCase):
         self.assertTrue(m("203.0.113.45")); self.assertFalse(m("203.0.114.1")); self.assertFalse(m("bad"))
 
 
+class FlexibleFormatTest(unittest.TestCase):
+    """회사마다 다른 로그 형식에서도 IP를 찾는지 확인."""
+
+    def setUp(self):
+        import tempfile
+        self.d = tempfile.mkdtemp()
+        with open(os.path.join(self.d, "nohup.out"), "w") as f:  # 색상 코드 + 날짜 없는 콘솔 로그
+            f.write("\x1b[0m09:15:02,123 WARN  [x.Login] (task-1) Login failed from 198.51.100.7\n")
+        os.utime(os.path.join(self.d, "nohup.out"), (1792540800, 1792540800))
+        with open(os.path.join(self.d, "access_log.2026-10-21.log"), "w") as f:  # 프록시 뒤 실제 IP는 끝 칸
+            f.write('10.0.0.5 - - [21/Oct/2026:10:00:00 +0900] "GET /.env HTTP/1.1" 404 0 "198.51.100.9"\n')
+        with open(os.path.join(self.d, "custom.log"), "w") as f:  # 회사 고유 형식
+            f.write("2026/10/21 11:22:33 client=198.51.100.20 uri=/.env\n")
+
+    def test_console_log_without_date(self):
+        ev = t.collect("198.51.100.7", [self.d])
+        self.assertEqual(len(ev), 1)
+        self.assertEqual(ev[0].source, "server")
+
+    def test_custom_format(self):
+        ev = t.collect("198.51.100.20", [self.d])
+        self.assertEqual((len(ev), ev[0].time.hour), (1, 11))
+
+    def test_proxy_raw_search(self):
+        self.assertEqual(t.collect("198.51.100.9", [self.d]), [])
+        rs = t.raw_search("198.51.100.9", [self.d])
+        self.assertEqual((rs["hits"], dict(rs["front"])), (1, {"10.0.0.5": 1}))
+        self.assertEqual(rs["events"][0].ip, "198.51.100.9")
+
+
 class AnalyzeTest(unittest.TestCase):
     def test_attacker_high(self):
         r = t.analyze(t.collect("203.0.113.45", [SAMPLES]), "203.0.113.45")

@@ -44,11 +44,19 @@ ACCESS_RE = re.compile(
 ACCESS_TIME_FMT = "%d/%b/%Y:%H:%M:%S %z"
 
 # server.log: 2026-10-20 09:15:02,123 WARN  [org.example] (default task-1) message
+# 콘솔 로그(nohup.out 등)는 날짜 없이 시각만 찍히므로 날짜는 생략 가능, 밀리초 구분자는 , 또는 .
 SERVER_RE = re.compile(
-    r'^(?P<time>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) +(?P<level>[A-Z]+) +'
+    r'^(?:(?P<date>\d{4}-\d{2}-\d{2})[ T])?(?P<time>\d{2}:\d{2}:\d{2})[,.](?P<ms>\d{3}) +(?P<level>[A-Z]+) +'
     r'\[(?P<category>[^\]]*)\] \((?P<thread>[^)]*)\) (?P<message>.*)$'
 )
-SERVER_TIME_FMT = "%Y-%m-%d %H:%M:%S,%f"
+ANSI_RE = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')   # 콘솔 로그의 색상 코드
+# 형식을 모르는 줄에서 시각을 찾는 규칙 (위에서부터 먼저 맞는 것 사용)
+TS_FULL_RE = re.compile(r'(\d{4})[-/.](\d{2})[-/.](\d{2})[ T](\d{2}):(\d{2}):(\d{2})')
+TS_COMMON_RE = re.compile(r'(\d{2})/(\w{3})/(\d{4}):(\d{2}):(\d{2}):(\d{2})')
+TS_TIME_RE = re.compile(r'(?:^|[\s\[])(\d{2}):(\d{2}):(\d{2})(?:[,.]\d+)?(?=[\s\]])')
+FILE_DATE_RE = re.compile(r'(\d{4})-?(\d{2})-?(\d{2})')
+MONTHS = {m: i for i, m in enumerate(["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"], 1)}
 
 IP_IN_TEXT_RE = re.compile(r'(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])')
 
@@ -57,7 +65,7 @@ IP_IN_TEXT_RE = re.compile(r'(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])')
 class Event:
     time: datetime
     ip: str
-    source: str            # "access" 또는 "server"
+    source: str            # "access", "server", "other"(형식 모름)
     file: str
     method: str = ""
     path: str = ""
@@ -102,17 +110,67 @@ def parse_access_line(line: str, file: str) -> Optional[Event]:
     )
 
 
-def parse_server_line(line: str, file: str) -> List[Event]:
+def _valid_ips(text: str) -> List[str]:
+    out = []
+    for ip in IP_IN_TEXT_RE.findall(text):
+        if all(int(x) <= 255 for x in ip.split(".")) and ip not in out:
+            out.append(ip)
+    return out
+
+
+def file_base_date(path: str) -> Optional[datetime]:
+    """파일 이름의 날짜(access_log.2026-10-20.log 등), 없으면 파일 수정일."""
+    m = FILE_DATE_RE.search(os.path.basename(path))
+    if m and 1 <= int(m[2]) <= 12 and 1 <= int(m[3]) <= 31:
+        return datetime(int(m[1]), int(m[2]), int(m[3]))
+    try:
+        return datetime.fromtimestamp(os.path.getmtime(path))
+    except OSError:
+        return None
+
+
+def find_time(line: str, base: Optional[datetime]) -> Optional[datetime]:
+    m = TS_FULL_RE.search(line)
+    if m:
+        try:
+            return datetime(*map(int, m.groups()))
+        except ValueError:
+            pass
+    m = TS_COMMON_RE.search(line)
+    if m and m[2] in MONTHS:
+        return datetime(int(m[3]), MONTHS[m[2]], int(m[1]), int(m[4]), int(m[5]), int(m[6]))
+    m = TS_TIME_RE.search(line)
+    if m and base:
+        return base.replace(hour=int(m[1]), minute=int(m[2]), second=int(m[3]), microsecond=0)
+    return None
+
+
+def parse_server_line(line: str, file: str, base: Optional[datetime] = None) -> List[Event]:
     """server.log 한 줄에 들어 있는 IP마다 이벤트를 하나씩 만든다."""
     m = SERVER_RE.match(line)
     if not m:
         return []
-    ips = set(IP_IN_TEXT_RE.findall(m["message"]))
+    ips = _valid_ips(m["message"])
     if not ips:
         return []
-    t = datetime.strptime(m["time"], SERVER_TIME_FMT)
+    if m["date"]:
+        t = datetime.strptime(f"{m['date']} {m['time']}", "%Y-%m-%d %H:%M:%S")
+    elif base:
+        t = datetime.strptime(f"{base:%Y-%m-%d} {m['time']}", "%Y-%m-%d %H:%M:%S")
+    else:
+        return []
+    t = t.replace(microsecond=int(m["ms"]) * 1000)
     return [Event(time=t, ip=ip, source="server", file=os.path.basename(file),
                   level=m["level"], message=m["message"][:500]) for ip in ips]
+
+
+def parse_other_line(line: str, file: str, base: Optional[datetime]) -> List[Event]:
+    """형식을 모르는 줄: IP와 시각만 있으면 줄 전체를 내용으로 사용."""
+    ips = _valid_ips(line)
+    t = find_time(line, base) if ips else None
+    if not t:
+        return []
+    return [Event(time=t, ip=ip, source="other", file=os.path.basename(file), message=line[:500]) for ip in ips]
 
 
 def find_log_files(paths: Iterable[str]) -> List[str]:
@@ -121,7 +179,7 @@ def find_log_files(paths: Iterable[str]) -> List[str]:
         if os.path.isdir(p):
             for name in sorted(os.listdir(p)):
                 full = os.path.join(p, name)
-                if os.path.isfile(full) and (".log" in name or name.endswith(".gz")):
+                if os.path.isfile(full) and (".log" in name or name.endswith((".gz", ".out", ".txt"))):
                     files.append(full)
         elif os.path.isfile(p):
             files.append(p)
@@ -130,30 +188,65 @@ def find_log_files(paths: Iterable[str]) -> List[str]:
     return files
 
 
-# 파일별로 "형식을 몰라 건너뛴 줄 수"를 기록 (로그 패턴이 기본값과 다를 때 확인용)
+# 파일별로 "IP는 있는데 형식·시각을 몰라 건너뛴 줄 수"를 기록 (로그 패턴이 다를 때 확인용)
 SKIPPED: Counter = Counter()
+
+
+def parse_line(line: str, f: str, base: Optional[datetime], is_server: bool) -> List[Event]:
+    line = ANSI_RE.sub("", line)
+    if not is_server:
+        ev = parse_access_line(line, f)
+        if ev:
+            return [ev]
+    if SERVER_RE.match(line):
+        return parse_server_line(line, f, base)
+    return parse_other_line(line, f, base)
 
 
 def read_events(files: Iterable[str]) -> Iterator[Event]:
     for f in files:
         is_server = os.path.basename(f).startswith("server.log")
+        base = file_base_date(f)
         with _open(f) as fh:
             for line in fh:
-                line = line.rstrip("\n")
-                if not line:
+                line = line.rstrip("\r\n")
+                if not line.strip():
                     continue
-                if is_server:
-                    if not SERVER_RE.match(line):
-                        SKIPPED[os.path.basename(f)] += 1  # 스택트레이스 등 여러 줄 메시지 포함
-                    yield from parse_server_line(line, f)
+                evs = parse_line(line, f, base, is_server)
+                if evs:
+                    base = evs[0].time   # 날짜 없는 다음 줄은 이 날짜를 이어받음
+                    yield from evs
+                elif _valid_ips(ANSI_RE.sub("", line)):
+                    SKIPPED[os.path.basename(f)] += 1
+
+
+def raw_search(ip: str, log_paths: List[str]) -> dict:
+    """자동 인식으로 못 찾을 때 원문에서 글자 그대로 찾는다 (프록시 뒤 실제 IP, 특이한 형식)."""
+    pat = re.compile(r"(?<![\d.])" + re.escape(ip) + r"(?![\d.])")
+    events, front, samples, hits = [], Counter(), [], 0
+    for f in find_log_files(log_paths):
+        base = file_base_date(f)
+        with _open(f) as fh:
+            for line in fh:
+                line = ANSI_RE.sub("", line.rstrip("\r\n"))
+                if not pat.search(line):
+                    continue
+                hits += 1
+                if len(samples) < 5:
+                    samples.append(line[:300])
+                ev = parse_access_line(line, f)
+                if ev:
+                    front[ev.ip] += 1
+                    ev.tags.append("프록시경유")
                 else:
-                    ev = parse_access_line(line, f)
-                    if ev:
-                        yield ev
-                    elif SERVER_RE.match(line):  # 파일명이 달라도 server.log 형식이면 처리
-                        yield from parse_server_line(line, f)
-                    else:
-                        SKIPPED[os.path.basename(f)] += 1
+                    t = find_time(line, base)
+                    if not t:
+                        continue
+                    ev = Event(time=t, ip=ip, source="other", file=os.path.basename(f), message=line[:500])
+                base = ev.time
+                ev.ip = ip
+                events.append(ev)
+    return {"events": events, "front": front, "samples": samples, "hits": hits}
 
 
 def ip_matcher(target: str):
@@ -207,6 +300,8 @@ def tag_event(ev: Event) -> None:
             ev.tags.append("서버오류")
         if INJECTION_RE.search(ev.message):
             ev.tags.append("인젝션시도")
+        if ev.source == "other" and SCAN_RE.search(ev.message):
+            ev.tags.append("스캔")
 
 
 def analyze(events: List[Event], ip: str) -> dict:
@@ -309,7 +404,7 @@ def print_report(r: dict, events: List[Event], limit: int = 30) -> None:
         return
     print(f" 최초 접속 : {r['first_seen']}")
     print(f" 마지막 접속: {r['last_seen']}")
-    print(f" 액세스 요청: {r['access_requests']}건 / server.log 언급: {r['server_log_lines']}건")
+    print(f" 액세스 요청: {r['access_requests']}건 / 서버·기타 로그: {r['server_log_lines']}건")
     print(f" 응답 코드  : {r['status_count']}")
     print(f" 분당 최대  : {r['peak_per_minute']}회 ({r['peak_minute']})")
     print(f" 위험도     : {r['risk_level']} (점수 {r['risk_score']})")
@@ -320,7 +415,7 @@ def print_report(r: dict, events: List[Event], limit: int = 30) -> None:
         print(f"   {c:>5}  {p}")
     print(f"\n[시간순 이력 — 최근 {limit}건]")
     for e in events[-limit:]:
-        what = f"{e.method} {e.path} -> {e.status}" if e.source == "access" else f"{e.level} {e.message[:80]}"
+        what = f"{e.method} {e.path} -> {e.status}" if e.source == "access" else f"{e.level} {e.message[:80]}".strip()
         tags = f" [{','.join(e.tags)}]" if e.tags else ""
         print(f"   {e.time:%Y-%m-%d %H:%M:%S}  {e.source:<6} {what}{tags}")
     print("\n[권장 조치]")
@@ -334,7 +429,7 @@ def print_report(r: dict, events: List[Event], limit: int = 30) -> None:
 
 def print_skipped() -> None:
     if SKIPPED:
-        print("\n[참고] 형식을 인식하지 못해 건너뛴 줄 (server.log는 스택트레이스 줄이 정상적으로 포함됨):")
+        print("\n[참고] IP가 있지만 형식·시각을 인식하지 못해 건너뛴 줄:")
         for f, c in SKIPPED.most_common():
             print(f"   {f}: {c}줄")
 
@@ -498,6 +593,23 @@ def main(argv=None) -> int:
         return 0
 
     events = collect(a.ip, a.logs, a.since, a.until)
+    if not events and "/" not in a.ip:
+        rs = raw_search(a.ip, a.logs)
+        if not rs["hits"]:
+            print(f"[알림] 원문 전체에서도 {a.ip} 를 찾지 못했습니다. 입력값, 로그 기간, 프록시 여부를 확인하세요.")
+            print_skipped()
+            return 1
+        print(f"[알림] 자동 인식으로는 못 찾아 원문 글자 검색으로 찾았습니다 ({rs['hits']}줄).")
+        if rs["front"]:
+            fr = ", ".join(f"{ip}({c}줄)" for ip, c in rs["front"].most_common(3))
+            print(f"[주의] 이 줄들의 맨 앞(접속 IP 자리)에는 {fr} 가 찍혀 있습니다. 프록시·로드밸런서일 가능성이 높습니다.")
+            print("       그렇다면 아래 차단 명령은 효과가 없고, 앞단 장비에서 막아야 합니다.")
+        print("[원문 예시]\n   " + "\n   ".join(rs["samples"]) + "\n")
+        events = rs["events"]
+        if a.since or a.until:
+            t0 = datetime.fromisoformat(a.since) if a.since else datetime.min
+            t1 = datetime.fromisoformat(a.until) if a.until else datetime.max
+            events = [e for e in events if t0 <= e.time <= t1]
     r = analyze(events, a.ip)
     if a.json:
         print(json.dumps({"summary": r, "events": [e.to_dict() for e in events]}, ensure_ascii=False, indent=2))

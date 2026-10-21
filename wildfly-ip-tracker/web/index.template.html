@@ -85,6 +85,8 @@ pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:6px
 .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin-bottom:8px}
 .note{font-size:12px;color:var(--mut)}
 .empty{padding:24px;text-align:center;color:var(--mut)}
+.diag{width:100%;font-size:12px}.diag summary{cursor:pointer;color:var(--accent)}.diag table{margin-top:6px}
+.files details{flex-basis:100%}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 
@@ -106,7 +108,7 @@ pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:6px
     <aside class="panel">
       <h2>IP 목록 <span class="mut num" id="ipcount"></span></h2>
       <input type="text" id="ipq" placeholder="IP 또는 대역 입력 (예: 203.0.113.0/24)" aria-label="IP 검색">
-      <div class="note" style="margin-top:6px">대역(/24 등)을 입력하고 Enter를 누르면 대역 전체를 합쳐서 봅니다.</div>
+      <div class="note" style="margin-top:6px">IP를 입력하고 <b>Enter</b>를 누르세요. 목록에 없어도 로그 원문 전체에서 찾아봅니다. 대역(/24 등)은 대역 전체를 합쳐 봅니다.</div>
       <div class="iplist" id="iplist"></div>
     </aside>
     <section class="report" id="report"></section>
@@ -119,7 +121,19 @@ pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:6px
 "use strict";
 // ---------- 파싱 (ip_tracker.py 와 같은 규칙) ----------
 const ACCESS_RE=/^(\S+) (\S+) (\S+) \[([^\]]+)\] "([^"]*)" (\d{3}|-) (\d+|-)(?: "([^"]*)" "([^"]*)")?/;
-const SERVER_RE=/^(\d{4}-\d{2}-\d{2}) (\d{2}):(\d{2}):(\d{2}),(\d{3}) +([A-Z]+) +\[([^\]]*)\] \(([^)]*)\) (.*)$/;
+const SERVER_RE=/^(?:(\d{4}-\d{2}-\d{2})[ T])?(\d{2}):(\d{2}):(\d{2})[,.](\d{3}) +([A-Z]+) +\[([^\]]*)\] \(([^)]*)\) (.*)$/;
+const ANSI_RE=/\x1b\[[0-9;]*[A-Za-z]/g;   // 콘솔 로그의 색상 코드
+// 형식을 모르는 줄에서 시각을 찾는 규칙 (위에서부터 먼저 맞는 것 사용)
+const TS_RULES=[
+  [/(\d{4})[-\/.](\d{2})[-\/.](\d{2})[ T](\d{2}):(\d{2}):(\d{2})/,m=>new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6])],
+  [/(\d{2})\/(\w{3})\/(\d{4}):(\d{2}):(\d{2}):(\d{2})/,m=>m[2] in MON?new Date(+m[3],MON[m[2]],+m[1],+m[4],+m[5],+m[6]):null],
+  [/(?:^|[\s\[])(\d{2}):(\d{2}):(\d{2})(?:[,.]\d+)?(?=[\s\]])/,(m,base)=>base?new Date(base.getFullYear(),base.getMonth(),base.getDate(),+m[1],+m[2],+m[3]):null],
+];
+function findTime(line,base){for(const [re,fn] of TS_RULES){const m=re.exec(line);if(m){const t=fn(m,base);if(t&&!isNaN(t))return t}}return null}
+// 파일 이름의 날짜(access_log.2026-10-20.log, server.log.2026-10-20) → 없으면 파일 수정일
+function fileDate(name,lastModified){const m=/(\d{4})-?(\d{2})-?(\d{2})/.exec(name);
+  if(m&&+m[2]>=1&&+m[2]<=12)return new Date(+m[1],m[2]-1,+m[3]);return lastModified?new Date(lastModified):null}
+function validIps(text){return [...new Set((text.match(IP_RE)||[]).filter(ip=>ip2n(ip)!==null))]}
 const IP_RE=/(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d.])/g;
 const MON={Jan:0,Feb:1,Mar:2,Apr:3,May:4,Jun:5,Jul:6,Aug:7,Sep:8,Oct:9,Nov:10,Dec:11};
 const SCAN_RE=/\/\.env|\/\.git|wp-(admin|login)|phpmyadmin|\/manager\/html|\/jmx-console|\/web-console|\/invoker\/|\/console(\/|$)|\/actuator|\.\.\/|%2e%2e|\/etc\/passwd|cgi-bin|\.php(\?|$)|\/admin(\/|$)/i;
@@ -145,37 +159,52 @@ function tag(e){
     if(AUTH_RE.test(e.msg))t.push("인증실패");
     if(e.level==="ERROR"||e.level==="FATAL")t.push("서버오류");
     if(INJ_RE.test(e.msg))t.push("인젝션시도");
+    if(e.src==="other"&&SCAN_RE.test(e.msg))t.push("스캔");
   }
   e.tags=t;return e;
 }
-function parseText(text,file){
-  const out=[];let skipped=0;
-  const isServer=/^server\.log/.test(file);
-  for(const line of text.split(/\r?\n/)){
-    if(!line)continue;
-    if(!isServer){
-      const m=ACCESS_RE.exec(line);
-      if(m){const time=parseAccessTime(m[4]);
-        if(time){const rq=m[5].split(" ");
-          out.push(tag({time,ip:m[1],src:"access",file,method:rq[0]||"",path:rq[1]||"",
-            status:m[6]==="-"?0:+m[6],size:m[7]==="-"?0:+m[7],user:m[3]==="-"?"":m[3],agent:m[9]||""}));continue;}}
-    }
-    const s=SERVER_RE.exec(line);
-    if(s){const ips=new Set(s[9].match(IP_RE)||[]);
-      const [y,mo,d]=s[1].split("-").map(Number);
-      const time=new Date(y,mo-1,d,+s[2],+s[3],+s[4],+s[5]);
-      for(const ip of ips)out.push(tag({time,ip,src:"server",file,level:s[6],msg:s[9].slice(0,500),status:0,method:"",path:""}));
-    }else skipped++;
+function parseLine(line,file,base){
+  // 한 줄을 이벤트 목록으로. 반환: {evs, kind}  kind = access | server | other | none
+  line=line.replace(ANSI_RE,"");
+  if(!/^server\.log/.test(file)){
+    const m=ACCESS_RE.exec(line);
+    if(m){const time=parseAccessTime(m[4]);
+      if(time){const rq=m[5].split(" ");
+        return {kind:"access",evs:[tag({time,ip:m[1],src:"access",file,method:rq[0]||"",path:rq[1]||"",
+          status:m[6]==="-"?0:+m[6],size:m[7]==="-"?0:+m[7],user:m[3]==="-"?"":m[3],agent:m[9]||"",raw:line})]}}}
   }
-  return {events:out,skipped};
+  const s=SERVER_RE.exec(line);
+  if(s){let time;
+    if(s[1]){const [y,mo,d]=s[1].split("-").map(Number);time=new Date(y,mo-1,d,+s[2],+s[3],+s[4],+s[5])}
+    else if(base)time=new Date(base.getFullYear(),base.getMonth(),base.getDate(),+s[2],+s[3],+s[4],+s[5]);
+    if(time)return {kind:"server",evs:validIps(s[9]).map(ip=>tag({time,ip,src:"server",file,level:s[6],msg:s[9].slice(0,500),status:0,method:"",path:"",raw:line}))};
+  }
+  const ips=validIps(line);
+  if(!ips.length)return {kind:"none",evs:[]};
+  const time=findTime(line,base);
+  if(!time)return {kind:"notime",evs:[]};
+  return {kind:"other",evs:ips.map(ip=>tag({time,ip,src:"other",file,level:"",msg:line.slice(0,500),status:0,method:"",path:"",raw:line}))};
+}
+function parseText(text,file,lastModified){
+  const out=[];const st={total:0,access:0,server:0,other:0,none:0,notime:0,samples:[]};
+  let base=fileDate(file,lastModified);
+  for(const line of text.split(/\r?\n/)){
+    if(!line.trim())continue;
+    st.total++;
+    const r=parseLine(line,file,base);
+    st[r.kind]++;
+    if(r.evs.length){out.push(...r.evs);base=r.evs[0].time}   // 날짜 없는 줄은 직전 줄의 날짜를 이어받음
+    else if(r.kind==="notime"&&st.samples.length<3)st.samples.push(line.slice(0,300));
+  }
+  return {events:out,st};
 }
 async function readFile(f){
   if(/\.gz$/i.test(f.name)){
     if(!("DecompressionStream" in window))throw new Error(".gz 해제를 지원하지 않는 브라우저입니다. 압축을 풀어서 올려주세요.");
     const ds=f.stream().pipeThrough(new DecompressionStream("gzip"));
-    return {name:f.name.replace(/\.gz$/i,""),text:await new Response(ds).text()};
+    return {name:f.name.replace(/\.gz$/i,""),text:await new Response(ds).text(),lastModified:f.lastModified};
   }
-  return {name:f.name,text:await f.text()};
+  return {name:f.name,text:await f.text(),lastModified:f.lastModified};
 }
 
 // ---------- IP / 대역 ----------
@@ -225,21 +254,45 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"
 const pad=n=>String(n).padStart(2,"0");
 const fmt=d=>d?`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`:"-";
 const dayKey=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-let ALL=[],BYIP=new Map(),SUMMARY=[],current=null,cellSel=null;
+let ALL=[],BYIP=new Map(),SUMMARY=[],FILES=[],current=null,cellSel=null;
 
 function load(files,isExample){
-  ALL=[];const skipped=[];
-  for(const f of files){const r=parseText(f.text,f.name);ALL.push(...r.events);if(r.skipped)skipped.push([f.name,r.skipped])}
+  ALL=[];FILES=files;const stats=[];
+  for(const f of files){const r=parseText(f.text,f.name,f.lastModified);ALL.push(...r.events);stats.push([f.name,r.st])}
   BYIP=new Map();for(const e of ALL){if(!BYIP.has(e.ip))BYIP.set(e.ip,[]);BYIP.get(e.ip).push(e)}
   SUMMARY=[...BYIP.entries()].map(([ip,evs])=>{const r=analyze(evs.slice(),ip);return {ip,n:evs.length,level:r.level,score:r.score}})
     .sort((a,b)=>b.score-a.score||b.n-a.n);
+  const used=st=>st.access+st.server+st.other;
   $("files").innerHTML=(isExample?'<b class="badge example">예시 데이터</b> ':'')+
     files.map(f=>`<span>${esc(f.name)}</span>`).join("")+
-    (skipped.length?`<span class="mut" style="border:0">· 형식 인식 못한 줄: ${skipped.map(([n,c])=>esc(n)+" "+c+"줄").join(", ")}</span>`:"");
+    `<details class="diag"><summary>파일별 인식 결과</summary><div class="scroll"><table class="detail"><thead><tr><th>파일</th><th>전체 줄</th><th>액세스 로그</th><th>서버 로그</th><th>기타(IP+시각)</th><th>IP 없음</th><th>시각 없음</th></tr></thead><tbody>`+
+    stats.map(([n,st])=>`<tr><td class="w">${esc(n)}</td><td class="num">${st.total}</td><td class="num">${st.access}</td><td class="num">${st.server}</td><td class="num">${st.other}</td><td class="num">${st.none}</td><td class="num">${st.notime}</td></tr>`).join("")+
+    `</tbody></table></div><p class="note">"IP 없음"은 IP가 안 적힌 줄이라 정상입니다(스택트레이스 등). "기타"는 형식을 몰라 IP와 시각만 뽑은 줄입니다.</p>`+
+    stats.filter(([,st])=>st.samples.length).map(([n,st])=>`<p class="note">${esc(n)}: IP는 있는데 시각을 못 찾은 줄 예시</p><pre>${esc(st.samples.join("\n"))}</pre>`).join("")+
+    `</details>`+
+    stats.filter(([,st])=>st.total&&used(st)===0).map(([n])=>`<span style="color:var(--hi);border:0">· ${esc(n)}: IP 기록을 하나도 못 읽었습니다</span>`).join("");
   renderList();
-  if(SUMMARY.length)select(SUMMARY[0].ip);else $("report").innerHTML='<div class="panel empty">IP가 담긴 줄을 찾지 못했습니다. 로그 형식을 확인해 주세요.</div>';
+  if(SUMMARY.length)select(SUMMARY[0].ip);else $("report").innerHTML='<div class="panel empty">IP가 담긴 줄을 찾지 못했습니다. 위 "파일별 인식 결과"를 열어 확인해 주세요.</div>';
 }
-function renderList(){
+// 자동 인식으로 못 찾을 때: 원문에서 글자 그대로 찾는다 (프록시 뒤 실제 IP, 특이한 형식 등)
+function rawSearch(q){
+  const re=new RegExp("(?<![\\d.])"+q.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"(?![\\d.])");
+  const evs=[];let hits=0,notime=0;const front={};const samples=[];
+  for(const f of FILES){let base=fileDate(f.name,f.lastModified);
+    for(const line of f.text.split(/\r?\n/)){
+      if(!re.test(line)){continue}
+      hits++;if(samples.length<5)samples.push(line.replace(ANSI_RE,"").slice(0,300));
+      const r=parseLine(line,f.name,base);
+      let t=r.evs[0]?.time||findTime(line.replace(ANSI_RE,""),base);
+      if(!t){notime++;continue}
+      base=t;
+      const e=r.kind==="access"?{...r.evs[0]}:{time:t,src:"other",file:f.name,level:"",msg:line.replace(ANSI_RE,"").slice(0,500),status:0,method:"",path:""};
+      if(r.kind==="access"&&e.ip!==q){front[e.ip]=(front[e.ip]||0)+1;e.tags=[...e.tags,"프록시경유"]}
+      else if(r.kind!=="access")tag(e);
+      e.ip=q;evs.push(e);
+    }}
+  return {evs,hits,notime,front,samples};
+}function renderList(){
   const q=$("ipq").value.trim();
   const m=q.includes("/")?matcher(q):null;
   const list=!q?SUMMARY:SUMMARY.filter(s=>m?m(s.ip):s.ip.includes(q));
@@ -248,13 +301,26 @@ function renderList(){
     <i class="dot ${s.level}" title="위험도 ${LV[s.level]}"></i><span class="ip">${esc(s.ip)}</span><small>${s.n}건</small></button>`).join("")||'<div class="empty">일치하는 IP 없음</div>';
 }
 function select(q){
-  const m=matcher(q);if(!m)return;
-  const evs=ALL.filter(e=>m(e.ip));current=q;cellSel=null;
-  renderList();renderReport(analyze(evs,q));
+  const m=matcher(q);
+  if(!m){$("report").innerHTML=`<div class="panel empty">"${esc(q)}" 는 IP 형식이 아닙니다. 예: 203.0.113.45 또는 203.0.113.0/24</div>`;return}
+  let evs=ALL.filter(e=>m(e.ip)),note=null;current=q;cellSel=null;
+  if(!evs.length&&!q.includes("/")){
+    const rs=rawSearch(q);
+    if(!rs.hits)note={kind:"none"};
+    else{evs=rs.evs;note={kind:"raw",...rs}}
+  }
+  renderList();renderReport(analyze(evs,q),note);
 }
-function renderReport(r){
+function renderReport(r,note){
   const el=$("report");
-  if(!r.evs.length){el.innerHTML=`<div class="panel empty">${esc(r.label)} 기록이 없습니다.</div>`;return}
+  const range=()=>{const ts=ALL.map(e=>+e.time);return ts.length?`${fmt(new Date(Math.min(...ts)))} ~ ${fmt(new Date(Math.max(...ts)))}`:"-"};
+  if(note&&note.kind==="none"||!r.evs.length&&!(note&&note.kind==="raw")){el.innerHTML=`<div class="panel"><h2>${esc(r.label)} 기록이 없습니다</h2>
+    <p>불러온 파일의 원문 전체에서 글자 그대로 찾아봤지만 이 IP는 한 번도 나오지 않습니다. 확인할 것:</p>
+    <ul><li>IP를 정확히 입력했는지 (앞뒤 공백, 숫자 오타)</li>
+    <li>해당 날짜의 로그 파일을 올렸는지. 지금 올린 로그의 기간: <b class="num">${range()}</b></li>
+    <li>서버 앞에 로드밸런서·프록시가 있다면, WildFly 로그에는 사용자 IP 대신 장비 IP만 남습니다. 이때는 앞단 장비(웹서버·L4)의 로그를 올려야 합니다.</li></ul></div>`;return}
+  if(!r.evs.length){el.innerHTML=`<div class="panel"><h2>${esc(r.label)}: 원문에 ${note.hits}줄 있지만 시각을 읽지 못했습니다</h2>
+    <p>아래 줄을 복사해서 보내주시면 형식을 맞추겠습니다. (IP 등 민감한 부분은 가려도 됩니다)</p><pre>${esc(note.samples.join("\n"))}</pre></div>`;return}
   const first=r.evs[0].time,last=r.evs[r.evs.length-1].time;
   // 타임테이블
   const grid={},bad={};
@@ -274,7 +340,15 @@ function renderReport(r){
   const steps={hi:["즉시 차단하세요. 아래 명령을 WildFly CLI에 붙여넣으면 이 IP는 403 응답을 받습니다.","방화벽·WAF·로드밸런서에서도 막는 것을 권장합니다. 서버 앞단에서 막아야 서버 부하가 줄어듭니다.","빨간 테두리 시간대를 눌러 무엇을 했는지 확인하고, 같은 시각 server.log ERROR와 앱 로그를 함께 보세요."],
     mid:["당분간 지켜보세요. 며칠 뒤 로그를 다시 올려 분석합니다.","같은 패턴이 반복되면 아래 명령으로 차단합니다."],
     lo:["정상 사용자로 보입니다. 조치가 필요 없습니다.","그래도 막아야 한다면 아래 명령을 사용합니다."]}[r.level];
-  el.innerHTML=`
+  const fronts=note&&note.kind==="raw"?Object.entries(note.front).sort((a,b)=>b[1]-a[1]):[];
+  const banner=note&&note.kind==="raw"?`<div class="panel" style="border-color:var(--mid)">
+    <h2>자동 인식으로는 못 찾아서, 원문 글자 검색으로 찾은 결과입니다 (${note.hits}줄)</h2>
+    ${fronts.length?`<p>이 IP가 적힌 줄의 맨 앞(접속 IP 자리)에는 <b class="mono">${fronts.slice(0,3).map(([ip,c])=>esc(ip)+" ("+c+"줄)").join(", ")}</b> 가 찍혀 있습니다.
+      서버 앞의 프록시·로드밸런서 IP일 가능성이 높습니다. 그렇다면 <b>아래 차단 명령으로 이 IP를 막아도 효과가 없고</b>, 앞단 장비에서 막아야 합니다.
+      반대로 맨 앞 IP를 차단하면 모든 사용자가 막힐 수 있습니다.</p>`:`<p>로그 형식이 도구가 아는 형식과 달라 줄 전체를 내용으로 표시합니다. 위험도 판단은 덜 정확합니다.</p>`}
+    ${note.notime?`<p class="note">시각을 못 읽어 제외한 줄: ${note.notime}줄</p>`:""}
+    <details class="diag"><summary>원문 예시 보기</summary><pre>${esc(note.samples.join("\n"))}</pre></details></div>`:"";
+  el.innerHTML=banner+`
   <div class="panel risk ${r.level}">
     <div><div class="mut" style="font-size:12px">위험도</div><div class="lvl">${LV[r.level]}</div><div class="mut num" style="font-size:12px">${r.score}점</div></div>
     <div style="min-width:0"><h2 class="mono" style="overflow-wrap:anywhere">${esc(r.label)}</h2><ul>${r.why.map(w=>`<li>${esc(w)}</li>`).join("")}</ul></div>
@@ -283,7 +357,7 @@ function renderReport(r){
     <div class="stat"><span>최초 접속</span><b>${fmt(first)}</b></div>
     <div class="stat"><span>마지막 접속</span><b>${fmt(last)}</b></div>
     <div class="stat"><span>액세스 요청</span><b>${r.acc.length}건</b></div>
-    <div class="stat"><span>server.log 언급</span><b>${r.evs.length-r.acc.length}건</b></div>
+    <div class="stat"><span>서버·기타 로그</span><b>${r.evs.length-r.acc.length}건</b></div>
     <div class="stat"><span>분당 최대</span><b>${r.peak}회</b></div>
     <div class="stat"><span>응답 코드</span><b style="font-size:13px">${stat}</b></div>
   </div>
@@ -316,7 +390,7 @@ function renderReport(r){
     const list=r.evs.filter(filter);const shown=list.slice(-LIMIT);
     tbody.innerHTML=shown.map(e=>{const what=e.src==="access"?`${esc(e.method)} ${esc(e.path)}`:`${esc(e.level)} ${esc(e.msg)}`;
       const sc=e.status>=500?"s5":e.status>=400?"s4":"";
-      return `<tr><td class="t">${fmt(e.time)}</td><td>${e.src==="access"?"액세스":"server.log"}</td><td class="w">${what}</td><td class="num ${sc}">${e.status||""}</td><td>${e.tags.map(t=>`<span class="tag${t==="없는경로"?"":" warn"}">${esc(t)}</span>`).join("")}</td></tr>`}).join("");
+      return `<tr><td class="t">${fmt(e.time)}</td><td>${e.src==="access"?"액세스":e.src==="server"?"server.log":"기타 로그"}</td><td class="w">${what}</td><td class="num ${sc}">${e.status||""}</td><td>${e.tags.map(t=>`<span class="tag${t==="없는경로"?"":" warn"}">${esc(t)}</span>`).join("")}</td></tr>`}).join("");
     el.querySelector("#flt").textContent=label?`· ${label}`:"";
     el.querySelector("#dnote").textContent=list.length>LIMIT?`${list.length}건 중 최근 ${LIMIT}건만 표시합니다.`:`${list.length}건`;
   }
@@ -343,6 +417,7 @@ $("ipq").addEventListener("input",renderList);
 $("ipq").addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.value.trim())select(e.target.value.trim())});
 async function handleFiles(list){
   const files=[];
+  $("files").innerHTML='<span class="mut" style="border:0">읽는 중…</span>';
   try{for(const f of list)files.push(await readFile(f))}catch(err){$("files").innerHTML=`<span style="color:var(--hi);border:0">${esc(err.message)}</span>`;return}
   if(files.length)load(files,false);
 }

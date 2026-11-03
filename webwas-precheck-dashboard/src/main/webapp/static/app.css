@@ -426,7 +426,7 @@ select option { background: var(--bg2); }
 
 /* 가로 막대 (설정 취약 / CVE / 서버별 항목) */
 .hbars { display: grid; gap: 7px; }
-.hbar { display: grid; grid-template-columns: minmax(80px, 38%) 1fr 52px; align-items: center; gap: 10px; padding: 3px 4px; border-radius: 8px; }
+.hbar { display: grid; grid-template-columns: minmax(80px, 38%) 1fr auto; align-items: center; gap: 10px; padding: 3px 4px; border-radius: 8px; }
 .hbar:hover { background: rgba(56, 189, 248, .07); }
 .hbar[role="button"] { cursor: pointer; }
 .hbar .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); font-size: 13px; }
@@ -629,3 +629,67 @@ pre.raw { margin: 0; padding: 12px; background: var(--code-bg); border: 1px soli
 .ver-list { display: grid; gap: 4px; }
 .servers.compact td, .servers.compact th { padding-top: 6px; padding-bottom: 6px; }
 .cve-feed .msg { max-width: 260px; overflow-wrap: anywhere; }
+
+/* ---------- 서버 현황판 (타일): 서버 수백 대용 ---------- */
+.dash.board-mode { grid-template-areas:
+    "hero hero hero"
+    "trend donut staff"
+    "emerg config cve"
+    "appt res res"; }
+.hbar .val { white-space: nowrap; min-width: 52px; text-align: right; }
+.hero-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.hero-tools[hidden] { display: none; }
+.hero-tools input[type="search"] { width: 200px; max-width: 100%; }
+.b-group { display: inline-flex; align-items: center; gap: 6px; color: var(--ink-2); }
+.seg-sm { display: inline-flex; border: 1px solid var(--line-2); border-radius: 999px; padding: 2px; }
+.seg-sm button { border: 0; background: transparent; color: var(--ink-2); padding: 5px 12px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 13px; }
+.seg-sm button[aria-pressed="true"] { background: var(--accent); color: #031018; font-weight: 650; }
+.board-legend { margin: 4px 0 2px; gap: 6px; flex-wrap: wrap; }
+.bchip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line-2);
+  background: transparent; color: var(--ink); font: inherit; font-size: 13px; cursor: pointer; }
+.bchip b { font-variant-numeric: tabular-nums; }
+.bchip-ic { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; font-size: 11px; color: #10141c; }
+.bchip.s-compromise .bchip-ic { background: var(--s-critical); color: #fff; }
+.bchip.s-risk .bchip-ic { background: var(--s-serious); }
+.bchip.s-warn .bchip-ic { background: var(--s-warning); }
+.bchip.s-ok .bchip-ic { background: var(--s-good); }
+.bchip[aria-pressed="false"] { opacity: .45; text-decoration: line-through; }
+.hint-stale { color: var(--s-warning-ink); }
+.board { display: grid; gap: 14px; min-height: 120px; }
+.bgroup-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; font-size: 13.5px; cursor: pointer; list-style: none; }
+.bgroup-head::-webkit-details-marker { display: none; }
+.bgroup-head::before { content: "▼"; color: var(--muted); font-size: 11px; width: 10px; }
+.bgroup:not([open]) > .bgroup-head::before { content: "▶"; }
+.bgroup-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.bgroup-mix { display: inline-flex; gap: 8px; margin-left: auto; font-size: 12px; font-variant-numeric: tabular-nums; }
+.bgroup-mix .s-compromise { color: var(--s-critical-ink); }
+.bgroup-mix .s-risk { color: var(--s-serious-ink); }
+.bgroup-mix .s-warn { color: var(--s-warning-ink); }
+.bgroup-mix .s-ok { color: var(--s-good-ink); }
+.btiles { display: flex; flex-wrap: wrap; gap: 4px; }
+.btile { position: relative; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 6px; cursor: pointer;
+  display: grid; place-items: center; font-size: 12px; line-height: 1; color: #10141c; transition: transform .08s; }
+.btile:hover, .btile:focus-visible { transform: scale(1.18); z-index: 2; outline: 2px solid var(--ink); outline-offset: 1px; }
+.btile.s-compromise { background: var(--s-critical); color: #fff; box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--s-critical); margin: 0 3px; }
+.btile.s-risk { background: var(--s-serious); }
+.btile.s-warn { background: var(--s-warning); }
+.btile.s-ok { background: var(--s-good); }
+.btile.stale::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: repeating-linear-gradient(135deg, rgba(0,0,0,.38) 0 2px, transparent 2px 5px); }
+.btile.dim { opacity: .18; }
+.btile.hit { outline: 2px solid var(--ink); outline-offset: 1px; }
+.btile-strip { position: absolute; left: 3px; right: 3px; bottom: 3px; height: 4px; display: flex; gap: 1px; }
+.btile-strip i { flex: 1; border-radius: 1px; box-shadow: 0 0 0 1px rgba(0,0,0,.45); }
+.btile-strip .s-compromise { background: #fff; }
+.btile-strip .s-risk { background: #7a2e12; }
+.btile-strip .s-warn { background: #6b4a00; }
+.btile-strip .s-ok { background: #0f5a2a; }
+.side-more { text-align: center; padding: 6px 0; }
+@media (max-width: 1180px) {
+  .dash.board-mode { grid-template-areas: "hero hero" "trend donut" "config staff" "res appt" "emerg cve"; }
+}
+@media (max-width: 760px) {
+  .dash.board-mode { grid-template-areas: "hero" "trend" "donut" "emerg" "config" "cve" "staff" "res" "appt"; }
+  .btile { width: 34px; height: 34px; }
+  .hero-tools input[type="search"] { width: 100%; }
+}

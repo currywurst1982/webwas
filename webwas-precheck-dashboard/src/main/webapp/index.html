@@ -91,10 +91,28 @@
         <div class="dash">
           <article class="card hero" aria-labelledby="hero-title">
             <div class="card-head">
-              <h2 id="hero-title">서버 배치도</h2>
-              <div class="legend" id="legend-hero"></div>
+              <h2 id="hero-title">서버 현황판</h2>
+              <div class="head-right">
+                <div class="hero-tools" id="hero-tools">
+                  <input id="b-q" type="search" placeholder="호스트·IP·버전 찾기" aria-label="서버 찾기 (Enter: 하나면 바로 열기)">
+                  <label class="b-group">묶기
+                    <select id="b-group">
+                      <option value="status">판정별</option>
+                      <option value="product">제품별</option>
+                      <option value="agent">에이전트별</option>
+                      <option value="subnet">IP 대역별 (/24)</option>
+                      <option value="none">묶지 않음</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="seg-sm" role="group" aria-label="보기 방식">
+                  <button type="button" data-hview="board" aria-pressed="true">타일</button>
+                  <button type="button" data-hview="iso" aria-pressed="false">입체 배치도</button>
+                </div>
+              </div>
             </div>
-            <p class="card-hint">서버(호스트·IP)마다 상자 하나이고, 층 하나가 인스턴스(Apache·WildFly·Tomcat) 하나입니다. 층을 누르면 그 인스턴스의 상세 결과가 열립니다.</p>
+            <div class="legend board-legend" id="legend-hero"></div>
+            <p class="card-hint" id="hero-hint"></p>
             <div id="hero-map" class="hero-map"></div>
           </article>
 

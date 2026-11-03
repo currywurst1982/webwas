@@ -215,7 +215,7 @@
     renderProductTabs();
     // 개요
     renderKpis(ov);
-    renderHeroMap(ov);
+    renderHero(ov);
     renderTrend();
     renderLatestDonut(ov);
     renderStatusDonut(ov);
@@ -740,7 +740,9 @@
       const ca = ra && ra.intrusion === 'compromise' ? 0 : 1, cb = rb && rb.intrusion === 'compromise' ? 0 : 1;
       return ca - cb || (order[a.state] ?? 9) - (order[b.state] ?? 9) || nextAt(a) - nextAt(b) || a.name.localeCompare(b.name);
     });
-    ul.replaceChildren(...sorted.map(a => {
+    const SIDE_MAX = 15;
+    const more = sorted.length - SIDE_MAX;
+    ul.replaceChildren(...sorted.slice(0, SIDE_MAX).map(a => {
       const st = AGENT_STATE[a.state] || AGENT_STATE.never;
       const rep = latestReportOf(a.name);
       const selected = state.sourceFilter === a.name;
@@ -763,7 +765,8 @@
           h('span', { class: 'sched-meta' }, meta + Object.entries(a.versions || {}).map(([p, v]) => ` · ${PRODUCTS[p]} ${v.replace(/\.Final$/, '')}`).join('') + (rep ? ` · 점검 ${rel(rep.fileModified, now)}` : ''))),
         rep && rep.intrusion === 'compromise' ? badge('compromise')
           : h('span', { class: 'badge ' + st.cls }, h('span', { class: 'ic', 'aria-hidden': 'true' }, st.icon), st.label)));
-    }));
+    }), more > 0 ? h('li', { class: 'side-more' }, h('button', { class: 'btn-link', type: 'button', onclick: () => { showView('agents'); loadAgents(); } },
+      `외 ${more}대 — 에이전트 화면에서 전체 보기`)) : null);
   }
 
   /** 인스턴스별 최신 리포트 중 [4] 침해 흔적에 위험/주의가 있는 것 */
@@ -794,9 +797,13 @@
         h('a', { class: 'btn small' + (r.intrusion === 'compromise' ? ' btn-danger' : ''), href: 'api/reports/' + encodeURIComponent(r.id) + '/intrusion.pdf', download: '' }, 'PDF')));
     const out = [];
     if (!comp.length) out.push(h('p', { class: 'muted none-msg' }, state.reports.length ? '침해 의심 서버가 없습니다. (서버별 최신 점검 기준)' : '점검 결과가 아직 없습니다.'));
-    out.push(...comp.map(row));
+    const LIST_MAX = 4; // 서버가 많으면 목록이 화면을 다 차지하지 않도록 (나머지는 서버 목록에서)
+    out.push(...comp.slice(0, LIST_MAX).map(row));
+    if (comp.length > LIST_MAX) out.push(h('p', null, h('button', { class: 'btn small', type: 'button', onclick: () => setStatusFilter('compromise') },
+      `외 ${comp.length - LIST_MAX}대 — 서버 목록에서 침해 의심만 보기`)));
     if (check.length) {
-      out.push(h('details', { class: 'check-group' }, h('summary', null, `확인 필요 ${check.length}대 — [4]에 [주의] 항목(스캔 시도, 최근 변경 파일 등)`), ...check.map(row)));
+      out.push(h('details', { class: 'check-group' }, h('summary', null, `확인 필요 ${check.length}대 — [4]에 [주의] 항목(스캔 시도, 최근 변경 파일 등)`),
+        ...check.slice(0, 20).map(row), check.length > 20 ? h('p', { class: 'muted' }, `외 ${check.length - 20}대는 서버 목록에서 확인하세요.`) : null));
     }
     $('#suspects').replaceChildren(...out);
   }
@@ -965,10 +972,201 @@
     return state.reports.filter(r => (!state.sourceFilter || r.source === state.sourceFilter) && (!state.product || r.product === state.product));
   }
 
+  // ---------------------------------------------------------------- 서버 현황판 (타일) — 서버 수백 대용
+  /** 점검이 이 일수보다 오래되면 빗금으로 표시 */
+  const STALE_DAYS = 7;
+  const HERO_STATUS = ['compromise', 'risk', 'warn', 'ok'];
+  const heroState = { view: loadPref('precheck.heroView', ''), group: loadPref('precheck.heroGroup', 'status'), q: '', hidden: new Set(), open: new Map() };
+  /** 이 대수를 넘는 "양호" 묶음은 처음에 접어 둠 (할 일이 있는 서버가 먼저 보이도록) */
+  const COLLAPSE_OK = 60;
+  function loadPref(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
+  function savePref(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 저장 불가 환경 */ } }
+
+  /** 같은 서버(호스트 + IP)의 인스턴스를 하나로 묶음. 가장 나쁜 판정 = 서버 판정 */
+  function groupServers(list) {
+    const byServer = new Map();
+    list.forEach(r => {
+      const key = r.host + '|' + (r.ip || '');
+      if (!byServer.has(key)) byServer.set(key, { key, host: r.host, ip: r.ip, ipFromAgent: r.ipFromAgent, inst: [] });
+      byServer.get(key).inst.push(r);
+    });
+    const rankOf = r => STATUS[r.status].rank;
+    const servers = Array.from(byServer.values());
+    servers.forEach(g => {
+      // 아래층 → 위층 순서 (입체 배치도용). 가장 나쁜 판정이 맨 뒤
+      g.inst.sort((a, b) => rankOf(b) - rankOf(a) || a.product.localeCompare(b.product) || (a.binary || '').localeCompare(b.binary || '') || (a.confArg || '').localeCompare(b.confArg || ''));
+      g.worst = g.inst[g.inst.length - 1];
+      g.status = g.worst.status;
+      g.products = Array.from(new Set(g.inst.map(r => r.product))).sort((a, b) => Object.keys(PRODUCTS).indexOf(a) - Object.keys(PRODUCTS).indexOf(b));
+      g.checked = g.inst.map(r => r.checkedAt || '').sort()[0] || '';   // 가장 오래된 점검
+      g.sources = Array.from(new Set(g.inst.map(r => r.source || '')));
+    });
+    return servers.sort((a, b) => rankOf(a.worst) - rankOf(b.worst) || a.host.localeCompare(b.host, 'ko', { numeric: true }));
+  }
+
+  function isStale(checkedAt) {
+    if (!checkedAt) return true;
+    const t = Date.parse(checkedAt.replace(' ', 'T'));
+    return !isNaN(t) && Date.now() - t > STALE_DAYS * 86400000;
+  }
+
+  function renderHero(list) {
+    const servers = groupServers(list);
+    let view = heroState.view;
+    if (view !== 'board' && view !== 'iso') view = servers.length > 24 ? 'board' : 'iso'; // 처음엔 서버 수로 자동 선택
+    $$('[data-hview]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.hview === view)));
+    $('#hero-tools').hidden = view !== 'board';
+    $('.dash').classList.toggle('board-mode', view === 'board');
+    if (view === 'iso') {
+      $('#hero-hint').textContent = '서버(호스트·IP)마다 상자 하나이고, 층 하나가 인스턴스(Apache·WildFly·Tomcat) 하나입니다. 층을 누르면 상세 결과가 열립니다. 서버가 많으면 [타일] 보기가 보기 쉽습니다.';
+      $('#hero-map').className = 'hero-map';
+      legend('#legend-hero', [['c-critical', '침해 의심'], ['c-serious', '위험'], ['c-warning', '주의'], ['c-good', '양호']]);
+      renderHeroMap(list);
+    } else {
+      $('#hero-map').className = 'board';
+      renderBoard(servers, list.length);
+    }
+  }
+
+  /** 묶음 이름과 순서 */
+  function boardGroups(servers) {
+    const mode = heroState.group;
+    const groups = new Map();
+    const add = (key, label, order, s) => {
+      if (!groups.has(key)) groups.set(key, { key, label, order, items: [] });
+      groups.get(key).items.push(s);
+    };
+    servers.forEach(s => {
+      if (mode === 'status') add(s.status, STATUS[s.status].label, STATUS[s.status].rank, s);
+      else if (mode === 'product') {
+        const k = s.products.join('+');
+        add(k, s.products.map(p => PRODUCTS[p]).join(' + '), s.products.length > 1 ? 10 : Object.keys(PRODUCTS).indexOf(s.products[0]), s);
+      } else if (mode === 'agent') {
+        const src = s.sources.filter(Boolean)[0];
+        add(src || '', src ? `에이전트 ${src}` : '수동 업로드', src ? 0 : 1, s);
+      } else if (mode === 'subnet') {
+        const m = (s.ip || '').match(/^(\d+)\.(\d+)\.(\d+)\.\d+$/);
+        const k = m ? `${m[1]}.${m[2]}.${m[3]}.0/24` : 'IP 미확인';
+        add(k, k, m ? 0 : 1, s);
+      } else add('all', '전체', 0, s);
+    });
+    const ipNum = k => k.split(/[./]/).slice(0, 3).reduce((a, n) => a * 256 + (+n || 0), 0);
+    return Array.from(groups.values()).sort((a, b) => a.order - b.order
+      || (mode === 'subnet' ? ipNum(a.key) - ipNum(b.key) : a.label.localeCompare(b.label, 'ko', { numeric: true })));
+  }
+
+  function renderBoard(servers, nInst) {
+    const box = $('#hero-map');
+    const q = heroState.q.trim().toLowerCase();
+    const cnt = k => servers.filter(s => s.status === k).length;
+    // 판정 칩: 눌러서 숨기기/보이기 (색 + 기호 + 이름 + 대수)
+    $('#legend-hero').replaceChildren(...HERO_STATUS.map(k => h('button', {
+      type: 'button', class: 'bchip s-' + k, 'aria-pressed': String(!heroState.hidden.has(k)),
+      title: heroState.hidden.has(k) ? `${STATUS[k].label} 서버 보이기` : `${STATUS[k].label} 서버 숨기기`,
+      onclick: () => { heroState.hidden.has(k) ? heroState.hidden.delete(k) : heroState.hidden.add(k); render(); }
+    }, h('span', { class: 'bchip-ic', 'aria-hidden': 'true' }, STATUS[k].icon), STATUS[k].label, h('b', null, String(cnt(k))))));
+
+    const visible = servers.filter(s => !heroState.hidden.has(s.status));
+    const match = s => !q || [s.host, s.ip, ...s.inst.map(r => r.version)].some(v => (v || '').toLowerCase().includes(q));
+    const nMatch = q ? visible.filter(match).length : visible.length;
+    const stale = servers.filter(s => isStale(s.checked)).length;
+    $('#hero-hint').replaceChildren(
+      `서버 ${servers.length}대 · 인스턴스 ${nInst}개`,
+      heroState.hidden.size ? ` · 표시 ${visible.length}대` : '',
+      q ? ` · 검색 일치 ${nMatch}대` : '',
+      stale ? h('span', { class: 'hint-stale' }, ` · 빗금 = ${STALE_DAYS}일 넘게 점검 안 됨 ${stale}대`) : '',
+      ' · 칸 하나가 서버 1대(색과 기호 = 그 서버에서 가장 나쁜 판정, 아래 띠 = 인스턴스별 판정). 누르면 상세가 열립니다.');
+
+    if (!servers.length) {
+      box.replaceChildren(h('p', { class: 'muted none-msg' }, state.reports.length ? '조건에 맞는 서버가 없습니다.' : '점검 결과가 아직 없습니다.'));
+      return;
+    }
+    let first = true;
+    const groups = boardGroups(visible).map(g => {
+      const byStatus = HERO_STATUS.map(k => [k, g.items.filter(s => s.status === k).length]).filter(([, n]) => n);
+      const tiles = g.items.map(s => {
+        const hit = match(s);
+        const t = h('button', {
+          type: 'button', class: 'btile s-' + s.status + (isStale(s.checked) ? ' stale' : '') + (hit ? '' : ' dim') + (q && hit ? ' hit' : ''),
+          tabindex: first ? '0' : '-1',
+          'aria-label': `${s.host}${s.ip ? ' ' + s.ip : ''}, ${STATUS[s.status].label}, ${s.inst.map(prodVer).join(', ')}`,
+          onclick: () => openServer(s)
+        }, h('span', { class: 'btile-ic', 'aria-hidden': 'true' }, STATUS[s.status].icon),
+          s.inst.length > 1 ? h('span', { class: 'btile-strip', 'aria-hidden': 'true' },
+            ...s.inst.slice(-4).reverse().map(r => h('i', { class: 's-' + r.status }))) : null);
+        first = false;
+        tip(t, () => [
+          `${s.host}${s.ip ? ' (' + s.ip + (s.ipFromAgent ? ', 접속 IP' : '') + ')' : ''}`,
+          ...s.inst.slice().reverse().slice(0, 6).map(r => ({ level: r.status, text: `${prodVer(r)}${r.eol ? ' (' + r.eolLabel + ')' : r.belowLatest ? ' (최신 미만)' : ''} · 위험 ${r.counts.risk} · CVE ${cveTotal(r)}` })),
+          ...(s.inst.length > 6 ? [`외 ${s.inst.length - 6}개 인스턴스`] : []),
+          `점검 ${s.checked || '-'}${isStale(s.checked) ? ` (${STALE_DAYS}일 넘음)` : ''}`,
+          ...s.worst.intrusionFindings.slice(0, 1).map(f => ({ level: f.level, text: f.text }))]);
+        return t;
+      });
+      // 접힘 상태: 사용자가 바꾼 값 → 검색 중이면 펼침 → 큰 "양호" 묶음은 접음
+      const gk = heroState.group + '|' + g.key;
+      const allOk = g.items.every(x => x.status === 'ok');
+      const open = heroState.open.has(gk) ? heroState.open.get(gk) : (q ? true : !(allOk && g.items.length > COLLAPSE_OK));
+      const d = h('details', { class: 'bgroup', open: open || null },
+        h('summary', { class: 'bgroup-head' }, h('b', null, g.label), h('span', { class: 'muted' }, `${g.items.length}대`),
+          !open ? h('span', { class: 'muted' }, '— 접힘 (눌러서 펼치기)') : null,
+          heroState.group !== 'status' ? h('span', { class: 'bgroup-mix' }, ...byStatus.map(([k, n]) => h('span', { class: 's-' + k, title: STATUS[k].label }, `${STATUS[k].icon} ${n}`))) : null),
+        h('div', { class: 'btiles', role: 'group', 'aria-label': `${g.label} ${g.items.length}대` }, tiles));
+      d.addEventListener('toggle', () => { if (d.open !== open) { heroState.open.set(gk, d.open); render(); } });
+      return d;
+    });
+    box.replaceChildren(...(groups.length ? groups : [h('p', { class: 'muted none-msg' }, '숨기지 않은 판정의 서버가 없습니다.')]));
+  }
+
+  /** 타일 누름: 인스턴스 1개면 바로 상세, 여러 개면 목록 창 */
+  function openServer(s) {
+    if (s.inst.length === 1) { openDetail(s.inst[0].id); return; }
+    $('#cfg-title').textContent = `${s.host}${s.ip ? ' (' + s.ip + ')' : ''}`;
+    $('#cfg-sub').textContent = `인스턴스 ${s.inst.length}개 · 가장 나쁜 판정 ${STATUS[s.status].label}`;
+    $('#cfg-body').replaceChildren(h('table', { class: 'servers' },
+      h('thead', null, h('tr', null, ...['판정', '제품 · 버전', '인스턴스', '위험', '미조치 CVE', '점검 일시'].map(t => h('th', null, t)))),
+      h('tbody', null, ...s.inst.slice().reverse().map(r => h('tr', { class: 'row', tabindex: '0',
+        onclick: () => { $('#cfg-dlg').close(); openDetail(r.id); }, onkeydown: e => { if (e.key === 'Enter') { $('#cfg-dlg').close(); openDetail(r.id); } } },
+        h('td', null, badge(r.status)), h('td', null, prodBadge(r.product), ' ', r.version || '?'),
+        h('td', { class: 'mono' }, r.confArg || (r.binary ? r.binary.slice(r.binary.lastIndexOf('/') + 1) : '-')),
+        h('td', { class: 'num' }, String(r.counts.risk)), h('td', { class: 'num' }, String(cveTotal(r))),
+        h('td', { class: 'nowrap' }, r.checkedAt || '-'))))));
+    $('#cfg-dlg').showModal();
+  }
+
+  /** 타일 사이 화살표 키 이동 (탭 키는 현황판 전체에서 한 번만 멈춤) */
+  function boardKeys(e) {
+    const tiles = $$('#hero-map .btile').filter(t => t.offsetParent !== null); // 접힌 묶음 제외
+    const i = tiles.indexOf(document.activeElement);
+    if (i < 0) return;
+    let j = -1;
+    if (e.key === 'ArrowRight') j = Math.min(tiles.length - 1, i + 1);
+    else if (e.key === 'ArrowLeft') j = Math.max(0, i - 1);
+    else if (e.key === 'Home') j = 0;
+    else if (e.key === 'End') j = tiles.length - 1;
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      const cur = tiles[i].getBoundingClientRect();
+      const down = e.key === 'ArrowDown';
+      let best = null, bestD = Infinity;
+      tiles.forEach((t, k) => {
+        const r = t.getBoundingClientRect();
+        if (down ? r.top <= cur.top + 2 : r.top >= cur.top - 2) return;
+        const d = Math.abs(r.top - cur.top) * 1000 + Math.abs(r.left - cur.left);
+        if (d < bestD) { bestD = d; best = k; }
+      });
+      if (best !== null) j = best;
+    } else return;
+    e.preventDefault();
+    if (j >= 0 && j !== i) {
+      tiles[i].tabIndex = -1;
+      tiles[j].tabIndex = 0;
+      tiles[j].focus();
+    }
+  }
+
   // ---------------------------------------------------------------- 서버 배치도 (등각 투영)
   function renderHeroMap(list) {
     const box = $('#hero-map');
-    legend('#legend-hero', [['c-critical', '침해 의심'], ['c-serious', '위험'], ['c-warning', '주의'], ['c-good', '양호']]);
     const MAX = 24;    // 표시할 서버(호스트·IP) 최대 수
     const STACK = 6;   // 서버 상자 하나에 쌓는 인스턴스 최대 수
     // 같은 서버(호스트 + IP)의 인스턴스(Apache·WildFly·Tomcat)를 상자 하나로 묶음
@@ -1330,6 +1528,17 @@
     tickClock();
     setInterval(tickClock, 15000);
     $('#btn-latest-refresh').addEventListener('click', () => latestAction({ action: 'refresh' }));
+    // 서버 현황판 조작
+    $$('[data-hview]').forEach(b => b.addEventListener('click', () => { heroState.view = b.dataset.hview; savePref('precheck.heroView', heroState.view); render(); }));
+    $('#b-group').value = heroState.group;
+    $('#b-group').addEventListener('change', e => { heroState.group = e.target.value; savePref('precheck.heroGroup', heroState.group); render(); });
+    $('#b-q').addEventListener('input', e => { heroState.q = e.target.value; render(); });
+    $('#b-q').addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      const hits = $$('#hero-map .btile.hit');
+      if (hits.length === 1) hits[0].click(); else if (hits.length) hits[0].focus();
+    });
+    $('#hero-map').addEventListener('keydown', boardKeys);
     $('#btn-cve-refresh').addEventListener('click', async () => {
       try { await api('cve-feed', { method: 'POST', body: new URLSearchParams({ action: 'refresh' }) }); } catch (e) { alert(e.message); return; }
       await loadCveFeed();

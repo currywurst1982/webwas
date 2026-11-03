@@ -1,0 +1,191 @@
+# Web·WAS 사전점검 통합 대시보드 (webwas-precheck-dashboard)
+
+기존 **Apache 사전점검 대시보드(precheck-dashboard)** 와 **WildFly 사전점검 대시보드(wildfly-precheck-dashboard)** 를
+하나로 합치고, **Tomcat 점검**을 새로 넣은 대시보드입니다. WildFly(자바 WAS)에 배포하는 `.war` 파일 하나로 만들어집니다.
+
+```
+ [서버 A: Apache]          에이전트 ─┐  1분마다 "점검할 차례인가요?"  (서버 → 대시보드 방향 연결만 사용)
+ [서버 B: Apache+Tomcat]   에이전트 ─┼─────────────────────────────▶ [대시보드] ◀── 브라우저(로그인)
+ [서버 C: WildFly]         에이전트 ─┘  차례면: 최신 CVE 목록 받기 →        │
+                                        실행 중인 제품의 점검 스크립트 실행 → 리포트 전송
+                                                                            │ 12시간마다
+                                                     Apache 보안팀 공식 CVE JSON · OSV 취약점 DB · 공식 배포 목록
+```
+
+## 무엇이 바뀌었나 (기존 두 대시보드 대비)
+
+| 항목 | 내용 |
+|---|---|
+| 하나의 화면 | Apache · WildFly · Tomcat 결과를 한 화면에서 봅니다. 화면 위 **제품 탭(전체/Apache/WildFly/Tomcat)** 으로 거를 수 있고, 표·차트·PDF 에 제품이 표시됩니다 |
+| 에이전트 하나 | 서버마다 에이전트를 **하나만** 설치합니다. 점검할 때마다 실행 중인 제품을 자동으로 찾아(`PRODUCTS=auto`) 해당 스크립트만 실행합니다 |
+| Tomcat 점검 추가 | 새 스크립트 `tomcat_precheck.sh` (아래 "Tomcat 점검 항목") |
+| **CVE 목록 자동 업데이트** | 대시보드가 12시간마다 공개 취약점 DB 에서 세 제품의 CVE 목록을 새로 만들고, 에이전트가 점검 직전에 받아 스크립트에 넘깁니다. 스크립트를 다시 배포하지 않아도 새 CVE 가 판정에 들어갑니다 |
+| 최신 버전 기준도 자동 | 같은 목록에 최신 버전(예: Apache 2.4.69, WildFly 42.0.0.Final, Tomcat 브랜치별)을 넣어 보내, 스크립트의 "최신 미만" 판정도 대시보드 기준을 따릅니다 |
+| 서버 배치도 | 같은 서버(호스트+IP)의 인스턴스는 제품이 달라도 한 상자에 층으로 쌓입니다(예: `web02` = Apache 1 · Tomcat 1) |
+
+## CVE 목록 자동 업데이트 — 어떻게 동작하나
+
+| 제품 | 출처 (대시보드가 받는 곳) | 변환 규칙 |
+|---|---|---|
+| Apache | `https://httpd.apache.org/security/vulnerabilities-httpd.json` (Apache 보안팀이 공개하는 전체 CVE JSON) | 2.4.x 에 영향이 있는 CVE 만. **스크립트에 들어 있는 사람이 정리한 목록(한글 설명·필요 모듈)은 그대로 두고, 새 CVE 만 추가**. 새 CVE 의 필요 모듈은 제목·설명의 `mod_xxx` 로 추정하고, 못 찾으면 `core`(항상 해당)로 보수적으로 판정 |
+| WildFly | `https://osv-vulnerabilities.storage.googleapis.com/Maven/all.zip` (OSV, 약 10MB) | 기존 `tools/gen_cve_table.py` 와 **같은 규칙**을 Java 로 옮김 (시험: 같은 데이터로 두 결과 149줄이 완전히 일치) |
+| Tomcat | 위와 같은 OSV 파일 (`org.apache.tomcat*` 패키지) | Tomcat 본체는 항상 해당, 선택 구성요소(jasper·websocket·tribes·jmx-remote·coyote-ffm)는 `lib/` 에 jar 가 있을 때만 해당 |
+
+- 받은 데이터가 이상하면(0건, 형식 오류, 접속 실패) **이전 목록을 그대로 쓰고** 설정 화면에 "최근 갱신 실패"로 표시합니다. 이전 목록도 없으면 스크립트 내장 목록을 씁니다.
+- 에이전트가 목록을 못 받으면 **지난번에 받은 목록 → 스크립트 내장 목록** 순서로 씁니다. 리포트 상세 화면에 어떤 목록으로 판정했는지(`CVE 목록: 대시보드 자동 업데이트본 (생성 …)`) 나옵니다.
+- 스크립트는 받은 목록에서 **정해진 형식에 맞는 줄만** 읽습니다(명령으로 실행하지 않음, 데이터로만 사용).
+- **인터넷이 막힌 대시보드**: 관리자가 위 두 파일을 받아 대시보드 서버에 두고 주소를 `file:` 로 지정합니다.
+  ```bash
+  -Dwebwas.precheck.cve.apache.url=file:/data/cve-src/vulnerabilities-httpd.json
+  -Dwebwas.precheck.cve.osv.url=file:/data/cve-src/all.zip
+  ```
+  (자동 업데이트를 아예 끄려면 `-Dwebwas.precheck.cve.auto=false`)
+- 설정 화면 **CVE 목록 자동 업데이트** 카드: 제품별로 지금 쓰는 목록(자동 업데이트본/내장본), CVE 수, 내장 목록 대비 추가 건수, 마지막 확인 시각, **지금 받기**·**받기(파일)** 버튼.
+  받은 파일은 에이전트 없이 직접 점검할 때 `sudo bash tomcat_precheck.sh -C tomcat_cve.txt` 처럼 쓸 수 있습니다.
+
+**한계 (꼭 읽어 주세요)**
+- 자동 목록의 설명은 원문(영문)입니다. Apache 새 CVE 의 "필요 모듈"은 추정이라 틀릴 수 있습니다(틀리면 대개 "해당"으로 더 많이 잡힘).
+- OSV/Apache 데이터에 아직 올라오지 않은 취약점은 판정되지 않습니다. 버전 비교 기준이므로 **패키지(RPM/DEB) 설치본의 배포판 백포트**는 Apache 만 changelog 로 추정하고, Tomcat·WildFly 패키지는 배포판 보안 공지로 확인해야 합니다.
+
+## Tomcat 점검 항목 (tomcat_precheck.sh)
+
+| 구분 | 내용 |
+|---|---|
+| [1] 버전 | `lib/catalina.jar` 의 ServerInfo(server.info 를 숨겼으면 server.number) → RELEASE-NOTES 순서로 버전 확인. **브랜치별 최신**(11.0/10.1/9.0)과 비교하고, 지원 목록에 없는 브랜치(8.5, 10.0 등)는 "지원 종료(EOL)" [위험] |
+| [2] CVE | 위 "CVE 목록" 기준. 예: 9.0.80 → CVE-2025-24813(partial PUT RCE) 등 45건 |
+| [3] 설정 | 셧다운 포트(기본 명령어 SHUTDOWN), **AJP 커넥터 secret 미설정(Ghostcat 류)**, 관리자 앱(manager/host-manager) IP 제한 없음, `tomcat-users.xml` 의 쉬운 비밀번호·평문 저장, 예제/문서 앱·기본 ROOT 페이지, DefaultServlet `readonly=false`(PUT 업로드)·`listings=true`, CGI 서블릿, 오류 페이지 버전 노출(ErrorReportValve), HTTP 헤더 버전 노출, 원격 디버그(JDWP)·JMX 무인증, root 실행, 파일 권한 |
+| [4] 침해 흔적 | 접근 로그(AccessLogValve)의 경로 탐색·명령 실행·JNDI 주입·**관리자 앱 WAR 배포/PUT JSP 업로드 성공**, webapps(및 conf/Catalina/*/*.xml 이 가리키는 폴더)의 웹쉘 의심 JSP(war 안 포함), 최근 변경 파일, catalina 로그의 역직렬화·JNDI 흔적, 실행 계정의 의심 프로세스·크론·임시 파일·외부 연결 |
+
+옵션: `-H 설치폴더`(CATALINA_HOME) `-B 인스턴스폴더`(CATALINA_BASE) `-d 일수` `-l '접근로그경로'` `-C CVE목록파일`. 옵션 없이 실행하면 실행 중인 Tomcat 을 자동으로 찾고, 여러 개면 각각 점검합니다.
+Apache·WildFly 스크립트의 점검 내용은 기존과 같고, `-C` 옵션과 대시보드 CVE 목록 받기만 추가되었습니다.
+
+## 1. 준비물
+
+| 항목 | 확인 방법 | 비고 |
+|---|---|---|
+| Java 17 이상 | `java -version` | 빌드·실행용 (시험은 Java 21) |
+| Maven 3.8 이상 | `mvn -v` | 빌드할 PC에만 필요 |
+| WildFly | 대시보드를 올릴 WildFly | 기존과 같음 (jakarta Servlet 6 지원 버전) |
+| 점검 대상 서버 | bash, curl, flock, (권장) unzip 또는 python3, ss | unzip/python3 이 없으면 Tomcat 버전(catalina.jar)을 RELEASE-NOTES 로 대신 읽고, war 안 JSP 점검은 생략(데이터 경고 표시) |
+| 대시보드 서버의 인터넷(또는 사내 미러) | 아래 주소로 접속 가능 | `httpd.apache.org`, `osv-vulnerabilities.storage.googleapis.com`, `downloads.apache.org`, `repo1.maven.org` — 안 되면 "file:" 주소 또는 직접 지정 |
+
+## 2. 빌드
+
+```bash
+cd webwas-precheck-dashboard
+mvn package
+```
+
+`BUILD SUCCESS` 가 보이면 `target/webwas-precheck.war` 가 생깁니다.
+
+## 3. 배포
+
+기존 대시보드와 같은 방법이고, **이름만 바뀌었습니다.**
+
+| 항목 | 기존 Apache / WildFly | 통합본 |
+|---|---|---|
+| WAR / 접속 주소 | `precheck.war` / `wfprecheck.war` | `webwas-precheck.war` → `http://<서버>:8080/webwas-precheck/` |
+| 데이터 폴더 설정 | `-Dprecheck.data.dir` / `-Dwfprecheck.data.dir` | `-Dwebwas.precheck.data.dir=/data/webwas-precheck` (환경변수 `WEBWAS_PRECHECK_DATA_DIR`) |
+| 기본 데이터 폴더 | `~/precheck-dashboard` 등 | 실행 계정 홈의 `webwas-precheck` |
+| 초기 관리자 비밀번호 환경변수 | `PRECHECK_ADMIN_PASSWORD` 등 | `WEBWAS_PRECHECK_ADMIN_PASSWORD` |
+
+1. WildFly 실행 계정 확인: `ps -eo user,args | grep '[j]boss-modules' | awk '{print $1}'` (예: `was`)
+2. 데이터 폴더 만들기
+   ```bash
+   sudo mkdir -p /data/webwas-precheck
+   sudo chown was: /data/webwas-precheck
+   sudo chmod 700 /data/webwas-precheck
+   ```
+3. WildFly 에 데이터 폴더 알려 주기 (관리 CLI, WildFly 켜진 상태에서 한 번)
+   ```bash
+   <WildFly설치경로>/bin/jboss-cli.sh --connect --controller=127.0.0.1:9990 \
+     --command='/system-property=webwas.precheck.data.dir:add(value=/data/webwas-precheck)'
+   ```
+4. WildFly 재시작 후 배포: `cp target/webwas-precheck.war <WildFly설치경로>/standalone/deployments/`
+5. 확인: `sudo grep "데이터 폴더" <server.log 경로> | tail -1` → `데이터 폴더: /data/webwas-precheck` 가 나와야 합니다.
+6. 첫 로그인: `sudo cat /data/webwas-precheck/initial-admin-password.txt` 의 `admin` 비밀번호로 로그인 → 비밀번호 변경 화면이 먼저 나옵니다.
+
+**기존 대시보드의 리포트 옮기기**: 기존 데이터 폴더의 `reports/*.txt` 를 새 데이터 폴더의 `reports/` 에 복사하면 됩니다(형식이 같아 그대로 읽힘).
+계정·에이전트 정보는 옮기지 않으므로 에이전트는 새로 등록해야 합니다(아래 4번).
+
+## 4. 에이전트 설치 (점검할 서버마다 한 번, 제품이 여러 개여도 한 번)
+
+1. 대시보드 → **에이전트** → **에이전트 추가** → 이름(예: `web02`) 입력 → **등록**
+2. 화면의 명령 2줄을 점검할 서버에서 실행(복사 버튼 사용), 토큰을 물으면 화면의 토큰을 붙여 넣고 Enter
+   ```bash
+   curl -fsSo /tmp/webwas-precheck-install.sh http://<대시보드주소>/webwas-precheck/agent-api/files/install.sh
+   sudo bash /tmp/webwas-precheck-install.sh http://<대시보드주소>/webwas-precheck web02
+   ```
+3. `설치 완료` 후 1~2분 안에 **온라인**이 되고 첫 점검이 시작됩니다.
+
+| 설치되는 것 | 내용 |
+|---|---|
+| `/opt/webwas-precheck-agent/` | 에이전트, 점검 스크립트 3개, 받은 CVE 목록(`cve/`), 보낸 리포트(`sent/`), 전송 대기(`outbox/`) |
+| `/etc/webwas-precheck-agent.conf` | 주소·이름·토큰(권한 600), `PRODUCTS`, `RECENT_DAYS`, `RUN_TIMEOUT`, `APACHE_LOG_PATHS`·`WILDFLY_LOG_PATHS`·`TOMCAT_LOG_PATHS` |
+| systemd 타이머 `webwas-precheck-agent.timer` | 1분마다 실행 (없으면 `/etc/cron.d/webwas-precheck-agent`) |
+
+```bash
+sudo /opt/webwas-precheck-agent/webwas-precheck-agent.sh detect   # 이 서버에서 점검할 제품 확인
+sudo /opt/webwas-precheck-agent/webwas-precheck-agent.sh test     # 대시보드 연결 확인
+sudo /opt/webwas-precheck-agent/webwas-precheck-agent.sh run      # 지금 바로 점검
+sudo bash /tmp/webwas-precheck-install.sh --uninstall             # 에이전트 삭제
+```
+
+- 제품이 꺼져 있어도 점검하려면 설정 파일의 `PRODUCTS=auto` 를 `PRODUCTS="apache tomcat"` 처럼 바꿉니다.
+- 기존 Apache/WildFly 에이전트(`/opt/precheck-agent`, `/opt/wfprecheck-agent`)는 각 설치 파일의 `--uninstall` 로 지운 뒤 새 에이전트를 설치하세요(같이 두면 이중 점검됩니다).
+- "점검한 제품이 모두 최신인 서버는 자동 점검 제외"는 **그 서버의 모든 제품·인스턴스가 최신**일 때만 적용됩니다.
+
+## 5. 리포트 직접 넣기 (에이전트를 쓸 수 없는 서버)
+
+```bash
+sudo bash apache_precheck.sh
+sudo bash wildfly_precheck.sh            # 꺼져 있으면 -H /opt/wildfly
+sudo bash tomcat_precheck.sh             # 꺼져 있으면 -H /opt/tomcat
+sudo bash tomcat_precheck.sh -C tomcat_cve.txt   # 대시보드에서 받은 최신 CVE 목록으로 점검
+```
+만들어진 `/tmp/<제품>_precheck_*.txt` 를 대시보드 **리포트 업로드**로 올립니다(관리자만, 파일당 5MB 이하).
+
+## 6. 최신 버전 자동 확인 (설정 → 제품별 최신 버전)
+
+| 제품 | 자동 확인 주소 (12시간마다) | 주소 바꾸기 |
+|---|---|---|
+| Apache | `https://downloads.apache.org/httpd/` 의 `httpd-2.4.N.tar.gz` | `-Dwebwas.precheck.latest.apache.url=` |
+| WildFly | Maven Central `org/wildfly/wildfly-dist/maven-metadata.xml` 의 `N.N.N.Final` | `-Dwebwas.precheck.latest.wildfly.url=` |
+| Tomcat | `https://downloads.apache.org/tomcat/` 의 `tomcat-N/vX.Y.Z/` (브랜치별) | `-Dwebwas.precheck.latest.tomcat.url=` (`.xml` 로 끝나면 Maven 목록으로 읽고 높은 메이저 3개를 지원 중으로 봄) |
+
+자동 확인이 안 되면 스크립트 기준값을 쓰며, 내부망이면 **직접 지정**으로 넣습니다(Tomcat 은 `11.0.27, 10.1.61, 9.0.123` 처럼).
+
+## 7. 운영 시 주의
+
+- **HTTPS 로 운영하세요.** 리포트에 서버 경로·설정·공격 IP 가 들어 있고, 설치 파일·CVE 목록은 로그인 없이 받을 수 있어 HTTP 면 바꿔치기될 수 있습니다. HTTPS 를 쓰면 `WEB-INF/web.xml` 의 `<secure>true</secure>` 주석을 풀어 주세요.
+- 결과는 '알려진 패턴' 기준이며 안전을 보증하지 않습니다. 침해 의심 서버는 설정 보완보다 침해사고 대응이 우선입니다.
+- 사내망 전용 전제입니다. 인터넷에 직접 노출하지 마세요.
+
+## 시험 결과 (2026-11-03, 이 저장소 작업 환경)
+
+| 시험 | 결과 |
+|---|---|
+| `mvn test` | 53개 통과 (기존 Apache·WildFly 리포트 해석 테스트 포함) |
+| Tomcat 9.0.80 / 11.0.27 공식 배포본(설치 폴더만, 실행은 안 함)을 `-H` 로 점검 | 9.0.80: CVE 45건, 일부러 심은 AJP 무인증·관리자 비번 admin·웹쉘 JSP·공격 로그를 모두 탐지 / 11.0.27: CVE 0건 |
+| CVE 자동 생성 (실제 OSV 2026-11-02 데이터) | WildFly 89건(기존 Python 생성기와 149줄 동일), Tomcat 230건 |
+| 대시보드 실행(Jetty) + 에이전트 `run` 실제 흐름 | CVE 목록 받기 → Tomcat 점검 → 리포트 전송 → 화면 표시, "스크립트: 대시보드와 같음" 확인 |
+| WildFly 최신 버전 자동 확인 | Maven Central 에서 42.0.0.Final 확인, 에이전트가 받은 목록으로 스크립트 기준도 42.0.0.Final 로 바뀜 |
+
+**확인하지 못한 것**: 작업 환경 네트워크 정책 때문에 `httpd.apache.org` 에 접속할 수 없어, **Apache 공식 JSON 전체를 실제로 받아 변환하는 것은 시험하지 못했습니다.**
+같은 형식의 실제 CVE JSON 5건(2017~2026년, 4.0·5.x 형식)으로만 시험했습니다. 운영 대시보드에서 설정 화면의 Apache 행이 "자동 업데이트본"이 되는지 꼭 확인하세요.
+또 Tomcat 은 실행 중인 프로세스 탐지·열린 포트(ss) 확인 부분을 실제 실행 상태에서 시험하지 못했습니다(이 환경에서 Tomcat 실행이 허용되지 않음).
+
+## 개발자용 메모
+
+```
+scripts/apache_precheck.sh  wildfly_precheck.sh  tomcat_precheck.sh   점검 스크립트 (CVE 표는 "# --- CVE_DB 시작/끝 ---" 사이)
+scripts/webwas-precheck-agent.sh, install.sh   → 빌드 시 WAR 의 WEB-INF/classes/agent/
+tools/gen_cve_table.py     (참고) WildFly CVE 표 생성기. 같은 규칙이 CveFeed.java 에 들어 있음
+src/main/java/com/webwas/precheck/
+  Product.java        제품 구분 (리포트 머리글·파일명)
+  ReportParser.java   세 스크립트 리포트 해석 (CVE 등급 important → high 로 통일)
+  LatestVersion(s).java 제품별 최신 버전 (Tomcat 브랜치별)
+  CveFeed.java        CVE 목록 자동 생성·보관 (/agent-api/cve/{제품})
+  JsonParser.java, Fetch.java  외부 라이브러리 없는 JSON 읽기 / http·file 받기
+src/test/resources/  실제 Apache·WildFly·Tomcat 점검 리포트, Apache CVE JSON 샘플
+```

@@ -1,0 +1,95 @@
+Apache 패치 전 보안 사전 점검  |  호스트: vm  |  일시: 2026-10-15 07:46:38
+
+==================================================================
+ [1] 버전 및 설치 방식 확인
+==================================================================
+[정보] 실행 중인 Apache 프로세스 자동 탐지: 마스터 PID 1583
+[정보] 실행파일: /usr/sbin/apache2
+[정보] 버전 정보: Server version: Apache/2.4.58 (Ubuntu)
+[위험] Apache 2.4.58 : 2.4.69 미만입니다. 아래 [2]에서 해당 CVE를 확인하세요.
+[정보] 설치 방식: DEB 패키지 (apache2-bin)
+[주의] 패키지 설치본은 배포판 백포트 여부를 함께 확인해야 합니다. [2]에서 changelog 반영 여부를 표시합니다.
+[정보] 로드된 모듈 수: 27
+        access_compat_module alias_module auth_basic_module authn_core_module authn_file_module authz_core_module authz_host_module authz_user_module autoindex_module core_module deflate_module dir_module env_module filter_module http_module log_config_module logio_module mime_module mpm_event_module negotiation_module reqtimeout_module setenvif_module so_module status_module unixd_module version_module watchdog_module 
+
+==================================================================
+ [2] 버전 구간별 해당 CVE 판정 (2.4.x)
+==================================================================
+[미해당] CVE-2024-38474 (important) - 필요 모듈(rewrite_module) 미사용
+[미해당] CVE-2024-38475 (important) - 필요 모듈(rewrite_module) 미사용
+[정보] CVE-2024-38476 [important] 악성 백엔드 응답 헤더로 정보노출/SSRF/로컬 스크립트 실행 (영향: 2.4.0~2.4.59, 조건: core) → 패키지 changelog에 수정 기록 있음(백포트 반영 추정)
+[미해당] CVE-2024-38477 (important) - 필요 모듈(proxy_module) 미사용
+[미해당] CVE-2025-23048 (moderate) - 필요 모듈(ssl_module) 미사용
+[미해당] CVE-2025-49812 (moderate) - 필요 모듈(ssl_module) 미사용
+[미해당] CVE-2025-58098 (moderate) - 필요 모듈(cgid_module&include_module) 미사용
+[정보] CVE-2026-24072 [moderate] .htaccess 작성자가 httpd 권한으로 파일 읽기(권한상승) (영향: 2.4.0~2.4.66, 조건: core) → 패키지 changelog에 수정 기록 있음(백포트 반영 추정)
+[미해당] CVE-2026-28780 (low) - 필요 모듈(proxy_ajp_module) 미사용
+[미해당] CVE-2026-29169 (low) - 필요 모듈(dav_lock_module) 미사용
+[미해당] CVE-2026-33006 (moderate) - 필요 모듈(auth_digest_module) 미사용
+[미해당] CVE-2026-34355 (moderate) - 필요 모듈(proxy_html_module) 미사용
+[미해당] CVE-2026-42535 (moderate) - 필요 모듈(dav_fs_module) 미사용
+[미해당] CVE-2026-43951 (moderate) - 필요 모듈(headers_module&mime_module) 미사용
+[정보] CVE-2026-44119 [moderate] .htaccess 표현식으로 httpd 권한 파일 읽기(권한상승) (영향: 2.4.0~2.4.67, 조건: core) → 패키지 changelog에 수정 기록 있음(백포트 반영 추정)
+[미해당] CVE-2026-44186 (moderate) - 필요 모듈(proxy_ftp_module) 미사용
+[미해당] CVE-2026-49975 (moderate) - 필요 모듈(http2_module) 미사용
+[미해당] CVE-2026-42528 (moderate) - 필요 모듈(dav_module) 미사용
+[미해당] CVE-2026-57941 (moderate) - 필요 모듈(http2_module) 미사용
+[미해당] CVE-2026-63045 (low) - 필요 모듈(proxy_ftp_module) 미사용
+[미해당] CVE-2026-63292 (moderate) - 필요 모듈(vhost_alias_module) 미사용
+[미해당] CVE-2026-63718 (low) - 필요 모듈(proxy_uwsgi_module) 미사용
+[미해당] CVE-2026-73637 (low) - 필요 모듈(auth_digest_module) 미사용
+[미해당] CVE-2026-79768 (low) - 필요 모듈(userdir_module) 미사용
+[미해당] CVE-2026-93546 (moderate) - 필요 모듈(dav_fs_module) 미사용
+
+  → 해당 CVE: 3건 / 모듈 미사용으로 미해당: 22건 (미해당 목록은 리포트 파일에 기록)
+
+==================================================================
+ [3] 위험 설정 점검 (메인 설정 + Include 파일 전체)
+==================================================================
+[정보] 점검 대상 설정 파일 수: 37
+[양호] <Directory /> 에 Require all granted 없음
+[양호] HTTP/2 미사용
+[양호] ProxyRequests On 없음
+[양호] AllowOverride 는 모두 None (또는 미설정)
+[주의] ServerTokens 가 Prod 가 아님(미설정 시 기본값 Full) → 응답 헤더로 버전 노출. 'ServerTokens Prod' 권장
+        /etc/apache2/conf-enabled/security.conf:12:ServerTokens OS
+[주의] ServerSignature On → 에러 페이지에 버전 노출
+        /etc/apache2/conf-enabled/security.conf:23:ServerSignature On
+[주의] Options Indexes → 디렉터리 목록 노출
+        /etc/apache2/apache2.conf:171:Options Indexes FollowSymLinks
+[양호] TraceEnable Off
+[양호] SSLEngine optional 없음
+[양호] LimitRequestFieldSize 기본값 유지
+[양호] 워커 실행 계정: www-data
+[정보] 로드됨: status_module → 실제 사용 여부 확인 후 미사용이면 비활성화 검토
+[정보] 로드됨: autoindex_module → 실제 사용 여부 확인 후 미사용이면 비활성화 검토
+[주의] server-status/server-info 핸들러 설정됨 → 접근제어(Require ip) 확인 필요
+        /etc/apache2/mods-enabled/status.conf:6:SetHandler server-status
+
+==================================================================
+ [4] 침해 흔적 점검 (이미 해킹당했는지)
+==================================================================
+[정보] 점검 대상 접근 로그: 2개 (회전된 .gz 포함)
+        /var/log/apache2/access.log
+        /var/log/apache2/other_vhosts_access.log
+[양호] 경로 탐색 시도 흔적 없음
+[양호] 명령실행/웹쉘 의심 요청 흔적 없음
+[정보] 점검 대상 DocumentRoot: /var/www/html 
+[양호] 웹쉘 의심 코드 패턴 파일 없음 (패턴 우회형 웹쉘은 탐지 못함 → KISA 휘슬 병행 권장)
+[양호] 최근 30일 내 변경된 스크립트 파일 없음
+[양호] DocumentRoot 내 웹 실행계정 소유 파일 없음
+[양호] 웹 실행계정의 비정상 프로세스 없음
+[양호] 웹 실행계정 크론 작업 없음
+[양호] 임시 디렉터리에 웹 실행계정 소유 파일 없음
+
+==================================================================
+ 점검 요약
+==================================================================
+  [위험] 1건   [주의] 5건   [양호] 16건   [정보] 13건
+
+  ※ 이 결과는 '알려진 패턴' 기준이며 안전을 보증하지 않습니다.
+    - [위험] 중 침해 흔적(로그 200 응답, 웹쉘, 비정상 프로세스)이 있으면 설정 보완보다 침해사고 대응이 우선입니다.
+    - CVE 판정은 업스트림 버전 기준이며, 패키지 설치본은 배포판 보안 공지로 최종 확인하세요.
+    - 근본 대책은 2.4.69 이상(또는 보안수정이 반영된 배포판 패키지)으로의 업그레이드입니다.
+
+  리포트 파일: /tmp/apache_precheck_vm_20261015_074638_pid1583.txt

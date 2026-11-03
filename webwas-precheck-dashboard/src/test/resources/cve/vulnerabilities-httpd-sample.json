@@ -1,0 +1,757 @@
+[
+ {
+  "containers": {
+   "cna": {
+    "affected": [
+     {
+      "defaultStatus": "unaffected",
+      "product": "Apache HTTP Server",
+      "vendor": "Apache Software Foundation",
+      "versions": [
+       {
+        "lessThanOrEqual": "2.4.59",
+        "status": "affected",
+        "version": "2.4.0",
+        "versionType": "semver"
+       }
+      ]
+     }
+    ],
+    "credits": [
+     {
+      "lang": "en",
+      "type": "finder",
+      "value": "Orange Tsai (@orange_8361) from DEVCORE"
+     }
+    ],
+    "descriptions": [
+     {
+      "lang": "en",
+      "supportingMedia": [
+       {
+        "base64": false,
+        "type": "text/html",
+        "value": "Substitution encoding issue in mod_rewrite in Apache HTTP Server 2.4.59 and earlier allows attacker to execute scripts in directories permitted by the configuration but not directly reachable by any URL or source disclosure of scripts meant to only to be executed as CGI.<br><br>Users are recommended to upgrade to version 2.4.59, which fixes this issue.<br><br>Some RewriteRules that capture and substitute unsafely will now fail unless rewrite flag \"UnsafeAllow3F\" is specified."
+       }
+      ],
+      "value": "Substitution encoding issue in mod_rewrite in Apache HTTP Server 2.4.59 and earlier allows attacker to execute scripts in directories permitted by the configuration but not directly reachable by any URL or source disclosure of scripts meant to only to be executed as CGI.\n\nUsers are recommended to upgrade to version 2.4.60, which fixes this issue.\n\nSome RewriteRules that capture and substitute unsafely will now fail unless rewrite flag \"UnsafeAllow3F\" is specified."
+     }
+    ],
+    "metrics": [
+     {
+      "other": {
+       "content": {
+        "text": "important"
+       },
+       "type": "Textual description of severity"
+      }
+     }
+    ],
+    "problemTypes": [
+     {
+      "descriptions": [
+       {
+        "cweId": "CWE-116",
+        "description": "CWE-116 Improper Encoding or Escaping of Output",
+        "lang": "en",
+        "type": "CWE"
+       }
+      ]
+     }
+    ],
+    "providerMetadata": {
+     "orgId": "f0158376-9dc2-43b6-827c-5f631a4d8d09"
+    },
+    "source": {
+     "discovery": "UNKNOWN"
+    },
+    "timeline": [
+     {
+      "lang": "en",
+      "time": "2024-04-01T12:00:00.000Z",
+      "value": "reported"
+     },
+     {
+      "time": "2024-07-01",
+      "lang": "en",
+      "value": "fixed by r1918561 in 2.4.x"
+     },
+     {
+      "lang": "eng",
+      "time": "2024-07-01",
+      "value": "2.4.60 released"
+     }
+    ],
+    "title": "Apache HTTP Server weakness with encoded question marks in backreferences",
+    "x_generator": {
+     "engine": "Vulnogram 0.1.0-dev"
+    }
+   }
+  },
+  "cveMetadata": {
+   "assignerOrgId": "f0158376-9dc2-43b6-827c-5f631a4d8d09",
+   "cveId": "CVE-2024-38474",
+   "serial": 1,
+   "state": "PUBLISHED"
+  },
+  "dataType": "CVE_RECORD",
+  "dataVersion": "5.0"
+ },
+ {
+  "data_type": "CVE",
+  "data_format": "MITRE",
+  "data_version": "4.0",
+  "generator": {
+   "engine": "Vulnogram 0.0.9"
+  },
+  "CVE_data_meta": {
+   "ID": "CVE-2021-41773",
+   "ASSIGNER": "security@apache.org",
+   "DATE_PUBLIC": "",
+   "TITLE": "Path traversal and file disclosure vulnerability in Apache HTTP Server 2.4.49",
+   "AKA": "",
+   "STATE": "REVIEW"
+  },
+  "source": {
+   "defect": [],
+   "advisory": "",
+   "discovery": "UNKNOWN"
+  },
+  "affects": {
+   "vendor": {
+    "vendor_data": [
+     {
+      "vendor_name": "Apache Software Foundation",
+      "product": {
+       "product_data": [
+        {
+         "product_name": "Apache HTTP Server",
+         "version": {
+          "version_data": [
+           {
+            "version_name": "Apache HTTP Server 2.4",
+            "version_affected": "=",
+            "version_value": "2.4.49",
+            "platform": ""
+           }
+          ]
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  "problemtype": {
+   "problemtype_data": [
+    {
+     "description": [
+      {
+       "lang": "eng",
+       "value": "CWE-22 Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')"
+      }
+     ]
+    }
+   ]
+  },
+  "description": {
+   "description_data": [
+    {
+     "value": "A flaw was found in a change made to path normalization in Apache HTTP Server 2.4.49. An attacker could use a path traversal attack to map URLs to files outside the directories configured by Alias-like directives.\n\nIf files outside of these directories are not protected by the usual default configuration \"require all denied\", these requests can succeed. If CGI scripts are also enabled for these aliased pathes, this could allow for remote code execution.\n\nThis issue is known to be exploited in the wild.\n\nThis issue only affects Apache 2.4.49 and not earlier versions.",
+     "lang": "eng"
+    }
+   ]
+  },
+  "references": {
+   "reference_data": [
+    {
+     "refsource": "CONFIRM",
+     "url": "",
+     "name": ""
+    }
+   ]
+  },
+  "configuration": [],
+  "impact": [
+   {
+    "other": "critical"
+   }
+  ],
+  "exploit": [],
+  "work_around": [],
+  "solution": [],
+  "credit": [
+   {
+    "lang": "eng",
+    "value": "This issue was reported by Ash Daulton along with the cPanel Security Team"
+   }
+  ],
+  "CNA_private": {
+   "owner": "httpd",
+   "publish": {
+    "ym": "",
+    "year": "",
+    "month": ""
+   },
+   "share_with_CVE": true,
+   "CVE_table_description": [],
+   "CVE_list": [],
+   "internal_comments": "",
+   "todo": [],
+   "emailed": "",
+   "userslist": "",
+   "email": ""
+  },
+  "timeline": [
+   {
+    "time": "2021-09-29",
+    "lang": "eng",
+    "value": "reported"
+   },
+   {
+    "time": "2021-10-01",
+    "lang": "eng",
+    "value": "fixed by r1893775 in 2.4.x"
+   },
+   {
+    "lang": "eng",
+    "time": "2021-10-04",
+    "value": "2.4.50 released"
+   }
+  ]
+ },
+ {
+  "containers": {
+   "cna": {
+    "affected": [
+     {
+      "defaultStatus": "unaffected",
+      "product": "Apache HTTP Server",
+      "vendor": "Apache Software Foundation",
+      "versions": [
+       {
+        "status": "affected",
+        "version": "2.4.66",
+        "versionType": "semver"
+       }
+      ]
+     }
+    ],
+    "credits": [
+     {
+      "lang": "en",
+      "type": "finder",
+      "value": "Bartlomiej Dmitruk, striga.ai"
+     },
+     {
+      "lang": "en",
+      "type": "finder",
+      "value": "Stanislaw Strzalkowski, isec.pl"
+     }
+    ],
+    "descriptions": [
+     {
+      "lang": "en",
+      "supportingMedia": [
+       {
+        "base64": false,
+        "type": "text/html",
+        "value": "<p>Double Free and possible RCE vulnerability in Apache HTTP Server with the HTTP/2 protocol.</p><p>This issue affects Apache HTTP Server: 2.4.66.</p><p>Users are recommended to upgrade to version 2.4.67, which fixes the issue.</p>"
+       }
+      ],
+      "value": "Double Free and possible RCE vulnerability in Apache HTTP Server with the HTTP/2 protocol.\n\nThis issue affects Apache HTTP Server: 2.4.66.\n\nUsers are recommended to upgrade to version 2.4.67, which fixes the issue."
+     }
+    ],
+    "metrics": [
+     {
+      "other": {
+       "content": {
+        "text": "important"
+       },
+       "type": "Textual description of severity"
+      }
+     }
+    ],
+    "problemTypes": [
+     {
+      "descriptions": [
+       {
+        "cweId": "CWE-415",
+        "description": "CWE-415 Double Free",
+        "lang": "en",
+        "type": "CWE"
+       }
+      ]
+     }
+    ],
+    "providerMetadata": {
+     "orgId": "f0158376-9dc2-43b6-827c-5f631a4d8d09"
+    },
+    "source": {
+     "discovery": "UNKNOWN"
+    },
+    "timeline": [
+     {
+      "lang": "en",
+      "time": "2025-12-10T14:02:00.000Z",
+      "value": "reported in PR 69899"
+     },
+     {
+      "lang": "en",
+      "time": "2025-12-11T14:03:00.000Z",
+      "value": "fixed in r1930444"
+     },
+     {
+      "lang": "eng",
+      "time": "2026-05-04",
+      "value": "2.4.67 released"
+     }
+    ],
+    "title": "Apache HTTP Server: http2: double free and possible RCE on early reset",
+    "x_generator": {
+     "engine": "Vulnogram 0.2.0"
+    }
+   }
+  },
+  "cveMetadata": {
+   "assignerOrgId": "f0158376-9dc2-43b6-827c-5f631a4d8d09",
+   "cveId": "CVE-2026-23918",
+   "serial": 1,
+   "state": "PUBLISHED"
+  },
+  "dataType": "CVE_RECORD",
+  "dataVersion": "5.1"
+ },
+ {
+  "cveMetadata": {
+   "cveId": "CVE-2023-31122",
+   "assignerOrgId": "f0158376-9dc2-43b6-827c-5f631a4d8d09",
+   "serial": 1,
+   "state": "PUBLISHED"
+  },
+  "CNA_private": {
+   "emailed": null,
+   "projecturl": null,
+   "owner": "httpd",
+   "userslist": "users@httpd.apache.org",
+   "state": "DRAFT",
+   "todo": [],
+   "type": "unsure"
+  },
+  "containers": {
+   "cna": {
+    "providerMetadata": {
+     "orgId": "f0158376-9dc2-43b6-827c-5f631a4d8d09"
+    },
+    "title": "mod_macro buffer over-read",
+    "problemTypes": [
+     {
+      "descriptions": [
+       {
+        "description": "CWE-125 Out-of-bounds Read",
+        "lang": "en",
+        "cweId": "CWE-125",
+        "type": "CWE"
+       }
+      ]
+     }
+    ],
+    "source": {
+     "discovery": "UNKNOWN"
+    },
+    "affected": [
+     {
+      "vendor": "Apache Software Foundation",
+      "product": "Apache HTTP Server",
+      "versions": [
+       {
+        "status": "affected",
+        "version": "0",
+        "lessThanOrEqual": "2.4.57",
+        "versionType": "semver"
+       }
+      ],
+      "defaultStatus": "unaffected"
+     }
+    ],
+    "descriptions": [
+     {
+      "value": "Out-of-bounds Read vulnerability in mod_macro of Apache HTTP Server.This issue affects Apache HTTP Server: through 2.4.57.\n\n",
+      "lang": "en",
+      "supportingMedia": [
+       {
+        "type": "text/html",
+        "base64": false,
+        "value": "Out-of-bounds Read vulnerability in mod_macro of Apache HTTP Server.<p>This issue affects Apache HTTP Server: through 2.4.57.</p>"
+       }
+      ]
+     }
+    ],
+    "references": [],
+    "metrics": [
+     {
+      "other": {
+       "type": "Textual description of severity",
+       "content": {
+        "text": "low"
+       }
+      }
+     }
+    ],
+    "credits": [
+     {
+      "lang": "en",
+      "value": "David Shoon (github/davidshoon)",
+      "type": "finder"
+     }
+    ],
+    "x_generator": {
+     "engine": "Vulnogram 0.1.0-dev"
+    },
+    "timeline": [
+     {
+      "lang": "eng",
+      "time": "2023-10-19",
+      "value": "2.4.58 released"
+     }
+    ]
+   }
+  },
+  "dataType": "CVE_RECORD",
+  "dataVersion": "5.0"
+ },
+ {
+  "data_type": "CVE",
+  "data_format": "MITRE",
+  "data_version": "4.0",
+  "generator": {
+   "engine": "xmltojsonmjc 1.0"
+  },
+  "references": {},
+  "timeline": [
+   {
+    "time": "2017-07-12",
+    "lang": "eng",
+    "value": "reported"
+   },
+   {
+    "time": "2017-09-18",
+    "lang": "eng",
+    "value": "public"
+   },
+   {
+    "time": "2017-10-05",
+    "lang": "eng",
+    "value": "2.4.28 released"
+   },
+   {
+    "time": "--",
+    "lang": "eng",
+    "value": "2.2.35-never released"
+   }
+  ],
+  "CNA_private": {
+   "owner": "httpd"
+  },
+  "CVE_data_meta": {
+   "ASSIGNER": "security@apache.org",
+   "AKA": "",
+   "STATE": "PUBLIC",
+   "DATE_PUBLIC": "2017-09-18",
+   "ID": "CVE-2017-9798",
+   "TITLE": "Use-after-free when using <Limit > with an unrecognized method in .htaccess (\"OptionsBleed\")"
+  },
+  "source": {
+   "defect": [],
+   "advisory": "",
+   "discovery": "UNKNOWN"
+  },
+  "problemtype": {
+   "problemtype_data": [
+    {
+     "description": [
+      {
+       "lang": "eng",
+       "value": "Use-after-free when using <Limit > with an unrecognized method in .htaccess (\"OptionsBleed\")"
+      }
+     ]
+    }
+   ]
+  },
+  "credit": [
+   {
+    "lang": "eng",
+    "value": "We would like to thank Hanno B\u00f6ck for reporting this issue."
+   }
+  ],
+  "description": {
+   "description_data": [
+    {
+     "lang": "eng",
+     "value": "When an unrecognized HTTP Method is given in an <Limit {method}> directive in an .htaccess file, and that .htaccess file is processed by the corresponding request, the global methods table is corrupted in the current worker process, resulting in erratic behaviour. This behavior may be avoided by listing all unusual HTTP Methods in a global httpd.conf RegisterHttpMethod directive in httpd release 2.4.25 and later. To permit other .htaccess directives while denying the <Limit > directive, see the AllowOverrideList directive. Source code patch (2.4) is at; CVE-2017-9798-patch-2.4.patch Source code patch (2.2) is at; CVE-2017-9798-patch-2.2.patch Note 2.2 is end-of-life, no further release with this fix is planned. Users are encouraged to migrate to 2.4.28 or later for this and other fixes."
+    }
+   ]
+  },
+  "impact": [
+   {
+    "other": "low"
+   }
+  ],
+  "affects": {
+   "vendor": {
+    "vendor_data": [
+     {
+      "vendor_name": "Apache Software Foundation",
+      "product": {
+       "product_data": [
+        {
+         "product_name": "Apache HTTP Server",
+         "version": {
+          "version_data": [
+           {
+            "version_name": "2.4",
+            "version_affected": "=",
+            "version_value": "2.4.27"
+           },
+           {
+            "version_name": "2.4",
+            "version_affected": "=",
+            "version_value": "2.4.26"
+           },
+           {
+            "version_name": "2.4",
+            "version_affected": "=",
+            "version_value": "2.4.25"
+           },
+           {
+            "version_name": "2.4",
+            "version_affected": "=",
+            "version_value": "2.4.23"
+           },
+           {
+            "version_name": "2.4",
+            "version_affected": "=",
+            "version_value": "2.4.20"
+           },
+           {
+            "version_name": "2.4",
+            "version_affected": "=",
+            "version_value": "2.4.18"
+           },
+           {
+            "version_name": "2.4",
+            "version_affected": "=",
+            "version_value": "2.4.17"
+           },
+           {
+            "version_name": "2.4",
+            "version_affected": "=",
+            "version_value": "2.4.16"
+           },
+           {
+            "version_name": "2.4",
+            "version_affected": "=",
+            "version_value": "2.4.12"
+           },
+           {
+            "version_name": "2.4",
+            "version_affected": "=",
+            "version_value": "2.4.10"
+           },
+           {
+            "version_name": "2.4",
+            "version_affected": "=",
+            "version_value": "2.4.9"
+           },
+           {
+            "version_name": "2.4",
+            "version_affected": "=",
+            "version_value": "2.4.7"
+           },
+           {
+            "version_name": "2.4",
+            "version_affected": "=",
+            "version_value": "2.4.6"
+           },
+           {
+            "version_name": "2.4",
+            "version_affected": "=",
+            "version_value": "2.4.4"
+           },
+           {
+            "version_name": "2.4",
+            "version_affected": "=",
+            "version_value": "2.4.3"
+           },
+           {
+            "version_name": "2.4",
+            "version_affected": "=",
+            "version_value": "2.4.2"
+           },
+           {
+            "version_name": "2.4",
+            "version_affected": "=",
+            "version_value": "2.4.1"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.34"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.32"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.31"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.29"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.27"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.26"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.25"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.24"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.23"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.22"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.21"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.20"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.19"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.18"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.17"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.16"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.15"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.14"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.13"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.12"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.11"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.10"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.9"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.8"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.6"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.5"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.4"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.3"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.2"
+           },
+           {
+            "version_name": "2.2",
+            "version_affected": "=",
+            "version_value": "2.2.0"
+           }
+          ]
+         }
+        }
+       ]
+      }
+     }
+    ]
+   }
+  }
+ }
+]

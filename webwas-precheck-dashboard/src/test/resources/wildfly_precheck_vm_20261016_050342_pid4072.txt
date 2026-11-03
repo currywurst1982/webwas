@@ -1,0 +1,85 @@
+WildFly 패치 전 보안 사전 점검  |  호스트: vm  |  일시: 2026-10-16 05:03:42
+
+==================================================================
+ [1] 버전 및 설치 방식 확인
+==================================================================
+[정보] 실행 중인 WildFly 프로세스 자동 탐지: PID 4072
+[정보] 서버 IP: 192.0.2.2
+[정보] 설치 폴더: /opt/wf-test/wildfly-41.0.1.Final
+[정보] 실행 모드: standalone
+[정보] 메인 설정 파일: /opt/wf-test/wildfly-41.0.1.Final/standalone/configuration/standalone.xml
+[정보] 버전 정보: WildFly - Version 41.0.1.Final
+[양호] WildFly 41.0.1.Final : 최신 Final(41.0.1.Final) 이상입니다.
+[정보] 설치 방식: ZIP 배포본 (공식 압축 파일을 푼 설치)
+[정보] Java: openjdk version "21.0.12.1" 2026-08-18 (/usr/lib/jvm/java-21-openjdk-amd64/bin/java)
+[정보] 구성요소(jar) 수: 777
+        undertow-core 2.4.3.Final
+        wildfly-server 33.0.1.Final
+        wildfly-elytron-base 2.9.2.Final
+        resteasy-core 7.0.3.Final
+        jboss-remoting 5.0.32.Final
+        xnio-api 3.8.16.Final
+        hal-console 3.7.21.Final
+
+==================================================================
+ [2] 구성요소 버전별 해당 CVE 판정 (OSV 기준)
+==================================================================
+[주의] CVE-2026-3260 [moderate] Undertow: Denial of Service via Multipart/Form-Data Parsing on HTTP GET Requests (영향: undertow-core 0~수정 버전 없음, 조건: undertow-core 2.4.3.Final 설치됨, 출처: GHSA-3x3v-w654-m28m)
+[미해당] CVE-2014-7839 (moderate) - 필요 모듈(resteasy-jaxrs) 미사용
+[미해당] CVE-2016-6346 (high) - 필요 모듈(resteasy-jaxrs) 미사용
+[미해당] CVE-2017-7561 (high) - 필요 모듈(resteasy-jaxrs) 미사용
+[미해당] CVE-2019-10184 (high) - 필요 모듈(io.undertow:undertow-servlet) 미사용
+
+  → 해당 CVE: 1건 / 구성요소가 없거나 다른 프로젝트라 미해당: 4건 / 수정된 버전이라 미해당: 84건 (전체 89건 중)
+
+==================================================================
+ [3] 위험 설정 점검 (관리 인터페이스·계정·실행 옵션·파일 권한)
+==================================================================
+[양호] 관리 인터페이스는 루프백(127.0.0.1)에서만 열림
+[양호] HTTP 관리 인터페이스에 인증 설정 있음
+[양호] 관리 계정 없음 (관리 콘솔 로그인 불가)
+[양호] 실행 계정: wildfly
+[양호] 원격 디버그(JDWP) 옵션 없음
+[양호] AJP 리스너 없음
+[주의] 기본 환영 페이지(welcome-content)가 / 에 연결됨 → WildFly 사용 사실·버전 노출. 운영 앱으로 교체하거나 제거 권장
+[양호] 디렉터리 목록 노출 설정 없음
+[양호] HTTP 응답 헤더에 서버 정보(Server/X-Powered-By) 없음
+[양호] 설정·배포·모듈·실행 폴더에 모든 계정 쓰기 권한 없음
+[주의] 실행 계정(wildfly)이 bin/modules 를 소유 → 앱 취약점으로 WildFly 자체 파일 변조 가능. root 소유 + 읽기 전용 권장
+        /opt/wf-test/wildfly-41.0.1.Final/bin
+        /opt/wf-test/wildfly-41.0.1.Final/bin/wsprovide.ps1
+        /opt/wf-test/wildfly-41.0.1.Final/bin/add-user.properties
+        /opt/wf-test/wildfly-41.0.1.Final/bin/jdr.ps1
+        /opt/wf-test/wildfly-41.0.1.Final/bin/wsprovide.sh
+
+==================================================================
+ [4] 침해 흔적 점검 (이미 해킹당했는지)
+==================================================================
+[주의] 접근 로그 파일을 찾지 못했습니다. 로그 기반 점검을 건너뜁니다. (WildFly 는 기본값으로 접근 로그를 남기지 않음)
+        → 앞단 프록시(Apache/Nginx) 로그가 있으면 -l 옵션으로 지정하세요. 예: sudo bash /home/user/webwas/wildfly-precheck-dashboard/scripts/wildfly_precheck.sh -l '/var/log/httpd/access_log*'
+        → 접근 로그 켜기(CLI): /subsystem=undertow/server=default-server/host=default-host/setting=access-log:add
+[정보] 배포된 애플리케이션 없음
+[양호] 배포된 앱에 웹쉘 의심 코드 패턴 JSP 없음 (패턴 우회형·컴파일된 클래스형 웹쉘은 탐지 못함)
+[주의] 최근 30일 내 변경된 배포 파일 1개 → 배포 이력과 대조 필요
+        -rw-r--r-- 1 wildfly wildfly 9781701 2026-10-16_04:43:30 /opt/wf-test/wildfly-41.0.1.Final/standalone/data/content/d7/299797bd01e3a8826b71ae3d6d6871c246a15f/content
+[양호] server.log 에 역직렬화 공격·JNDI 주입 흔적 없음
+[정보] 최근 배포 기록 (server.log, 최근 10건) → 배포 이력과 대조
+        2026-10-16 04:43:33,370 INFO  [org.jboss.as.server] (ServerService Thread Pool -- 46) WFLYSRV0010: Deployed "precheck.war" (runtime-name : "precheck.war")
+[양호] 실행계정의 비정상 프로세스 없음
+[양호] 실행계정 크론 작업 없음
+[주의] 임시 디렉터리에 실행계정 소유 파일 존재 → 실행파일/스크립트 여부 확인
+        /tmp/wf31.out
+        /tmp/wf41.out
+        /tmp/wf26.out
+
+==================================================================
+ 점검 요약
+==================================================================
+  [위험] 0건   [주의] 6건   [양호] 14건   [정보] 11건
+
+  ※ 이 결과는 '알려진 패턴' 기준이며 안전을 보증하지 않습니다.
+    - [위험] 중 침해 흔적(로그 200 응답, 웹쉘, 비정상 프로세스)이 있으면 설정 보완보다 침해사고 대응이 우선입니다.
+    - CVE 판정은 설치 폴더의 구성요소(jar) 버전과 OSV 영향 구간 기준이며, 실제 악용 가능 여부는 사용 기능에 따라 다릅니다.
+    - 근본 대책은 최신 Final(41.0.1.Final) 이상으로의 업그레이드입니다.
+
+  리포트 파일: /tmp/wildfly_precheck_vm_20261016_050342_pid4072.txt

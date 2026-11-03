@@ -1,0 +1,76 @@
+WildFly 패치 전 보안 사전 점검  |  호스트: vm  |  일시: 2026-10-16 05:03:57
+
+==================================================================
+ [1] 버전 및 설치 방식 확인
+==================================================================
+[정보] 서버 IP: 192.0.2.2
+[정보] 설치 폴더: /opt/wf-test/wildfly-34.0.1.Final
+[정보] 실행 모드: standalone
+[정보] 메인 설정 파일: /opt/wf-test/wildfly-34.0.1.Final/standalone/configuration/standalone.xml
+[정보] 버전 정보: WildFly 34.0.1.Final
+[주의] WildFly 34.0.1.Final : 최신 Final(41.0.1.Final) 미만입니다. 아래 [2]에서 해당 CVE를 확인하세요.
+[정보] 설치 방식: ZIP 배포본 (공식 압축 파일을 푼 설치)
+[정보] Java: openjdk version "21.0.12.1" 2026-08-18 (/usr/bin/java)
+[정보] 구성요소(jar) 수: 741
+        undertow-core 2.3.18.Final
+        wildfly-server 26.0.1.Final
+        wildfly-elytron-base 2.6.0.Final
+        resteasy-core 6.2.11.Final
+        jboss-remoting 5.0.29.Final
+        xnio-api 3.8.16.Final
+        hal-console 3.7.5.Final
+
+==================================================================
+ [2] 구성요소 버전별 해당 CVE 판정 (OSV 기준)
+==================================================================
+[주의] CVE-2025-23366 [moderate] HAL Console has a Cross Site Scripting (XSS) vulnerability of user input (영향: hal-console 0~3.7.7.Final 미만, 조건: hal-console 3.7.5.Final 설치됨, 출처: GHSA-jhvj-f397-8w6q)
+[주의] CVE-2025-2901 [moderate] HAL Cross Site Scripting (XSS) vulnerability of user input when storing it in a data store (영향: hal-console 0~3.7.11.Final 미만, 조건: hal-console 3.7.5.Final 설치됨, 출처: GHSA-f7jh-m6wp-jm7f)
+[위험] CVE-2024-3884 [high] Undertow OutOfMemory when parsing form data encoding with application/x-www-form-urlencoded (영향: undertow-core 2.3.0.Alpha1~2.3.21.Final 미만, 조건: undertow-core 2.3.18.Final 설치됨, 출처: GHSA-6h4f-pj3g-q8fq)
+[위험] CVE-2024-4027 [high] Undertow Servlets Vulnerable to Remote DoS via OutOfMemoryError when Passed Large Parameter Names (영향: undertow-core 2.3.0.Alpha1~2.3.21.Final 미만, 조건: undertow-core 2.3.18.Final 설치됨, 출처: GHSA-33hj-rcmx-86mv)
+[위험] CVE-2025-12543 [critical] Undertow HTTP server core doesn't properly validate the Host header in incoming HTTP requests (영향: undertow-core 2.3.0.Alpha1~2.3.21.Final 미만, 조건: undertow-core 2.3.18.Final 설치됨, 출처: GHSA-j382-5jj3-vw4j)
+[위험] CVE-2025-9784 [high] Undertow MadeYouReset HTTP/2 DDoS Vulnerability (영향: undertow-core 2.3.0.Alpha1~2.3.20.Final 미만, 조건: undertow-core 2.3.18.Final 설치됨, 출처: GHSA-95h4-w6j8-2rp8)
+[주의] CVE-2026-3260 [moderate] Undertow: Denial of Service via Multipart/Form-Data Parsing on HTTP GET Requests (영향: undertow-core 0~수정 버전 없음, 조건: undertow-core 2.3.18.Final 설치됨, 출처: GHSA-3x3v-w654-m28m)
+[주의] CVE-2024-12369 [moderate] WildFly Elytron OpenID Connect Client ExtensionOIDC authorization code injection attack (영향: wildfly-elytron-base 2.3.0.Final~2.6.2.Final 미만, 조건: wildfly-elytron-base 2.6.0.Final 설치됨, 출처: GHSA-5565-3c98-g6jc)
+[위험] CVE-2025-23368 [high] Wildfly Elytron integration susceptible to brute force attacks via CLI (영향: wildfly-elytron-integration 0~31.0.3.Final 미만, 조건: wildfly-elytron-integration 26.0.1.Final 설치됨, 출처: GHSA-qhp6-6p8p-2rqh)
+[주의] CVE-2025-23367 [moderate] WildFly improper RBAC permission (영향: wildfly-server 0~27.0.1.Final 미만, 조건: wildfly-server 26.0.1.Final 설치됨, 출처: GHSA-qr6x-62gq-4ccp)
+[미해당] CVE-2014-7839 (moderate) - 필요 모듈(resteasy-jaxrs) 미사용
+[미해당] CVE-2016-6346 (high) - 필요 모듈(resteasy-jaxrs) 미사용
+[미해당] CVE-2017-7561 (high) - 필요 모듈(resteasy-jaxrs) 미사용
+
+  → 해당 CVE: 10건 / 구성요소가 없거나 다른 프로젝트라 미해당: 3건 / 수정된 버전이라 미해당: 76건 (전체 89건 중)
+
+==================================================================
+ [3] 위험 설정 점검 (관리 인터페이스·계정·실행 옵션·파일 권한)
+==================================================================
+[위험] 관리 인터페이스 바인드 주소가 0.0.0.0 (설정 기준) → 외부에서 관리 콘솔 접속 가능. 127.0.0.1 또는 관리망 전용 주소로 제한 권장
+[양호] HTTP 관리 인터페이스에 인증 설정 있음
+[양호] 관리 계정 없음 (관리 콘솔 로그인 불가)
+[정보] 애플리케이션 계정 1개: appuser 
+[주의] 애플리케이션 계정에 추측하기 쉬운 비밀번호 사용: appuser → 변경 권장
+[정보] 실행 계정을 확인하지 못함 (WildFly 가 실행 중이 아님)
+[양호] AJP 리스너 없음
+[주의] 기본 환영 페이지(welcome-content)가 / 에 연결됨 → WildFly 사용 사실·버전 노출. 운영 앱으로 교체하거나 제거 권장
+[양호] 디렉터리 목록 노출 설정 없음
+[양호] 설정·배포·모듈·실행 폴더에 모든 계정 쓰기 권한 없음
+
+==================================================================
+ [4] 침해 흔적 점검 (이미 해킹당했는지)
+==================================================================
+[주의] 접근 로그 파일을 찾지 못했습니다. 로그 기반 점검을 건너뜁니다. (WildFly 는 기본값으로 접근 로그를 남기지 않음)
+        → 앞단 프록시(Apache/Nginx) 로그가 있으면 -l 옵션으로 지정하세요. 예: sudo bash /home/user/webwas/wildfly-precheck-dashboard/scripts/wildfly_precheck.sh -l '/var/log/httpd/access_log*'
+        → 접근 로그 켜기(CLI): /subsystem=undertow/server=default-server/host=default-host/setting=access-log:add
+[정보] 배포된 애플리케이션 없음
+[양호] 배포된 앱에 웹쉘 의심 코드 패턴 JSP 없음 (패턴 우회형·컴파일된 클래스형 웹쉘은 탐지 못함)
+[양호] 최근 30일 내 변경된 배포 파일 없음
+
+==================================================================
+ 점검 요약
+==================================================================
+  [위험] 6건   [주의] 9건   [양호] 7건   [정보] 11건
+
+  ※ 이 결과는 '알려진 패턴' 기준이며 안전을 보증하지 않습니다.
+    - [위험] 중 침해 흔적(로그 200 응답, 웹쉘, 비정상 프로세스)이 있으면 설정 보완보다 침해사고 대응이 우선입니다.
+    - CVE 판정은 설치 폴더의 구성요소(jar) 버전과 OSV 영향 구간 기준이며, 실제 악용 가능 여부는 사용 기능에 따라 다릅니다.
+    - 근본 대책은 최신 Final(41.0.1.Final) 이상으로의 업그레이드입니다.
+
+  리포트 파일: /tmp/wildfly_precheck_vm_20261016_050357.txt

@@ -1,0 +1,108 @@
+WildFly 패치 전 보안 사전 점검  |  호스트: vm  |  일시: 2026-10-16 05:03:40
+
+==================================================================
+ [1] 버전 및 설치 방식 확인
+==================================================================
+[정보] 실행 중인 WildFly 프로세스 자동 탐지: PID 4068
+[정보] 서버 IP: 192.0.2.2
+[정보] 설치 폴더: /opt/wf-test/wildfly-26.1.3.Final
+[정보] 실행 모드: standalone
+[정보] 메인 설정 파일: /opt/wf-test/wildfly-26.1.3.Final/standalone/configuration/standalone.xml
+[정보] 버전 정보: WildFly Full 26.1.3.Final
+[주의] WildFly 26.1.3.Final : 최신 Final(41.0.1.Final) 미만입니다. 아래 [2]에서 해당 CVE를 확인하세요.
+[정보] Java EE 8(javax) 계열 WildFly 입니다. 최신 버전(jakarta 계열)으로 올릴 때 애플리케이션의 javax → jakarta 변경이 필요합니다.
+[정보] 설치 방식: ZIP 배포본 (공식 압축 파일을 푼 설치)
+[정보] Java: openjdk version "21.0.12.1" 2026-08-18 (/usr/lib/jvm/java-21-openjdk-amd64/bin/java)
+[정보] 구성요소(jar) 수: 668
+        undertow-core 2.2.19.Final
+        wildfly-server 18.1.2.Final
+        wildfly-elytron-base 1.19.1.Final
+        resteasy-core 4.7.7.Final
+        jboss-remoting 5.0.25.Final
+        xnio-api 3.8.7.Final
+        hal-console 3.5.12.Final
+
+==================================================================
+ [2] 구성요소 버전별 해당 CVE 판정 (OSV 기준)
+==================================================================
+[위험] CVE-2022-1278 [high] WildFly vulnerable to Insecure Default Initialization of Resource (영향: WildFly 0~27.0.0.Beta1 미만, 조건: WildFly 26.1.3.Final 설치됨, 출처: GHSA-fmq7-gh8v-mjvc)
+[주의] CVE-2025-23366 [moderate] HAL Console has a Cross Site Scripting (XSS) vulnerability of user input (영향: hal-console 0~3.7.7.Final 미만, 조건: hal-console 3.5.12.Final 설치됨, 출처: GHSA-jhvj-f397-8w6q)
+[주의] CVE-2025-2901 [moderate] HAL Cross Site Scripting (XSS) vulnerability of user input when storing it in a data store (영향: hal-console 0~3.7.11.Final 미만, 조건: hal-console 3.5.12.Final 설치됨, 출처: GHSA-f7jh-m6wp-jm7f)
+[주의] CVE-2023-0482 [moderate] Insecure Temporary File in RESTEasy (영향: resteasy-core 4.0.0.Beta1~4.7.8.Final 미만, 조건: resteasy-core 4.7.7.Final 설치됨, 출처: GHSA-2c6g-pfx3-w7h8)
+[위험] CVE-2022-4492 [critical] Undertow client not checking server identity presented by server certificate in https connections (영향: undertow-core 0~2.2.24.Final 미만, 조건: undertow-core 2.2.19.Final 설치됨, 출처: GHSA-pfcc-3g6r-8rg8)
+[위험] CVE-2023-1108 [high] Undertow denial of service vulnerability (영향: undertow-core 0~2.2.24.Final 미만, 조건: undertow-core 2.2.19.Final 설치됨, 출처: GHSA-m4mm-pg93-fv78)
+[주의] CVE-2023-1973 [moderate] Undertow Denial of Service vulnerability (영향: undertow-core 0~2.2.32.Final 미만, 조건: undertow-core 2.2.19.Final 설치됨, 출처: GHSA-97cq-f4jm-mv8h)
+[위험] CVE-2023-4639 [high] Undertow incorrectly parses cookies (영향: undertow-core 0~2.2.30.Final 미만, 조건: undertow-core 2.2.19.Final 설치됨, 출처: GHSA-3jrv-jgp8-45v3)
+[주의] CVE-2024-1459 [moderate] Undertow Path Traversal vulnerability (영향: undertow-core 0~2.2.31.Final 미만, 조건: undertow-core 2.2.19.Final 설치됨, 출처: GHSA-v76w-3ph8-vm66)
+[위험] CVE-2024-1635 [high] Undertow Uncontrolled Resource Consumption Vulnerability (영향: undertow-core 0~2.2.31.Final 미만, 조건: undertow-core 2.2.19.Final 설치됨, 출처: GHSA-w6qf-42m7-vh68)
+[주의] CVE-2024-3653 [moderate] Undertow Missing Release of Memory after Effective Lifetime vulnerability (영향: undertow-core 0~2.2.34.Final 미만, 조건: undertow-core 2.2.19.Final 설치됨, 출처: GHSA-ch7q-gpff-h9hp)
+[위험] CVE-2024-3884 [high] Undertow OutOfMemory when parsing form data encoding with application/x-www-form-urlencoded (영향: undertow-core 0~2.2.39.Final 미만, 조건: undertow-core 2.2.19.Final 설치됨, 출처: GHSA-6h4f-pj3g-q8fq)
+[위험] CVE-2024-4027 [high] Undertow Servlets Vulnerable to Remote DoS via OutOfMemoryError when Passed Large Parameter Names (영향: undertow-core 0~2.2.39.Final 미만, 조건: undertow-core 2.2.19.Final 설치됨, 출처: GHSA-33hj-rcmx-86mv)
+[위험] CVE-2024-5971 [high] Undertow Denial of Service vulnerability (영향: undertow-core 0~2.2.34.Final 미만, 조건: undertow-core 2.2.19.Final 설치됨, 출처: GHSA-xpp6-8r3j-ww43)
+[위험] CVE-2024-6162 [high] Undertow's url-encoded request path information can be broken on ajp-listener (영향: undertow-core 0~2.2.33.Final 미만, 조건: undertow-core 2.2.19.Final 설치됨, 출처: GHSA-9442-gm4v-r222)
+[위험] CVE-2024-7885 [high] Undertow vulnerable to Race Condition (영향: undertow-core 0~2.2.36.Final 미만, 조건: undertow-core 2.2.19.Final 설치됨, 출처: GHSA-9623-mqmm-5rcf)
+[위험] CVE-2025-12543 [critical] Undertow HTTP server core doesn't properly validate the Host header in incoming HTTP requests (영향: undertow-core 0~2.2.39.Final 미만, 조건: undertow-core 2.2.19.Final 설치됨, 출처: GHSA-j382-5jj3-vw4j)
+[위험] CVE-2025-9784 [high] Undertow MadeYouReset HTTP/2 DDoS Vulnerability (영향: undertow-core 0~2.2.38.Final 미만, 조건: undertow-core 2.2.19.Final 설치됨, 출처: GHSA-95h4-w6j8-2rp8)
+[주의] CVE-2026-3260 [moderate] Undertow: Denial of Service via Multipart/Form-Data Parsing on HTTP GET Requests (영향: undertow-core 0~수정 버전 없음, 조건: undertow-core 2.2.19.Final 설치됨, 출처: GHSA-3x3v-w654-m28m)
+[주의] CVE-2023-4061 [moderate] wildfly-core Exposure of Sensitive Information to an Unauthorized Actor vulnerability (영향: wildfly-controller 0~22.0.0.Final 미만, 조건: wildfly-controller 18.1.2.Final 설치됨, 출처: GHSA-26qx-4m49-6cfr)
+[위험] CVE-2022-3143 [high] Wildfly-elytron possibly vulnerable to timing attacks via use of unsafe comparator (영향: wildfly-elytron-base 1.16.0.CR1~1.20.3.Final 미만, 조건: wildfly-elytron-base 1.19.1.Final 설치됨, 출처: GHSA-jmj6-p2j9-68cp)
+[주의] CVE-2024-12369 [moderate] WildFly Elytron OpenID Connect Client ExtensionOIDC authorization code injection attack (영향: wildfly-elytron-base 1.17.0.Final~2.2.9.Final 미만, 조건: wildfly-elytron-base 1.19.1.Final 설치됨, 출처: GHSA-5565-3c98-g6jc)
+[위험] CVE-2023-6236 [high] WildFly Elytron: OIDC app attempting to access the second tenant, the user should be prompted to log (영향: wildfly-elytron-http-oidc 0~2.2.5.Final 미만, 조건: wildfly-elytron-http-oidc 1.19.1.Final 설치됨, 출처: GHSA-jpmx-996v-48fm)
+[위험] CVE-2025-23368 [high] Wildfly Elytron integration susceptible to brute force attacks via CLI (영향: wildfly-elytron-integration 0~31.0.3.Final 미만, 조건: wildfly-elytron-integration 18.1.2.Final 설치됨, 출처: GHSA-qhp6-6p8p-2rqh)
+[위험] CVE-2024-1233 [high] WildFly Elytron: SSRF security issue (영향: wildfly-elytron-realm-token 0~2.4.0.CR1 이하, 조건: wildfly-elytron-realm-token 1.19.1.Final 설치됨, 출처: GHSA-v4mm-q8fv-r2w5)
+[주의] CVE-2025-23367 [moderate] WildFly improper RBAC permission (영향: wildfly-server 0~27.0.1.Final 미만, 조건: wildfly-server 18.1.2.Final 설치됨, 출처: GHSA-qr6x-62gq-4ccp)
+[위험] CVE-2023-5685 [high] XNIO denial of service vulnerability (영향: xnio-api 0~3.8.14.Final 미만, 조건: xnio-api 3.8.7.Final 설치됨, 출처: GHSA-7f88-5hhx-67m2)
+[미해당] CVE-2014-7839 (moderate) - 필요 모듈(resteasy-jaxrs) 미사용
+[미해당] CVE-2016-6346 (high) - 필요 모듈(resteasy-jaxrs) 미사용
+[미해당] CVE-2017-7561 (high) - 필요 모듈(resteasy-jaxrs) 미사용
+
+  → 해당 CVE: 27건 / 구성요소가 없거나 다른 프로젝트라 미해당: 3건 / 수정된 버전이라 미해당: 59건 (전체 89건 중)
+
+==================================================================
+ [3] 위험 설정 점검 (관리 인터페이스·계정·실행 옵션·파일 권한)
+==================================================================
+[양호] 관리 인터페이스는 루프백(127.0.0.1)에서만 열림
+[양호] HTTP 관리 인터페이스에 인증 설정 있음
+[양호] 관리 계정 없음 (관리 콘솔 로그인 불가)
+[양호] 실행 계정: wildfly
+[양호] 원격 디버그(JDWP) 옵션 없음
+[양호] AJP 리스너 없음
+[주의] 기본 환영 페이지(welcome-content)가 / 에 연결됨 → WildFly 사용 사실·버전 노출. 운영 앱으로 교체하거나 제거 권장
+[양호] 디렉터리 목록 노출 설정 없음
+[양호] HTTP 응답 헤더에 서버 정보(Server/X-Powered-By) 없음
+[양호] 설정·배포·모듈·실행 폴더에 모든 계정 쓰기 권한 없음
+[주의] 실행 계정(wildfly)이 bin/modules 를 소유 → 앱 취약점으로 WildFly 자체 파일 변조 가능. root 소유 + 읽기 전용 권장
+        /opt/wf-test/wildfly-26.1.3.Final/bin
+        /opt/wf-test/wildfly-26.1.3.Final/bin/wsprovide.ps1
+        /opt/wf-test/wildfly-26.1.3.Final/bin/add-user.properties
+        /opt/wf-test/wildfly-26.1.3.Final/bin/jdr.ps1
+        /opt/wf-test/wildfly-26.1.3.Final/bin/wsprovide.sh
+
+==================================================================
+ [4] 침해 흔적 점검 (이미 해킹당했는지)
+==================================================================
+[주의] 접근 로그 파일을 찾지 못했습니다. 로그 기반 점검을 건너뜁니다. (WildFly 는 기본값으로 접근 로그를 남기지 않음)
+        → 앞단 프록시(Apache/Nginx) 로그가 있으면 -l 옵션으로 지정하세요. 예: sudo bash /home/user/webwas/wildfly-precheck-dashboard/scripts/wildfly_precheck.sh -l '/var/log/httpd/access_log*'
+        → 접근 로그 켜기(CLI): /subsystem=undertow/server=default-server/host=default-host/setting=access-log:add
+[정보] 배포된 애플리케이션 없음
+[양호] 배포된 앱에 웹쉘 의심 코드 패턴 JSP 없음 (패턴 우회형·컴파일된 클래스형 웹쉘은 탐지 못함)
+[양호] 최근 30일 내 변경된 배포 파일 없음
+[양호] server.log 에 역직렬화 공격·JNDI 주입 흔적 없음
+[양호] 실행계정의 비정상 프로세스 없음
+[양호] 실행계정 크론 작업 없음
+[주의] 임시 디렉터리에 실행계정 소유 파일 존재 → 실행파일/스크립트 여부 확인
+        /tmp/wf31.out
+        /tmp/wf41.out
+        /tmp/wf26.out
+
+==================================================================
+ 점검 요약
+==================================================================
+  [위험] 17건   [주의] 15건   [양호] 14건   [정보] 11건
+
+  ※ 이 결과는 '알려진 패턴' 기준이며 안전을 보증하지 않습니다.
+    - [위험] 중 침해 흔적(로그 200 응답, 웹쉘, 비정상 프로세스)이 있으면 설정 보완보다 침해사고 대응이 우선입니다.
+    - CVE 판정은 설치 폴더의 구성요소(jar) 버전과 OSV 영향 구간 기준이며, 실제 악용 가능 여부는 사용 기능에 따라 다릅니다.
+    - 근본 대책은 최신 Final(41.0.1.Final) 이상으로의 업그레이드입니다.
+
+  리포트 파일: /tmp/wildfly_precheck_vm_20261016_050340_pid4068.txt

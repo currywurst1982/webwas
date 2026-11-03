@@ -693,3 +693,17 @@ pre.raw { margin: 0; padding: 12px; background: var(--code-bg); border: 1px soli
   .btile { width: 34px; height: 34px; }
   .hero-tools input[type="search"] { width: 100%; }
 }
+
+/* ---------- 입체 배치도 확대/축소 (서버 수백 대) ---------- */
+.iso-wrap { position: relative; width: 100%; }
+.iso-wrap .iso-svg { overflow: hidden; width: 100%; height: auto; max-height: 560px; display: block; touch-action: none; cursor: grab; user-select: none; }
+.iso-wrap.big .iso-svg { height: 620px; max-height: 70vh; }
+.iso-wrap .iso-svg.dragging { cursor: grabbing; }
+.iso-svg.lod-far .iso-labels { display: none; }   /* 멀리서는 이름표 숨김 */
+.iso-zoom { position: absolute; top: 6px; right: 6px; display: flex; gap: 4px; align-items: center; }
+.iso-zbtn { min-width: 32px; height: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--line-2); background: var(--card); color: var(--ink);
+  font: inherit; font-size: 15px; cursor: pointer; }
+.iso-zbtn:hover { border-color: var(--accent); }
+.iso-zl { min-width: 44px; text-align: right; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.iso-help { position: absolute; left: 8px; bottom: 6px; color: var(--muted); font-size: 11.5px; pointer-events: none; }
+@media (max-width: 760px) { .iso-wrap.big .iso-svg { height: 420px; } }

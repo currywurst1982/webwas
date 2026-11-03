@@ -1018,7 +1018,8 @@
     $('#hero-tools').hidden = view !== 'board';
     $('.dash').classList.toggle('board-mode', view === 'board');
     if (view === 'iso') {
-      $('#hero-hint').textContent = '서버(호스트·IP)마다 상자 하나이고, 층 하나가 인스턴스(Apache·WildFly·Tomcat) 하나입니다. 층을 누르면 상세 결과가 열립니다. 서버가 많으면 [타일] 보기가 보기 쉽습니다.';
+      $('#hero-hint').textContent = `서버 ${servers.length}대 전체 · 서버(호스트·IP)마다 상자 하나, 층 하나가 인스턴스 하나입니다. 위험한 서버일수록 위쪽에 놓입니다. `
+        + '층을 누르면 상세 결과가 열립니다.' + (servers.length > 24 ? ' 서버가 많아 처음엔 작게 보이니 확대해서 보세요. 이름으로 찾기·묶기는 [타일] 보기가 편합니다.' : '');
       $('#hero-map').className = 'hero-map';
       legend('#legend-hero', [['c-critical', '침해 의심'], ['c-serious', '위험'], ['c-warning', '주의'], ['c-good', '양호']]);
       renderHeroMap(list);
@@ -1167,7 +1168,7 @@
   // ---------------------------------------------------------------- 서버 배치도 (등각 투영)
   function renderHeroMap(list) {
     const box = $('#hero-map');
-    const MAX = 24;    // 표시할 서버(호스트·IP) 최대 수
+    const MAX = Infinity; // 서버 수 제한 없음 (많으면 확대/축소·이동으로 봄)
     const STACK = 6;   // 서버 상자 하나에 쌓는 인스턴스 최대 수
     // 같은 서버(호스트 + IP)의 인스턴스(Apache·WildFly·Tomcat)를 상자 하나로 묶음
     const byServer = new Map();
@@ -1234,6 +1235,7 @@
     const cells = servers.map((g, i) => ({ g, c: P((i % cols) * SP, Math.floor(i / cols) * SP) }));
     const labels = []; // 이름표는 상자에 가리지 않도록 맨 위 층에 따로 그림
     cells.forEach(({ g, c }) => {
+      if (n > 40) return; // 서버가 많으면 연결선 생략
       const srcs = g.inst.filter(r => r.source).map(r => agentsByName.get(r.source));
       if (!srcs.length) return;
       const live = srcs.some(ag => ag && ag.state !== 'offline' && ag.state !== 'never');
@@ -1294,17 +1296,93 @@
       const mid = P((cols - 1) * SP / 2, (rows - 1) * SP / 2);
       els.push(svg('text', { class: 'iso-empty', x: mid[0], y: mid[1] }, state.reports.length ? '조건에 맞는 서버가 없습니다' : '점검 결과가 아직 없습니다'));
     }
-    if (allServers.length > MAX) {
-      const p = P(gx1, gy1);
-      els.push(svg('text', { class: 'iso-sub', x: p[0], y: p[1] + T + 18 }, `위험도 높은 순 ${MAX}대만 표시 (전체 서버 ${allServers.length}대)`));
-    }
 
     // 보이는 범위에 맞춰 viewBox 계산
     const xs = [floor[0][0], floor[1][0], floor[2][0], floor[3][0]];
     const ys = [Math.min(floor[0][1] - 40, hub[1] - 34 - H * 0.42 - 30), floor[2][1] + T + 30];
     const minX = Math.min(...xs) - 20, maxX = Math.max(...xs) + 20;
-    box.replaceChildren(svg('svg', { viewBox: `${minX} ${ys[0]} ${maxX - minX} ${ys[1] - ys[0]}`, role: 'img',
-      'aria-label': `서버 배치도: 서버 ${n}대, 인스턴스 ${list.length}개` }, els));
+    const full = [minX, ys[0], maxX - minX, ys[1] - ys[0]];
+    const svgEl = svg('svg', { viewBox: full.join(' '), role: 'img', class: 'iso-svg',
+      'aria-label': `서버 배치도: 서버 ${n}대, 인스턴스 ${list.length}개` }, els);
+    const wrap = document.createElement('div'); // (이 함수 안에서는 h 가 상자 높이 숫자라 h() 를 쓸 수 없음)
+    wrap.className = 'iso-wrap' + (n > 24 ? ' big' : '');
+    wrap.append(svgEl);
+    box.replaceChildren(wrap);
+    isoZoom(wrap, svgEl, full, `${n}|${cols}`, W);
+  }
+
+  /**
+   * 입체 배치도 확대/축소·이동. 마우스 휠(커서 위치 기준), 끌어서 이동, 두 손가락 확대, +/−/맞춤 버튼.
+   * 30초 자동 갱신 때도 같은 배치(서버 수·열 수)면 보던 위치를 유지.
+   * 확대가 충분할 때만 이름표를 보여 줌 (멀리서는 글자가 1~2px 이라 읽을 수 없음).
+   */
+  function isoZoom(wrap, el, full, layoutKey, cellW) {
+    const st = heroState.zoom && heroState.zoom.key === layoutKey ? heroState.zoom : { key: layoutKey, vb: full.slice() };
+    heroState.zoom = st;
+    const minW = Math.min(full[2], cellW * 3);  // 최대 확대: 서버 약 3칸 폭
+    const apply = () => {
+      const [x, y, w, hh] = st.vb;
+      el.setAttribute('viewBox', `${x} ${y} ${w} ${hh}`);
+      const ppu = Math.min(el.clientWidth / w, el.clientHeight / hh); // 화면 px / 도면 단위 (가로·세로 중 작은 쪽에 맞춰짐)
+      el.classList.toggle('lod-far', ppu * cellW < 75); // 칸 폭이 75px 보다 작으면 이름표 숨김
+      zl.textContent = `${Math.round(full[2] / w * 100)}%`;
+    };
+    const zoomAt = (f, cx, cy) => { // f > 1 이면 확대. (cx, cy) = 화면상 기준점 비율(0~1)
+      let [x, y, w, hh] = st.vb;
+      const nw = Math.max(minW, Math.min(full[2], w / f)), k = nw / w, nh = hh * k;
+      x += (w - nw) * cx; y += (hh - nh) * cy;
+      st.vb = clamp([x, y, nw, nh]);
+      apply();
+    };
+    const clamp = ([x, y, w, hh]) => [
+      Math.min(Math.max(x, full[0] - w * 0.25), full[0] + full[2] - w * 0.75),
+      Math.min(Math.max(y, full[1] - hh * 0.25), full[1] + full[3] - hh * 0.75), w, hh];
+    const zl = h('span', { class: 'iso-zl', 'aria-live': 'polite' });
+    const btn = (label, title, fn) => h('button', { type: 'button', class: 'iso-zbtn', title, 'aria-label': title, onclick: fn }, label);
+    wrap.append(h('div', { class: 'iso-zoom' },
+      btn('+', '확대', () => zoomAt(1.6, 0.5, 0.5)),
+      btn('−', '축소', () => zoomAt(1 / 1.6, 0.5, 0.5)),
+      btn('맞춤', '전체가 보이게', () => { st.vb = full.slice(); apply(); }), zl),
+      h('div', { class: 'iso-help' }, '휠: 확대/축소 · 끌기: 이동 · 확대하면 서버 이름이 보입니다'));
+    el.addEventListener('wheel', e => {
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      zoomAt(e.deltaY < 0 ? 1.25 : 0.8, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height);
+    }, { passive: false });
+    // 끌어서 이동 / 두 손가락 확대 (포인터 이벤트)
+    const pts = new Map();
+    let moved = false, last = null, pinch = null;
+    el.addEventListener('pointerdown', e => {
+      pts.set(e.pointerId, [e.clientX, e.clientY]);
+      moved = false; last = [e.clientX, e.clientY];
+      if (pts.size === 2) { const [a, b] = Array.from(pts.values()); pinch = Math.hypot(a[0] - b[0], a[1] - b[1]); }
+    });
+    el.addEventListener('pointermove', e => {
+      if (!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, [e.clientX, e.clientY]);
+      const r = el.getBoundingClientRect();
+      if (pts.size === 2 && pinch) {
+        const [a, b] = Array.from(pts.values());
+        const d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        zoomAt(d / pinch, ((a[0] + b[0]) / 2 - r.left) / r.width, ((a[1] + b[1]) / 2 - r.top) / r.height);
+        pinch = d; moved = true;
+        return;
+      }
+      const dx = e.clientX - last[0], dy = e.clientY - last[1];
+      if (!moved && Math.hypot(dx, dy) < 5) return;   // 5px 미만은 클릭으로 봄
+      if (!moved) el.setPointerCapture(e.pointerId);
+      moved = true; last = [e.clientX, e.clientY];
+      const [x, y, w, hh] = st.vb;
+      st.vb = clamp([x - dx * w / r.width, y - dy * hh / r.height, w, hh]);
+      el.classList.add('dragging');
+      apply();
+    });
+    const end = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; el.classList.remove('dragging'); };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+    el.addEventListener('click', e => { if (moved) { e.stopPropagation(); e.preventDefault(); moved = false; } }, true); // 끌기 뒤 클릭 무시
+    requestAnimationFrame(apply);
+    new ResizeObserver(apply).observe(el);
   }
 
   // ---------------------------------------------------------------- 일자별 점검 건수 (막대)

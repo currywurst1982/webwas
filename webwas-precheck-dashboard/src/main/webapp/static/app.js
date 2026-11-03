@@ -974,7 +974,7 @@
 
   // ---------------------------------------------------------------- 서버 현황판 (타일) — 서버 수백 대용
   /** 점검이 이 일수보다 오래되면 빗금으로 표시 */
-  const STALE_DAYS = 7;
+  const STALE_DAYS = 3;
   const HERO_STATUS = ['compromise', 'risk', 'warn', 'ok'];
   const heroState = { view: loadPref('precheck.heroView', ''), group: loadPref('precheck.heroGroup', 'status'), q: '', hidden: new Set(), open: new Map() };
   /** 이 대수를 넘는 "양호" 묶음은 처음에 접어 둠 (할 일이 있는 서버가 먼저 보이도록) */

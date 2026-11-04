@@ -71,11 +71,18 @@ public class AgentStore {
             return a;
         }
 
+        /** 점검 중에도 1분마다 신호를 보내는 에이전트 버전 (이보다 낮으면 점검이 끝날 때까지 신호가 없음) */
+        static final String KEEPALIVE_SINCE = "2.1.0";
+
         /** online | offline | never | running | requested */
         public String state(long now) {
             if (lastSeen == 0) return "never";
+            boolean running = runStartedAt > 0 && now - runStartedAt < RUN_TIMEOUT_MILLIS;
+            // 옛 에이전트(2.1.0 미만)는 점검하는 동안 신호를 못 보내므로, 점검 중이면 오프라인으로 보지 않음
+            boolean legacy = agentVersion == null || ReportParser.compareVersions(agentVersion, KEEPALIVE_SINCE) < 0;
+            if (running && legacy) return "running";
             if (now - lastSeen > OFFLINE_MILLIS) return "offline";
-            if (runStartedAt > 0 && now - runStartedAt < RUN_TIMEOUT_MILLIS) return "running";
+            if (running) return "running";
             if (pendingRun) return "requested";
             return "online";
         }

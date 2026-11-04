@@ -34,7 +34,7 @@
 #    TOMCAT_LOG_PATHS=   (tomcat_precheck.sh  -l 값)
 # =====================================================================
 
-AGENT_VERSION="2.0.0"
+AGENT_VERSION="2.1.0"   # 2.1.0: 점검 중에도 1분마다 heartbeat(busy=1) 전송
 CONF="${WEBWAS_PRECHECK_AGENT_CONF:-/etc/webwas-precheck-agent.conf}"
 BASE_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 ALL_PRODUCTS="apache wildfly tomcat"   # 순서 고정 (스크립트 SHA-256 계산 순서와 같음)
@@ -60,7 +60,7 @@ command -v curl >/dev/null 2>&1 || die "curl 이 필요합니다."
 umask 077
 mkdir -p "$OUTBOX" "$SENT" "$CVE_DIR"
 WORK="$(mktemp -d /tmp/webwas-precheck-agent.XXXXXX)" || die "임시 폴더를 만들 수 없습니다."
-trap 'rm -rf "$WORK"' EXIT
+trap 'keepalive_stop; rm -rf "$WORK"' EXIT
 
 # 토큰이 ps 명령에 보이지 않도록 curl 설정 파일(권한 600)로 헤더를 넘김
 CURLCFG="$WORK/curl.cfg"
@@ -118,6 +118,29 @@ heartbeat() { # $1 = busy(0/1), $2 = probe(0/1, 연결 확인만)
     --data-urlencode "busy=$1"
 }
 
+# 점검이 오래 걸려도(수 분) 대시보드에 "오프라인"으로 보이지 않도록, 점검하는 동안 1분마다 "점검 중" 신호를 보냄.
+# (systemd 타이머는 점검이 끝날 때까지 다음 poll 을 시작하지 않으므로 이 신호가 없으면 3분 뒤 오프라인으로 보임)
+KEEPALIVE_PID=""
+keepalive_start() {
+  local sha host
+  sha="$(script_sha)"; host="$(hostname -f 2>/dev/null || hostname)"
+  (
+    while sleep 60; do
+      curl -K "$CURLCFG" -o /dev/null -X POST --data-urlencode "probe=0" --data-urlencode "hostname=$host" \
+        --data-urlencode "version=$AGENT_VERSION" --data-urlencode "scriptSha256=$sha" --data-urlencode "busy=1" \
+        "$DASHBOARD_URL/agent-api/heartbeat" 2>/dev/null
+    done
+  ) </dev/null >/dev/null 2>&1 &
+  KEEPALIVE_PID=$!
+}
+keepalive_stop() {
+  [ -n "$KEEPALIVE_PID" ] || return 0
+  pkill -P "$KEEPALIVE_PID" 2>/dev/null   # 대기 중인 sleep 도 함께 정리
+  kill "$KEEPALIVE_PID" 2>/dev/null
+  wait "$KEEPALIVE_PID" 2>/dev/null
+  KEEPALIVE_PID=""
+}
+
 # outbox 의 리포트를 모두 전송. 전송 성공 수를 출력
 flush_outbox() {
   local f code n=0
@@ -138,10 +161,12 @@ flush_outbox() {
 do_run() {
   local marker="$WORK/marker" rc=0 one n_made n_sent msg products p args cve lp script done_list="" fail_list=""
   : > "$marker"; sleep 1
+  keepalive_start
   products="$(detect_products)"
   if [ -z "$products" ]; then
     msg="점검할 제품을 찾지 못함 (실행 중인 Apache/WildFly/Tomcat 없음. 꺼져 있으면 설정 파일에 PRODUCTS=\"apache\" 처럼 지정)"
     log "점검 종료: $msg"
+    keepalive_stop
     api result -X POST --data-urlencode "exit=3" --data-urlencode "reports=0" --data-urlencode "message=$msg" >/dev/null
     return
   fi
@@ -178,6 +203,7 @@ do_run() {
   else msg="리포트 ${n_sent}개 전송 완료 (${products// /, })${fail_list:+ / 오류:$fail_list}"
   fi
   log "점검 종료(exit=$rc): $msg"
+  keepalive_stop
   api result -X POST --data-urlencode "exit=$rc" --data-urlencode "reports=$n_sent" --data-urlencode "message=$msg" >/dev/null
 }
 

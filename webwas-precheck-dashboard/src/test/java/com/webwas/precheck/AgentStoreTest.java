@@ -213,4 +213,27 @@ class AgentStoreTest {
         a = s.get("was01");
         assertEquals("41.0.1.Final", a.versions.get(Product.WILDFLY));
     }
+
+    /** 점검이 3분 넘게 걸려도 오프라인으로 보이면 안 됨: 옛 에이전트는 점검 중이면 "점검 중", 새 에이전트는 신호로 판단 */
+    @Test
+    void longRunIsNotOffline(@TempDir Path dir) throws Exception {
+        AgentStore s = new AgentStore(dir.resolve("agents.properties"));
+        s.create("old01", 24);
+        s.create("new01", 24);
+        long t = 1_800_000_000_000L;
+        assertEquals("schedule", s.heartbeat("old01", t, "h", null, "2.0.0", null, false));
+        assertEquals("schedule", s.heartbeat("new01", t, "h", null, "2.1.0", null, false));
+        long later = t + 10 * 60_000L;   // 10분 동안 점검 중
+        assertEquals("running", s.get("old01").state(later));     // 옛 에이전트: 신호가 없어도 점검 중
+        assertEquals("offline", s.get("new01").state(later));     // 새 에이전트: 신호가 끊기면 오프라인 (정말 멈춘 것)
+        s.heartbeat("new01", later - 30_000L, "h", null, "2.1.0", null, true);  // 점검 중 신호(busy=1)
+        assertEquals("running", s.get("new01").state(later));
+        // 점검이 끝나면 둘 다 평소 규칙
+        s.runFinished("old01", later, 0, 1, "ok");
+        assertEquals("online", s.get("old01").state(later + 60_000L));
+        assertEquals("offline", s.get("old01").state(later + 4 * 60_000L));
+        // 점검 제한 시간(2시간)이 지나면 옛 에이전트도 오프라인
+        s.heartbeat("old01", later + 5 * 60_000L, "h", null, "2.0.0", null, true);
+        assertEquals("offline", s.get("old01").state(later + 5 * 60_000L + AgentStore.RUN_TIMEOUT_MILLIS + 1));
+    }
 }

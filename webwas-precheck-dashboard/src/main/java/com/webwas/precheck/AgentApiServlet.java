@@ -69,11 +69,13 @@ public class AgentApiServlet extends HttpServlet {
         String key = "agent:" + name;
         long locked = throttle.lockedSeconds(key, ip);
         if (locked > 0) {
+            agents.authFailed(name, ip, System.currentTimeMillis(), true);
             Web.json(resp, 429, Map.of("error", "인증 실패가 반복되어 " + locked + "초 동안 차단되었습니다."));
             return;
         }
         if (!agents.authenticate(name, token)) {
             throttle.failure(key, ip);
+            agents.authFailed(name, ip, System.currentTimeMillis(), false);
             LOG.warning("[webwas-precheck] 에이전트 인증 실패: agent=" + safe(name) + " ip=" + ip);
             Web.json(resp, 401, Map.of("error", "에이전트 이름 또는 토큰이 올바르지 않습니다."));
             return;

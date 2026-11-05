@@ -713,3 +713,5 @@ pre.raw { margin: 0; padding: 12px; background: var(--code-bg); border: 1px soli
 .top-alert .btn { margin-left: 4px; vertical-align: middle; }
 .top-alert .mono { overflow-wrap: anywhere; }
 .top-alert .small-note { margin-top: 2px; }
+
+.warn-ink { color: var(--s-warning-ink); }

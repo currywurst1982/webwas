@@ -68,6 +68,7 @@ public class AgentStore {
             a.versions.putAll(versions);
             a.runStartedAt = runStartedAt; a.lastRunAt = lastRunAt; a.lastExit = lastExit;
             a.lastReportCount = lastReportCount; a.lastMessage = lastMessage; a.lastReportAt = lastReportAt;
+            a.authFailAt = authFailAt; a.authFailIp = authFailIp; a.authLocked = authLocked;
             return a;
         }
 
@@ -87,10 +88,20 @@ public class AgentStore {
             return "online";
         }
 
+        /** 마지막 토큰 인증 실패 시각·IP·차단 여부 (메모리에만. 재시작하면 지워짐) */
+        public long authFailAt;
+        public String authFailIp;
+        public boolean authLocked;
+
         public Map<String, Object> toMap(long now, String expectedSha) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("name", name);
             m.put("state", state(now));
+            // 접속은 하는데 토큰이 틀려 거절되는 중인지 (마지막 정상 접속보다 나중의 실패만)
+            boolean failing = authFailAt > lastSeen;
+            m.put("authFailAt", failing ? authFailAt : 0);
+            m.put("authFailIp", failing ? authFailIp : null);
+            m.put("authLocked", failing && authLocked);
             m.put("intervalHours", intervalHours);
             m.put("createdAt", createdAt);
             m.put("lastSeen", lastSeen);
@@ -205,6 +216,15 @@ public class AgentStore {
     }
 
     /** 토큰 확인. 맞으면 true (시간차 공격 방지를 위해 상수시간 비교). */
+    /** 토큰 인증 실패 기록 (등록된 에이전트 이름일 때만). locked = 실패가 반복되어 잠시 차단됨 */
+    public synchronized void authFailed(String name, String ip, long now, boolean locked) {
+        Agent a = name == null ? null : agents.get(name);
+        if (a == null) return;
+        a.authFailAt = now;
+        a.authFailIp = ip;
+        a.authLocked = locked;
+    }
+
     public synchronized boolean authenticate(String name, String token) {
         Agent a = name == null ? null : agents.get(name);
         String expected = a == null ? sha256("no-such-agent") : a.tokenHash;

@@ -879,13 +879,19 @@
           a.lastMessage ? h('div', { class: 'msg' }, a.lastMessage) : null)
         : h('span', { class: 'zero' }, '아직 없음');
       const actions = h('td', { class: 'admin-only' }, h('div', { class: 'row-actions' },
-        h('button', { class: 'btn small', type: 'button', disabled: a.state === 'running' || a.state === 'requested' || null, onclick: () => agentRun(a.name) }, '지금 점검'),
+        h('button', { class: 'btn small', type: 'button', disabled: a.state === 'running' || a.state === 'requested' || (a.state === 'offline' && a.pendingRun) || null,
+          title: a.state === 'offline' ? '에이전트가 오프라인이면 요청만 저장되고, 다시 접속할 때 시작합니다' : null,
+          onclick: () => agentRun(a.name, a.state) },
+          a.state === 'running' ? '점검 중' : a.state === 'requested' || a.pendingRun ? '요청됨' : '지금 점검'),
         h('select', { 'aria-label': `${a.name} 점검 주기`, onchange: e => agentInterval(a.name, e.target.value) },
           ...INTERVALS.map(([v, l]) => h('option', { value: String(v), selected: v === a.intervalHours || null }, l))),
         h('button', { class: 'btn small', type: 'button', onclick: () => agentToken(a.name) }, '토큰 재발급'),
         h('button', { class: 'btn small btn-danger', type: 'button', onclick: () => agentDelete(a.name) }, '삭제')));
       return h('tr', null,
-        h('td', null, h('span', { class: 'badge ' + st.cls }, h('span', { class: 'ic', 'aria-hidden': 'true' }, st.icon), st.label)),
+        h('td', null, h('span', { class: 'badge ' + st.cls }, h('span', { class: 'ic', 'aria-hidden': 'true' }, st.icon), st.label),
+          a.state === 'offline' && a.pendingRun ? h('div', { class: 'sub', title: '에이전트가 다시 접속하면 바로 점검을 시작합니다' }, '점검 요청됨 · 접속 대기') : null,
+          a.authFailAt ? h('div', { class: 'sub warn-ink', title: `${abs(a.authFailAt)} · 접속 IP ${a.authFailIp || '?'}` },
+            a.authLocked ? '토큰 인증 실패 반복 → 잠시 차단됨' : '토큰 인증 실패 중', ` (${rel(a.authFailAt, now)}, ${a.authFailIp || '?'}) → 토큰 재발급 필요`) : null),
         h('td', null, h('div', null, a.name), h('div', { class: 'sub mono' }, [a.hostname, a.ip].filter(Boolean).join(' · ') || '아직 접속 안 함')),
         h('td', { title: abs(a.lastSeen) }, rel(a.lastSeen, now)),
         h('td', null, lastRun),
@@ -914,7 +920,7 @@
     box.replaceChildren(
       h('b', null, `오프라인 에이전트 ${list.length}대`),
       ` — 3분 넘게 대시보드에 접속하지 않았습니다. 점검 결과가 더 이상 갱신되지 않을 수 있습니다. `,
-      h('span', { class: 'mono' }, list.slice(0, SHOW).map(a => `${a.name}(${rel(a.lastSeen, now)})`).join(', ')),
+      h('span', { class: 'mono' }, list.slice(0, SHOW).map(a => `${a.name}(${rel(a.lastSeen, now)}${a.authFailAt ? ', 토큰 인증 실패 중' : ''})`).join(', ')),
       list.length > SHOW ? ` 외 ${list.length - SHOW}대` : '', ' ',
       h('button', { class: 'btn small', type: 'button', onclick: () => { showView('agents'); loadAgents(); } }, '에이전트 화면에서 보기'),
       h('div', { class: 'muted small-note' }, '확인 방법: 그 서버에서 sudo systemctl status webwas-precheck-agent.timer / sudo /opt/webwas-precheck-agent/webwas-precheck-agent.sh test'));
@@ -975,9 +981,15 @@
     box.hidden = false;
   }
 
-  async function agentRun(name) {
-    try { await api('agents/' + encodeURIComponent(name) + '/run', { method: 'POST' }); await loadAgents(); }
-    catch (e) { alert(e.message); }
+  async function agentRun(name, st) {
+    try {
+      await api('agents/' + encodeURIComponent(name) + '/run', { method: 'POST' });
+      await loadAgents();
+      if (st === 'offline' || st === 'never') {
+        alert(`${name} 점검을 요청했습니다.\n\n다만 이 에이전트는 지금 ${st === 'never' ? '한 번도 접속하지 않은' : '오프라인'} 상태라 바로 시작되지 않습니다. `
+          + '에이전트가 다시 접속하면(1분 간격) 그때 시작합니다.\n\n그 서버에서 확인: sudo systemctl status webwas-precheck-agent.timer / sudo /opt/webwas-precheck-agent/webwas-precheck-agent.sh test');
+      }
+    } catch (e) { alert(e.message); }
   }
   async function agentInterval(name, hours) {
     try { await api('agents/' + encodeURIComponent(name) + '/interval', { method: 'POST', body: new URLSearchParams({ hours }) }); await loadAgents(); }
@@ -1731,7 +1743,8 @@
     $('#agent-dlg').addEventListener('close', () => { $('#agent-install').replaceChildren(); });
     $('#btn-run-all').addEventListener('click', async () => {
       if (!confirm('등록된 모든 에이전트에 지금 점검을 요청할까요?')) return;
-      try { const r = await api('agents-run', { method: 'POST' }); await loadAgents(); showAlert(''); alert(`${r.requested}대에 점검을 요청했습니다. 1분 안에 시작됩니다.`); }
+      try { const r = await api('agents-run', { method: 'POST' }); await loadAgents(); showAlert(''); alert(`${r.requested}대에 점검을 요청했습니다.\n온라인 ${r.requested - (r.offline || 0)}대는 1분 안에 시작됩니다.`
+        + (r.offline ? `\n오프라인(또는 설치 대기) ${r.offline}대는 에이전트가 다시 접속해야 시작됩니다. 화면 위 알림과 에이전트 목록의 상태 칸을 확인하세요.` : '')); }
       catch (err) { alert(err.message); }
     });
 

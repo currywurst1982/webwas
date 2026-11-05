@@ -236,4 +236,22 @@ class AgentStoreTest {
         s.heartbeat("old01", later + 5 * 60_000L, "h", null, "2.0.0", null, true);
         assertEquals("offline", s.get("old01").state(later + 5 * 60_000L + AgentStore.RUN_TIMEOUT_MILLIS + 1));
     }
+
+    /** 토큰이 틀린 에이전트: 인증 실패를 기록해 화면에 원인 표시. 정상 접속하면 사라짐 */
+    @Test
+    void authFailureIsShownUntilNextSuccess(@TempDir Path dir) throws Exception {
+        AgentStore s = new AgentStore(dir.resolve("agents.properties"));
+        s.create("web09", 24);
+        long t = 1_800_000_000_000L;
+        s.heartbeat("web09", t, "h", "10.0.0.9", "2.1.0", null, false, true);
+        s.authFailed("web09", "10.0.0.9", t + 60_000, false);
+        s.authFailed("nobody", "10.0.0.1", t, false);           // 없는 이름은 무시
+        java.util.Map<String, Object> m = s.get("web09").toMap(t + 70_000, null);
+        assertEquals(t + 60_000, m.get("authFailAt"));
+        assertEquals("10.0.0.9", m.get("authFailIp"));
+        s.authFailed("web09", "10.0.0.9", t + 120_000, true);
+        assertEquals(true, s.get("web09").toMap(t + 130_000, null).get("authLocked"));
+        s.heartbeat("web09", t + 200_000, "h", "10.0.0.9", "2.1.0", null, false, true); // 토큰 고친 뒤 정상 접속
+        assertEquals(0L, s.get("web09").toMap(t + 210_000, null).get("authFailAt"));
+    }
 }

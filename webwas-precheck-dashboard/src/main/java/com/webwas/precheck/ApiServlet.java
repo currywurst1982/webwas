@@ -293,8 +293,10 @@ public class ApiServlet extends HttpServlet {
         try {
             if (p.length == 1 && p[0].equals("agents-run")) {
                 int n = agents.requestRun(null);
+                long nowMs = System.currentTimeMillis();
+                long offline = agents.list().stream().filter(a -> "offline".equals(a.state(nowMs)) || "never".equals(a.state(nowMs))).count();
                 LOG.info("[webwas-precheck] 전체 에이전트 점검 요청 (" + n + "대) by " + by);
-                Web.json(resp, 200, Map.of("requested", n));
+                Web.json(resp, 200, Map.of("requested", n, "offline", offline));
             } else if (p.length == 1) {
                 String name = req.getParameter("name");
                 name = name == null ? null : name.trim();

@@ -63,7 +63,9 @@ public class ApiServlet extends HttpServlet {
         ReportStore store = Web.reports(getServletContext());
         if (p.length == 1 && p[0].equals("me")) {
             Web.json(resp, 200, Map.of("user", Web.user(req), "admin", Web.isAdmin(req),
-                    "csrf", Web.csrf(req.getSession()), "reportDir", Web.isAdmin(req) ? store.dir().toString() : ""));
+                    "csrf", Web.csrf(req.getSession()), "reportDir", Web.isAdmin(req) ? store.dir().toString() : "",
+                    "httpsOnly", AppInit.httpsOnly(),
+                    "secure", req.isSecure() || "https".equalsIgnoreCase(req.getHeader("X-Forwarded-Proto"))));
         } else if (p.length == 1 && p[0].equals("reports")) {
             LatestVersions latest = Web.latest(getServletContext());
             List<Report> all = allReports(store);
@@ -339,7 +341,7 @@ public class ApiServlet extends HttpServlet {
             Map<String, Object> r = new LinkedHashMap<>();
             r.put("file", part.getSubmittedFileName());
             try (InputStream in = part.getInputStream()) {
-                String saved = store.save(part.getSubmittedFileName(), in.readNBytes((int) ReportStore.MAX_FILE_BYTES + 1));
+                String saved = store.saveUpload(part.getSubmittedFileName(), in.readNBytes((int) ReportStore.MAX_FILE_BYTES + 1));
                 r.put("ok", true);
                 r.put("saved", saved);
                 LOG.info("[webwas-precheck] 리포트 업로드: " + saved + " by " + Web.user(req));

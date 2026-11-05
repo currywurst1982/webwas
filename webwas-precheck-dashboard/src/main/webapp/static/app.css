@@ -707,3 +707,9 @@ pre.raw { margin: 0; padding: 12px; background: var(--code-bg); border: 1px soli
 .iso-zl { min-width: 44px; text-align: right; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .iso-help { position: absolute; left: 8px; bottom: 6px; color: var(--muted); font-size: 11.5px; pointer-events: none; }
 @media (max-width: 760px) { .iso-wrap.big .iso-svg { height: 420px; } }
+
+/* ---------- 화면 위 알림 (오프라인 에이전트 / HTTP 접속) ---------- */
+.top-alert { margin: 0; display: block; line-height: 1.7; }
+.top-alert .btn { margin-left: 4px; vertical-align: middle; }
+.top-alert .mono { overflow-wrap: anywhere; }
+.top-alert .small-note { margin-top: 2px; }

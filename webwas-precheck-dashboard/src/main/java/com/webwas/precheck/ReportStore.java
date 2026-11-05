@@ -123,6 +123,35 @@ public class ReportStore {
         return base;
     }
 
+    /**
+     * 직접 업로드한 리포트를 인스턴스(호스트·제품·설치 폴더)마다 보관하는 개수. 넘으면 오래된 것부터 삭제.
+     * -Dwebwas.precheck.keep.uploads=개수 로 바꿈 (0 = 제한 없음). 기본 30 (에이전트 리포트와 같은 기준)
+     */
+    public static int keepUploads() {
+        try {
+            return Math.max(0, Integer.parseInt(System.getProperty("webwas.precheck.keep.uploads", "30").trim()));
+        } catch (NumberFormatException e) {
+            return 30;
+        }
+    }
+
+    /** 화면에서 직접 업로드: 저장한 뒤 같은 인스턴스의 직접 업로드분이 보관 개수를 넘으면 오래된 것 삭제. 반환값 = 저장된 파일명 */
+    public synchronized String saveUpload(String originalName, byte[] bytes) throws IOException {
+        String saved = save(originalName, bytes);
+        int keep = keepUploads();
+        if (keep <= 0) return saved;
+        List<Report> all = all();                    // 최신순
+        Report me = all.stream().filter(r -> r.id.equals(saved)).findFirst().orElse(null);
+        if (me == null) return saved;
+        List<Report> same = all.stream().filter(r -> r.source == null && r.instanceKey().equals(me.instanceKey())).toList();
+        for (Report old : same.subList(Math.min(keep, same.size()), same.size())) {
+            if (old.id.equals(saved)) continue;      // 방금 올린 것은 (점검 일시가 오래됐어도) 지우지 않음
+            cache.remove(old.id);
+            Files.deleteIfExists(dir.resolve(old.id));
+        }
+        return saved;
+    }
+
     /** 에이전트 1대가 보관하는 최근 리포트 수 (이보다 오래된 것은 자동 삭제) */
     public static final int KEEP_PER_AGENT = 30;
     private static final Pattern AGENT_REPORT = Pattern.compile("^(apache|wildfly|tomcat)_precheck_[A-Za-z0-9._-]{1,150}\\.txt$");

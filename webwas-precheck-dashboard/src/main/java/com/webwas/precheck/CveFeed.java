@@ -54,6 +54,12 @@ public class CveFeed {
     public static final String START = "# --- CVE_DB 시작";
     public static final String END = "# --- CVE_DB 끝 ---";
     public static final String APACHE_URL = "https://httpd.apache.org/security/vulnerabilities-httpd.json";
+    /**
+     * httpd.apache.org 에 접속하지 못할 때 쓰는 대체 경로: Apache 웹사이트 원본 저장소(github.com/apache/httpd-site)의
+     * content/security/json 폴더 목록(GitHub API) → 각 CVE JSON(raw.githubusercontent.com). 통합 JSON 이 이 폴더를 합친 것.
+     * -Dwebwas.precheck.cve.apache.fallback=off 로 끔
+     */
+    public static final String APACHE_FALLBACK = "https://api.github.com/repos/apache/httpd-site/contents/content/security/json?ref=main";
     public static final String OSV_URL = "https://osv-vulnerabilities.storage.googleapis.com/Maven/all.zip";
 
     /** 스크립트 CVE 표의 한 줄 형식 (에이전트에서도 같은 정규식으로 검사) */
@@ -135,6 +141,7 @@ public class CveFeed {
     private final Path dir;
     private final boolean auto;
     private final String apacheUrl;
+    private final String apacheFallback;
     private final String osvUrl;
     private final Map<Product, State> states = new EnumMap<>(Product.class);
 
@@ -143,6 +150,7 @@ public class CveFeed {
         Files.createDirectories(dir);
         this.auto = !"false".equalsIgnoreCase(System.getProperty("webwas.precheck.cve.auto"));
         this.apacheUrl = prop("webwas.precheck.cve.apache.url", APACHE_URL);
+        this.apacheFallback = prop("webwas.precheck.cve.apache.fallback", APACHE_FALLBACK);
         this.osvUrl = prop("webwas.precheck.cve.osv.url", OSV_URL);
         for (Product p : Product.values()) {
             State s = new State();
@@ -252,9 +260,49 @@ public class CveFeed {
             err = e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            err = "중단됨";
+            fail(Product.APACHE, "중단됨");
+            return;
+        }
+        if (err != null && !"off".equalsIgnoreCase(apacheFallback)) {
+            String first = err;
+            try {
+                List<String> feedRows = apacheRows(fetchApacheFolder(apacheFallback));
+                if (feedRows.isEmpty()) throw new IOException("대체 경로에서도 Apache CVE 를 찾지 못함");
+                store(Product.APACHE, mergeApache(rowsOfText(states.get(Product.APACHE).embeddedRows), feedRows),
+                        "github.com/apache/httpd-site (대체 경로)");
+                LOG.info("[webwas-precheck] Apache CVE: 기본 주소 실패(" + first + ") → GitHub 대체 경로로 갱신");
+                err = null;
+            } catch (IOException | IllegalArgumentException e) {
+                err = first + " / 대체 경로(GitHub)도 실패: " + e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                err = "중단됨";
+            }
         }
         fail(Product.APACHE, err);
+    }
+
+    /**
+     * 폴더 목록(GitHub contents API 형식: [{name, download_url}]) → CVE-*.json 을 하나씩 받아 배열로.
+     * 받은 주소가 목록과 같은 호스트 또는 raw.githubusercontent.com 일 때만 받음 (목록이 엉뚱한 곳을 가리키지 않도록)
+     */
+    static List<Object> fetchApacheFolder(String listUrl) throws IOException, InterruptedException {
+        Object list = JsonParser.parse(Fetch.text(listUrl));
+        if (!(list instanceof List<?> items)) throw new IOException("폴더 목록 형식이 아님");
+        java.net.URI base = java.net.URI.create(listUrl);
+        List<Object> out = new ArrayList<>();
+        for (Object it : items) {
+            String name = JsonParser.str(it, "name"), url = JsonParser.str(it, "download_url");
+            if (name == null || url == null || !name.matches("CVE-\\d{4}-\\d{4,7}\\.json")) continue;
+            java.net.URI u = base.resolve(url);
+            boolean okHost = "raw.githubusercontent.com".equalsIgnoreCase(u.getHost())
+                    || (u.getScheme() != null && u.getScheme().equals(base.getScheme()) && java.util.Objects.equals(u.getHost(), base.getHost()));
+            if (!okHost) continue;
+            if (out.size() >= 5000) break;
+            out.add(JsonParser.parse(Fetch.text(u.toString())));
+        }
+        if (out.isEmpty()) throw new IOException("폴더 목록에 CVE JSON 이 없음");
+        return out;
     }
 
     public void refreshOsv() {

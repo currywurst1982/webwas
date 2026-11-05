@@ -898,8 +898,40 @@
     if (!rows.length) rows.push(h('tr', null, h('td', { colspan: '9', class: 'muted' },
       state.me.admin ? '등록된 에이전트가 없습니다. [에이전트 추가]로 점검할 서버(Apache·WildFly·Tomcat)에 에이전트를 설치하세요.' : '등록된 에이전트가 없습니다.')));
     $('#agents tbody').replaceChildren(...rows);
+    renderAgentAlert();
     renderSideAgents();
     renderAgentTiles();
+  }
+
+  /** 화면 위 알림: 3분 넘게 접속하지 않은 에이전트 (점검 결과가 끊길 수 있으므로 개요·서버 목록에서도 바로 보이게) */
+  function renderAgentAlert() {
+    const box = $('#agent-alert');
+    const list = ((state.agents && state.agents.agents) || []).filter(a => a.state === 'offline');
+    if (!list.length) { box.hidden = true; return; }
+    const now = state.agents.now;
+    list.sort((a, b) => a.lastSeen - b.lastSeen); // 오래 끊긴 것부터
+    const SHOW = 5;
+    box.replaceChildren(
+      h('b', null, `오프라인 에이전트 ${list.length}대`),
+      ` — 3분 넘게 대시보드에 접속하지 않았습니다. 점검 결과가 더 이상 갱신되지 않을 수 있습니다. `,
+      h('span', { class: 'mono' }, list.slice(0, SHOW).map(a => `${a.name}(${rel(a.lastSeen, now)})`).join(', ')),
+      list.length > SHOW ? ` 외 ${list.length - SHOW}대` : '', ' ',
+      h('button', { class: 'btn small', type: 'button', onclick: () => { showView('agents'); loadAgents(); } }, '에이전트 화면에서 보기'),
+      h('div', { class: 'muted small-note' }, '확인 방법: 그 서버에서 sudo systemctl status webwas-precheck-agent.timer / sudo /opt/webwas-precheck-agent/webwas-precheck-agent.sh test'));
+    box.hidden = false;
+  }
+
+  /** HTTP 로 접속 중이면 관리자에게 경고 (비밀번호·점검 결과가 암호화되지 않음) */
+  function renderHttpAlert() {
+    const box = $('#http-alert');
+    const insecure = state.me && !state.me.secure && location.protocol === 'http:' && !/^(localhost|127\.)/.test(location.hostname);
+    let dismissed = false;
+    try { dismissed = sessionStorage.getItem('precheck.httpAlert') === 'off'; } catch (e) { /* 저장 불가 */ }
+    if (!insecure || !state.me.admin || dismissed) { box.hidden = true; return; }
+    box.replaceChildren(h('b', null, 'HTTP 로 접속 중'),
+      ' — 로그인 비밀번호, 에이전트 토큰, 점검 결과가 암호화되지 않은 채 네트워크로 오갑니다. README 의 "HTTPS 적용" 순서대로 HTTPS 를 켜 주세요. ',
+      h('button', { class: 'btn small', type: 'button', onclick: () => { try { sessionStorage.setItem('precheck.httpAlert', 'off'); } catch (e) { /* 무시 */ } box.hidden = true; } }, '이번 접속 동안 숨기기'));
+    box.hidden = false;
   }
 
   function dashboardUrl() {
@@ -1603,6 +1635,7 @@
       return;
     }
     document.body.classList.toggle('is-admin', !!state.me.admin);
+    renderHttpAlert();
     $('#who').textContent = `${state.me.user} (${state.me.admin ? '관리자' : '조회 전용'})`;
     $('#logout-csrf').value = state.me.csrf;
     if (state.me.reportDir) $('#report-dir').textContent = `(리포트 폴더: ${state.me.reportDir})`;

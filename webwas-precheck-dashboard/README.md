@@ -73,6 +73,8 @@
 | WildFly | `https://osv-vulnerabilities.storage.googleapis.com/Maven/all.zip` (OSV, 약 10MB) | 기존 `tools/gen_cve_table.py` 와 **같은 규칙**을 Java 로 옮김 (시험: 같은 데이터로 두 결과 149줄이 완전히 일치) |
 | Tomcat | 위와 같은 OSV 파일 (`org.apache.tomcat*` 패키지) | Tomcat 본체는 항상 해당, 선택 구성요소(jasper·websocket·tribes·jmx-remote·coyote-ffm)는 `lib/` 에 jar 가 있을 때만 해당 |
 
+- **Apache 대체 경로**: `httpd.apache.org` 에 접속하지 못하면 Apache 웹사이트 원본 저장소(github.com/apache/httpd-site, `api.github.com` 폴더 목록 + `raw.githubusercontent.com` 파일)에서 같은 CVE JSON 을 받아 씁니다. 설정 화면에 "github.com/apache/httpd-site (대체 경로)" 로 표시. 끄려면 `-Dwebwas.precheck.cve.apache.fallback=off`.
+- **실제 데이터 검증 (2026-11-05)**: Apache 웹사이트 원본의 CVE JSON 288건(2026-10-29 기준)으로 변환해 보니 2.4.x 영향 CVE 180건, 스크립트에 사람이 정리해 둔 38건은 **영향 버전·등급이 모두 일치**(다름 0, 빠짐 0), 새로 추가되는 CVE 142건. 이 데이터는 테스트 자료로 넣어 두어 `mvn test` 때마다 다시 확인합니다.
 - 받은 데이터가 이상하면(0건, 형식 오류, 접속 실패) **이전 목록을 그대로 쓰고** 설정 화면에 "최근 갱신 실패"로 표시합니다. 이전 목록도 없으면 스크립트 내장 목록을 씁니다.
 - 에이전트가 목록을 못 받으면 **지난번에 받은 목록 → 스크립트 내장 목록** 순서로 씁니다. 리포트 상세 화면에 어떤 목록으로 판정했는지(`CVE 목록: 대시보드 자동 업데이트본 (생성 …)`) 나옵니다.
 - 스크립트는 받은 목록에서 **정해진 형식에 맞는 줄만** 읽습니다(명령으로 실행하지 않음, 데이터로만 사용).
@@ -174,6 +176,19 @@ sudo bash /tmp/webwas-precheck-install.sh --uninstall             # 에이전트
 ```
 
 - 제품이 꺼져 있어도 점검하려면 설정 파일의 `PRODUCTS=auto` 를 `PRODUCTS="apache tomcat"` 처럼 바꿉니다.
+- **에이전트 재설치(업데이트)** — 대시보드에 새 WAR 를 먼저 배포한 뒤, 점검 서버에서 `sudo -i` 로 root 가 되어 아래를 붙여 넣습니다.
+  기존 설정 파일에서 주소·이름·토큰을 읽으므로 토큰을 새로 발급할 필요가 없고, PRODUCTS·로그 경로 같은 설정도 유지됩니다.
+  ```bash
+  F=/etc/webwas-precheck-agent.conf
+  U=$(sed -n "s/^DASHBOARD_URL='\(.*\)'$/\1/p" $F)
+  N=$(sed -n "s/^AGENT_NAME='\(.*\)'$/\1/p" $F)
+  T=$(sed -n "s/^AGENT_TOKEN='\(.*\)'$/\1/p" $F)
+  C=$(sed -n "s/^CA_CERT='\(.*\)'$/\1/p" $F)
+  echo "대시보드: $U / 에이전트: $N"
+  curl -fsSo /tmp/webwas-precheck-install.sh ${C:+--cacert "$C"} "$U/agent-api/files/install.sh" && PRECHECK_AGENT_TOKEN="$T" bash /tmp/webwas-precheck-install.sh "$U" "$N" ${C:+--ca-cert "$C"}
+  ```
+  확인: `grep '^AGENT_VERSION' /opt/webwas-precheck-agent/webwas-precheck-agent.sh` → `2.1.0` 이상.
+  HTTPS 로 바꿀 때는 `U=` 줄 대신 `U=https://<대시보드주소>:8443/webwas-precheck`, `C=` 줄 대신 `C=/경로/dashboard-ca.pem` 처럼 직접 넣습니다.
 - 기존 Apache/WildFly 에이전트(`/opt/precheck-agent`, `/opt/wfprecheck-agent`)는 각 설치 파일의 `--uninstall` 로 지운 뒤 새 에이전트를 설치하세요(같이 두면 이중 점검됩니다).
 - "점검한 제품이 모두 최신인 서버는 자동 점검 제외"는 **그 서버의 모든 제품·인스턴스가 최신**일 때만 적용됩니다.
 
@@ -199,7 +214,52 @@ sudo bash tomcat_precheck.sh -C tomcat_cve.txt   # 대시보드에서 받은 최
 
 ## 7. 운영 시 주의
 
-- **HTTPS 로 운영하세요.** 리포트에 서버 경로·설정·공격 IP 가 들어 있고, 설치 파일·CVE 목록은 로그인 없이 받을 수 있어 HTTP 면 바꿔치기될 수 있습니다. HTTPS 를 쓰면 `WEB-INF/web.xml` 의 `<secure>true</secure>` 주석을 풀어 주세요.
+- **HTTPS 로 운영하세요.** 리포트에 서버 경로·설정·공격 IP 가 들어 있고, 설치 파일·CVE 목록은 로그인 없이 받을 수 있어 HTTP 면 바꿔치기될 수 있습니다. 아래 "HTTPS 적용" 참고. 관리자가 HTTP 로 접속하면 화면 위에 경고가 나옵니다.
+- **오프라인 에이전트 알림**: 3분 넘게 접속하지 않은 에이전트가 있으면 모든 화면 위에 이름·마지막 접속 시각과 함께 알림이 나옵니다(오래 끊긴 순).
+- **직접 업로드한 리포트 보관 개수**: 인스턴스(호스트·제품·설치 폴더)마다 최근 30개만 남기고 오래된 것은 업로드할 때 자동 삭제합니다(에이전트 리포트와 같은 기준). `-Dwebwas.precheck.keep.uploads=개수`(0 = 제한 없음). 에이전트가 보낸 리포트는 이 설정과 관계없이 에이전트마다 30개.
+
+## 8. HTTPS 적용 (단계별)
+
+> ⚠️ 아래 WildFly 명령은 WildFly 27 이상의 기본 설정(standalone.xml, Elytron)을 기준으로 작성했고, **이 저장소 작업 환경에서는 WildFly 를 실행할 수 없어 직접 시험하지 못했습니다.** 운영 서버에 바로 적용하기 전에 시험 서버에서 먼저 해 보세요.
+> 대시보드 앞에 Apache/Nginx/L4 같은 장비가 있고 거기서 HTTPS 를 처리한다면 1~3단계 대신 그 장비에 인증서를 넣고, 장비가 `X-Forwarded-Proto: https` 헤더를 보내게 한 뒤 4단계만 하면 됩니다.
+
+**1. 인증서 준비** — 회사 인증서(.p12/.pfx)가 있으면 그것을 쓰고, 없으면 시험용 자체 서명 인증서를 만듭니다. (`dashboard.example.com`, `10.0.0.5` 는 실제 대시보드 주소로 바꾸기)
+```bash
+sudo mkdir -p /data/webwas-precheck-tls && sudo chown was: /data/webwas-precheck-tls && sudo chmod 700 /data/webwas-precheck-tls
+```
+```bash
+sudo -u was keytool -genkeypair -alias dashboard -keyalg RSA -keysize 2048 -validity 825 -storetype PKCS12 \
+  -keystore /data/webwas-precheck-tls/dashboard.p12 -storepass '강한비밀번호' \
+  -dname "CN=dashboard.example.com" -ext "SAN=dns:dashboard.example.com,ip:10.0.0.5"
+```
+
+**2. WildFly 에 인증서 등록** (WildFly 가 켜진 상태에서, 관리 CLI 접속)
+```bash
+<WildFly설치경로>/bin/jboss-cli.sh --connect --controller=127.0.0.1:9990
+```
+CLI 안에서 한 줄씩 입력합니다.
+```
+/subsystem=elytron/key-store=dashKS:add(path=/data/webwas-precheck-tls/dashboard.p12, type=PKCS12, credential-reference={clear-text="강한비밀번호"})
+/subsystem=elytron/key-manager=dashKM:add(key-store=dashKS, credential-reference={clear-text="강한비밀번호"})
+/subsystem=elytron/server-ssl-context=dashSSC:add(key-manager=dashKM, protocols=["TLSv1.3","TLSv1.2"])
+/subsystem=undertow/server=default-server/https-listener=https:write-attribute(name=ssl-context, value=dashSSC)
+reload
+```
+**3. 확인** — 브라우저에서 `https://<대시보드주소>:8443/webwas-precheck/` 가 열리면 성공 (자체 서명 인증서면 브라우저 경고가 나오는 것이 정상)
+
+**4. 대시보드를 HTTPS 전용으로** — HTTP 로 들어오면 HTTPS 로 이동, 로그인 쿠키 Secure, HSTS. (HTTPS 포트가 8443 이 아니면 `webwas.precheck.https.port` 도 지정)
+```bash
+<WildFly설치경로>/bin/jboss-cli.sh --connect --controller=127.0.0.1:9990 --command='/system-property=webwas.precheck.https:add(value=true)'
+```
+WildFly 재시작 후 server.log 에 `HTTPS 전용 모드` 가 나오면 적용된 것입니다.
+- 에이전트 API(`/agent-api`)는 HTTP 로 설치된 에이전트가 끊기지 않도록 이동시키지 않습니다. **에이전트는 https 주소로 다시 설치**하세요.
+  자체 서명/사설 인증서면 인증서를 파일로 꺼내 각 서버에 두고 `--ca-cert` 로 지정합니다.
+  ```bash
+  sudo -u was keytool -exportcert -rfc -alias dashboard -keystore /data/webwas-precheck-tls/dashboard.p12 -storepass '강한비밀번호' -file /data/webwas-precheck-tls/dashboard-ca.pem
+  ```
+  (재설치 명령은 위 "에이전트 재설치"와 같고, 주소만 `https://...:8443/webwas-precheck`, 끝에 `--ca-cert /경로/dashboard-ca.pem`)
+- 되돌리기: `/system-property=webwas.precheck.https:remove` 후 재시작.
+- 주의: 앞단 장비 없이 직접 HTTPS 를 쓰는 경우, 대시보드는 `X-Forwarded-Proto` 헤더를 그대로 믿습니다. HTTP 포트를 외부에 열어 두지 않는 것이 안전합니다.
 - 결과는 '알려진 패턴' 기준이며 안전을 보증하지 않습니다. 침해 의심 서버는 설정 보완보다 침해사고 대응이 우선입니다.
 - 사내망 전용 전제입니다. 인터넷에 직접 노출하지 마세요.
 
@@ -213,8 +273,10 @@ sudo bash tomcat_precheck.sh -C tomcat_cve.txt   # 대시보드에서 받은 최
 | 대시보드 실행(Jetty) + 에이전트 `run` 실제 흐름 | CVE 목록 받기 → Tomcat 점검 → 리포트 전송 → 화면 표시, "스크립트: 대시보드와 같음" 확인 |
 | WildFly 최신 버전 자동 확인 | Maven Central 에서 42.0.0.Final 확인, 에이전트가 받은 목록으로 스크립트 기준도 42.0.0.Final 로 바뀜 |
 
-**확인하지 못한 것**: 작업 환경 네트워크 정책 때문에 `httpd.apache.org` 에 접속할 수 없어, **Apache 공식 JSON 전체를 실제로 받아 변환하는 것은 시험하지 못했습니다.**
-같은 형식의 실제 CVE JSON 5건(2017~2026년, 4.0·5.x 형식)으로만 시험했습니다. 운영 대시보드에서 설정 화면의 Apache 행이 "자동 업데이트본"이 되는지 꼭 확인하세요.
+**확인하지 못한 것**: 작업 환경 네트워크 정책 때문에 `httpd.apache.org` 에 직접 접속하는 것은 시험하지 못했습니다.
+대신 2026-11-05 에 같은 데이터의 원본(github.com/apache/httpd-site 의 CVE JSON 288건)으로 변환을 검증했습니다(내장 38건 모두 일치, 위 "CVE 목록 자동 업데이트" 참고).
+운영 대시보드에서 설정 화면의 Apache 행이 "자동 업데이트본"이 되는지 확인하세요. GitHub 대체 경로(api.github.com 폴더 목록)는 실제 GitHub 에서 시험하지 못했고, 같은 형식의 파일로만 시험했습니다.
+HTTPS 적용(8장)의 WildFly CLI 명령도 이 환경에서 WildFly 를 실행할 수 없어 시험하지 못했습니다. 대시보드의 HTTPS 전용 모드(이동·쿠키·HSTS)는 Jetty 로 확인했습니다.
 또 Tomcat 은 실행 중인 프로세스 탐지·열린 포트(ss) 확인 부분을 실제 실행 상태에서 시험하지 못했습니다(이 환경에서 Tomcat 실행이 허용되지 않음).
 
 ## 개발자용 메모

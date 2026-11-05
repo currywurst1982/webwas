@@ -10,8 +10,7 @@
     <session-timeout>30</session-timeout>
     <cookie-config>
       <http-only>true</http-only>
-      <!-- HTTPS 로 운영하면 아래 주석을 풀어 쿠키를 HTTPS 전용으로 -->
-      <!-- <secure>true</secure> -->
+      <!-- HTTPS 전용 쿠키(Secure)는 WAR 를 고치지 않고 -Dwebwas.precheck.https=true 로 켭니다 (README "HTTPS 적용") -->
       <attribute>
         <attribute-name>SameSite</attribute-name>
         <attribute-value>Strict</attribute-value>

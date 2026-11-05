@@ -32,6 +32,22 @@ public class AuthFilter extends HttpFilter {
                         + "object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
 
         String path = req.getRequestURI().substring(req.getContextPath().length());
+        boolean secure = req.isSecure() || "https".equalsIgnoreCase(req.getHeader("X-Forwarded-Proto"));
+        if (AppInit.httpsOnly()) {
+            if (secure) {
+                resp.setHeader("Strict-Transport-Security", "max-age=31536000");
+            } else if (!path.startsWith("/agent-api/")) {
+                // 브라우저의 HTTP 접속은 HTTPS 로 이동 (GET 만. 그 밖의 요청은 막음: 비밀번호가 평문으로 오가지 않도록)
+                if (SAFE_METHODS.contains(req.getMethod())) {
+                    int port = AppInit.httpsPort();
+                    String q = req.getQueryString();
+                    resp.sendRedirect("https://" + req.getServerName() + (port == 443 ? "" : ":" + port) + req.getRequestURI() + (q == null ? "" : "?" + q));
+                } else {
+                    resp.sendError(403, "HTTPS 로 접속하세요.");
+                }
+                return;
+            }
+        }
         // 에이전트 API 는 로그인 세션 대신 에이전트 토큰으로 인증 (AgentApiServlet)
         if (PUBLIC.contains(path) || path.startsWith("/agent-api/")) {
             chain.doFilter(req, resp);

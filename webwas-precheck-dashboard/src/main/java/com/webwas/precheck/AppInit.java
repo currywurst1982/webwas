@@ -47,6 +47,26 @@ public class AppInit implements ServletContextListener {
             Product.TOMCAT, Pattern.compile("^LATEST_BRANCHES=\"([0-9. ]+)\"", Pattern.MULTILINE));
     private static final long REFRESH_HOURS = 12;
     private ScheduledExecutorService scheduler;
+    /**
+     * HTTPS 전용 모드: -Dwebwas.precheck.https=true (또는 환경변수 WEBWAS_PRECHECK_HTTPS=true).
+     * 켜면 로그인 쿠키에 Secure 를 붙이고(HTTP 로는 쿠키가 전송되지 않음), 브라우저의 HTTP 접속을 HTTPS 로 돌리고, HSTS 헤더를 보냄.
+     * 에이전트 API(/agent-api) 는 돌리지 않음 (HTTP 로 설치된 에이전트가 갑자기 끊기지 않도록. 에이전트는 https 주소로 재설치 권장)
+     */
+    public static boolean httpsOnly() {
+        String v = System.getProperty("webwas.precheck.https");
+        if (v == null || v.isBlank()) v = System.getenv("WEBWAS_PRECHECK_HTTPS");
+        return "true".equalsIgnoreCase(v == null ? "" : v.trim());
+    }
+
+    /** HTTP → HTTPS 로 돌릴 때의 포트 (WildFly 기본 8443). -Dwebwas.precheck.https.port */
+    public static int httpsPort() {
+        try {
+            return Integer.parseInt(System.getProperty("webwas.precheck.https.port", "8443").trim());
+        } catch (NumberFormatException e) {
+            return 8443;
+        }
+    }
+
     public static final String INITIAL_PASSWORD_FILE = "initial-admin-password.txt";
 
     public static Path dataDir() {
@@ -67,6 +87,10 @@ public class AppInit implements ServletContextListener {
             if (users.isEmpty()) createInitialAdmin(users, data);
             ctx.setAttribute(ATTR_USERS, users);
             ctx.setAttribute(ATTR_REPORTS, new ReportStore(reports));
+            if (httpsOnly()) {
+                ctx.getSessionCookieConfig().setSecure(true);
+                LOG.info("[webwas-precheck] HTTPS 전용 모드: 로그인 쿠키 Secure, 브라우저 HTTP 접속은 https 포트 " + httpsPort() + " 로 이동");
+            }
             ctx.setAttribute(ATTR_THROTTLE, new LoginThrottle());
             ctx.setAttribute(ATTR_AGENTS, new AgentStore(data.resolve("agents.properties")));
             Map<Product, String> scripts = new EnumMap<>(Product.class);

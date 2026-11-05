@@ -793,8 +793,8 @@
           h('span', { class: 'sched-meta' }, meta + Object.entries(a.versions || {}).map(([p, v]) => ` · ${PRODUCTS[p]} ${v.replace(/\.Final$/, '')}`).join('') + (rep ? ` · 점검 ${rel(rep.fileModified, now)}` : ''))),
         rep && rep.intrusion === 'compromise' ? badge('compromise')
           : h('span', { class: 'badge ' + st.cls }, h('span', { class: 'ic', 'aria-hidden': 'true' }, st.icon), st.label)));
-    }), more > 0 ? h('li', { class: 'side-more' }, h('button', { class: 'btn-link', type: 'button', onclick: () => { showView('agents'); loadAgents(); } },
-      `외 ${more}대 — 에이전트 화면에서 전체 보기`)) : null);
+    }), ...(more > 0 ? [h('li', { class: 'side-more' }, h('button', { class: 'btn-link', type: 'button', onclick: () => { showView('agents'); loadAgents(); } },
+      `외 ${more}대 — 에이전트 화면에서 전체 보기`))] : [])); // (replaceChildren 에 null 을 넘기면 글자 "null" 이 됨)
   }
 
   /** 인스턴스별 최신 리포트 중 [4] 침해 흔적에 위험/주의가 있는 것 */

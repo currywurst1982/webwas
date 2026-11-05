@@ -92,6 +92,35 @@ final class Web {
         return sb.toString();
     }
 
+    /**
+     * 큰 JSON 응답용: 브라우저가 받을 수 있으면 gzip 으로 압축하고, ETag 가 같으면(바뀐 것 없음) 304 만 보냄.
+     * etag 가 null 이면 비교하지 않음.
+     */
+    static void json(HttpServletRequest req, HttpServletResponse resp, Object body, String etag) throws IOException {
+        resp.setHeader("Cache-Control", "no-store");
+        if (etag != null) {
+            resp.setHeader("ETag", etag);
+            if (etag.equals(req.getHeader("If-None-Match"))) {
+                resp.setStatus(304);
+                return;
+            }
+        }
+        byte[] bytes = Json.write(body).getBytes(StandardCharsets.UTF_8);
+        resp.setStatus(200);
+        resp.setContentType("application/json;charset=UTF-8");
+        String ae = req.getHeader("Accept-Encoding");
+        if (bytes.length > 2048 && ae != null && ae.toLowerCase(java.util.Locale.ROOT).contains("gzip")) {
+            resp.setHeader("Content-Encoding", "gzip");
+            resp.setHeader("Vary", "Accept-Encoding");
+            try (java.util.zip.GZIPOutputStream gz = new java.util.zip.GZIPOutputStream(resp.getOutputStream(), 8192)) {
+                gz.write(bytes);
+            }
+        } else {
+            resp.setContentLength(bytes.length);
+            resp.getOutputStream().write(bytes);
+        }
+    }
+
     static void json(HttpServletResponse resp, int status, Object body) throws IOException {
         resp.setStatus(status);
         resp.setContentType("application/json;charset=UTF-8");

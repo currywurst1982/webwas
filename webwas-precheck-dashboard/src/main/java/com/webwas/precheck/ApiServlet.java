@@ -18,7 +18,10 @@ import java.util.logging.Logger;
 /**
  * 대시보드 화면이 사용하는 JSON API. (로그인·CSRF 검사는 AuthFilter 에서 끝난 상태)
  *  GET    /api/me                    현재 사용자
- *  GET    /api/reports               리포트 요약 목록
+ *  GET    /api/reports               인스턴스별 최신 리포트 요약 (화면 기본. ETag·gzip)
+ *  GET    /api/reports?scope=all     전체 리포트 요약 (서버 목록에서 "인스턴스별 최신만" 을 끌 때)
+ *  GET    /api/reports?instance=키   한 인스턴스의 점검 이력
+ *  GET    /api/daily?days=14         일자·제품·에이전트별 점검 건수 / 침해 의심 건수 (추이 차트용)
  *  GET    /api/reports/{파일명}       리포트 상세
  *  GET    /api/reports/{파일명}/raw   원본 텍스트
  *  POST   /api/reports               리포트 업로드 (관리자, multipart "files")
@@ -63,9 +66,32 @@ public class ApiServlet extends HttpServlet {
                     "csrf", Web.csrf(req.getSession()), "reportDir", Web.isAdmin(req) ? store.dir().toString() : ""));
         } else if (p.length == 1 && p[0].equals("reports")) {
             LatestVersions latest = Web.latest(getServletContext());
-            Web.json(resp, 200, allReports(store).stream().map(r -> r.toSummary(latest)).toList());
+            List<Report> all = allReports(store);
+            String scope = "all".equals(req.getParameter("scope")) ? "all" : "latest";
+            String instance = req.getParameter("instance");
+            List<Report> out;
+            if (instance != null) {
+                out = all.stream().filter(r -> r.instanceKey().equals(instance)).toList();
+                scope = "instance:" + instance;
+            } else if (scope.equals("all")) {
+                out = all;
+            } else {
+                out = ConfigIssues.latestPerInstance(all);
+            }
+            resp.setHeader("X-Total-Reports", String.valueOf(all.size()));
+            Web.json(req, resp, out.stream().map(r -> r.toSummary(latest)).toList(), etag(store, scope));
+        } else if (p.length == 1 && p[0].equals("daily")) {
+            int days = 14;
+            try {
+                days = Math.max(1, Math.min(90, Integer.parseInt(req.getParameter("days"))));
+            } catch (RuntimeException ignored) {
+                // 기본 14일
+            }
+            Web.json(req, resp, daily(allReports(store), days), etag(store, "daily" + days));
         } else if ((p.length == 2 || p.length == 3) && p[0].equals("reports")) {
-            Report r = p[1] == null ? null : allReports(store).stream().filter(x -> x.id.equals(p[1])).findFirst().orElse(null);
+            Report light = p[1] == null ? null : allReports(store).stream().filter(x -> x.id.equals(p[1])).findFirst().orElse(null);
+            Report r = light == null ? null : store.full(light.id);
+            if (r != null) r.fallbackIp = light.fallbackIp;
             if (r == null) {
                 Web.json(resp, 404, Map.of("error", "리포트를 찾을 수 없습니다."));
             } else if (p.length == 3 && p[2].equals("raw")) {
@@ -78,12 +104,18 @@ public class ApiServlet extends HttpServlet {
                 sendPdf(resp, IntrusionPdf.single(r, Web.latest(getServletContext()), Web.user(req)),
                         "intrusion_" + ascii(r.host) + "_" + ascii(r.checkedAt) + ".pdf");
             } else if (p.length == 2) {
-                Web.json(resp, 200, r.toDetail(Web.latest(getServletContext())));
+                Web.json(req, resp, r.toDetail(Web.latest(getServletContext())), null);
             } else {
                 Web.json(resp, 404, Map.of("error", "없는 주소입니다."));
             }
         } else if (p.length == 1 && p[0].equals("suspects.pdf")) {
-            List<Report> suspects = suspects(allReports(store));
+            List<Report> suspects = new ArrayList<>();
+            for (Report light : suspects(allReports(store))) { // PDF 에는 [4] 원문이 필요하므로 파일에서 다시 읽음
+                Report full = store.full(light.id);
+                if (full == null) continue;
+                full.fallbackIp = light.fallbackIp;
+                suspects.add(full);
+            }
             if (suspects.isEmpty()) {
                 Web.json(resp, 404, Map.of("error", "침해 의심 서버가 없습니다."));
                 return;
@@ -322,6 +354,43 @@ public class ApiServlet extends HttpServlet {
             return;
         }
         Web.json(resp, 200, results);
+    }
+
+    /**
+     * 화면 데이터가 바뀌었는지 판단하는 값: 리포트 폴더 상태 + 최신 버전 기준 + 에이전트 접속 IP(이전 리포트의 IP 대신 표시).
+     * 같으면 304 로 응답해 30초마다 같은 데이터를 다시 보내지 않음. (allReports() 를 먼저 불러 폴더 상태를 갱신한 뒤 호출)
+     */
+    private String etag(ReportStore store, String scope) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(store.version()).append('|').append(scope).append('|').append(Web.latest(getServletContext()).summary());
+        for (AgentStore.Agent a : Web.agents(getServletContext()).list()) sb.append('|').append(a.name).append('=').append(a.ip);
+        return "\"" + Integer.toHexString(sb.toString().hashCode()) + Long.toHexString(store.version()) + "\"";
+    }
+
+    /** 일자(점검 일시 앞 10자리)·제품·에이전트별 점검 건수와 침해 의심 건수. 최근 days 일만 */
+    static Map<String, Object> daily(List<Report> all, int days) {
+        java.time.LocalDate today = java.time.LocalDate.now();
+        String from = today.minusDays(days - 1L).toString();
+        Map<String, int[]> agg = new java.util.TreeMap<>();
+        for (Report r : all) {
+            String d = r.checkedAt == null || r.checkedAt.length() < 10 ? null : r.checkedAt.substring(0, 10);
+            if (d == null || d.compareTo(from) < 0) continue;
+            String k = d + "\t" + r.product.id + "\t" + (r.source == null ? "" : r.source);
+            int[] v = agg.computeIfAbsent(k, x -> new int[2]);
+            v[0]++;
+            if ("compromise".equals(r.intrusionStatus())) v[1]++;
+        }
+        List<Object> rows = new ArrayList<>();
+        agg.forEach((k, v) -> {
+            String[] t = k.split("\t", -1);
+            rows.add(List.of(t[0], t[1], t[2], v[0], v[1]));
+        });
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("from", from);
+        m.put("to", today.toString());
+        m.put("rows", rows);                 // [일자, 제품, 에이전트("" = 수동 업로드), 점검 건수, 침해 의심 건수]
+        m.put("totalReports", all.size());
+        return m;
     }
 
     /**

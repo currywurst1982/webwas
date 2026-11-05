@@ -120,6 +120,24 @@
     return body;
   }
 
+  /**
+   * 큰 목록용 요청: 지난번 응답의 ETag 를 보내 바뀐 것이 없으면(304) 지난 데이터를 그대로 씀.
+   * 반환: { data, changed, total }
+   */
+  const etagCache = new Map();
+  async function apiCached(path) {
+    const prev = etagCache.get(path);
+    const res = await fetch('api/' + path, { credentials: 'same-origin', cache: 'no-store',
+      headers: prev ? { 'If-None-Match': prev.etag } : {} });
+    if (res.status === 401) { location.href = 'login'; throw new Error('로그인이 필요합니다.'); }
+    if (res.status === 304 && prev) return { data: prev.data, changed: false, total: prev.total };
+    const body = await res.json();
+    if (!res.ok) throw new Error((body && body.error) || ('요청 실패 (' + res.status + ')'));
+    const total = +(res.headers.get('X-Total-Reports') || 0);
+    if (res.headers.get('ETag')) etagCache.set(path, { etag: res.headers.get('ETag'), data: body, total });
+    return { data: body, changed: true, total };
+  }
+
   function showAlert(msg) {
     const a = $('#alert');
     a.textContent = msg;
@@ -137,15 +155,8 @@
     const latestOnly = $('#f-latest').checked;
     const dqOnly = $('#f-dq').checked;
     const src = state.sourceFilter;
-    let list = state.reports.filter(r => !state.product || r.product === state.product);
-    if (latestOnly) {
-      const seen = new Set();
-      list = list.filter(r => { // 서버에서 최신순 정렬되어 옴
-        if (seen.has(r.instanceKey)) return false;
-        seen.add(r.instanceKey);
-        return true;
-      });
-    }
+    // state.reports 는 인스턴스별 최신만(서버에서 걸러 옴). 끄면 전체 이력(state.allReports, 필요할 때만 받음)
+    let list = (latestOnly || !state.allReports ? state.reports : state.allReports).filter(r => !state.product || r.product === state.product);
     return list.filter(r => {
       if (st && r.status !== st) return false;
       if (dqOnly && !r.dataQuality.length) return false;
@@ -205,7 +216,7 @@
     const list = sortList(filtered());
     const ov = overviewList();
     $('#empty').hidden = state.reports.length > 0;
-    $('#f-count').textContent = state.reports.length ? `${list.length}건 표시 / 전체 리포트 ${state.reports.length}건` : '';
+    $('#f-count').textContent = state.reports.length ? `${list.length}건 표시 / 인스턴스 ${state.reports.length}개 · 보관 리포트 ${state.totalReports || state.reports.length}건` : '';
     const chip = $('#f-source');
     chip.hidden = !state.sourceFilter;
     if (state.sourceFilter) {
@@ -279,12 +290,17 @@
     bell.textContent = String(allComp);
   }
 
+  /** 서버 목록 표에 한 번에 그리는 행 수 (전체 이력 9,000줄을 한꺼번에 그리면 10초 이상 걸림) */
+  const TABLE_PAGE = 500;
+  state.tableLimit = TABLE_PAGE;
+
   function renderTable(list) {
     $$('#servers th[data-sort]').forEach(th => {
       th.classList.toggle('sorted', th.dataset.sort === state.sort.key);
       th.classList.toggle('asc', th.dataset.sort === state.sort.key && state.sort.asc);
     });
-    const rows = list.map(r => {
+    const shown = list.slice(0, state.tableLimit);
+    const rows = shown.map(r => {
       const num = v => h('td', { class: 'num' + (v ? '' : ' zero') }, String(v));
       const chips = Object.entries(r.cveUnpatched).filter(([, v]) => v > 0)
         .map(([sev, v]) => h('span', { class: 'badge b-' + sev, title: sev }, `${sev[0].toUpperCase()} ${v}`));
@@ -307,6 +323,14 @@
       return tr;
     });
     if (!rows.length) rows.push(h('tr', null, h('td', { colspan: '11', class: 'muted' }, state.reports.length ? '조건에 맞는 결과가 없습니다.' : '등록된 리포트가 없습니다.')));
+    if (list.length > shown.length) {
+      const left = list.length - shown.length;
+      rows.push(h('tr', { class: 'more-row' }, h('td', { colspan: '11' },
+        `${shown.length}건 표시 중 · 남은 ${left}건 `,
+        h('button', { class: 'btn small', type: 'button', onclick: () => { state.tableLimit += TABLE_PAGE; renderTable(sortList(filtered())); } },
+          `다음 ${Math.min(TABLE_PAGE, left)}건 더 보기`),
+        ' ', h('span', { class: 'muted' }, '(검색·판정으로 좁히면 더 빠릅니다)'))));
+    }
     $('#servers tbody').replaceChildren(...rows);
   }
 
@@ -566,9 +590,13 @@
     );
   }
 
-  function renderHistory(r) {
+  async function renderHistory(r) {
     const panel = $('[data-panel="history"]');
-    const same = state.reports.filter(x => x.instanceKey === r.instanceKey);
+    panel.replaceChildren(h('p', { class: 'muted' }, '점검 이력을 불러오는 중…'));
+    let same;
+    try { same = (await apiCached('reports?instance=' + encodeURIComponent(r.instanceKey))).data; }
+    catch (e) { panel.replaceChildren(h('p', { class: 'muted' }, '점검 이력을 불러오지 못했습니다: ' + e.message)); return; }
+    if (!current || current.id !== r.id) return; // 그 사이 다른 리포트를 열었음
     panel.replaceChildren(
       h('p', { class: 'muted' }, '같은 호스트·제품·설치 폴더(실행 파일)·인스턴스 구분의 점검 기록입니다. 재시작해도 같은 인스턴스로 묶입니다. 패치 전/후 비교에 사용하세요.'),
       h('table', { class: 'servers' },
@@ -968,8 +996,18 @@
     }
     return out;
   }
-  function reportsInScope() {
-    return state.reports.filter(r => (!state.sourceFilter || r.source === state.sourceFilter) && (!state.product || r.product === state.product));
+  /** 일자별 [점검 건수, 침해 의심 건수] (서버 집계 /api/daily 를 제품·에이전트 필터로 거름) */
+  function dailyCounts(days) {
+    const rows = (state.daily && state.daily.rows) || [];
+    const idx = new Map(days.map((d, i) => [d, i]));
+    const cnt = days.map(() => 0), comp = days.map(() => 0);
+    rows.forEach(([d, prod, src, n, c]) => {
+      if (!idx.has(d)) return;
+      if (state.product && prod !== state.product) return;
+      if (state.sourceFilter && src !== state.sourceFilter) return;
+      cnt[idx.get(d)] += n; comp[idx.get(d)] += c;
+    });
+    return { cnt, comp };
   }
 
   // ---------------------------------------------------------------- 서버 현황판 (타일) — 서버 수백 대용
@@ -1388,9 +1426,7 @@
   // ---------------------------------------------------------------- 일자별 점검 건수 (막대)
   function renderTrend() {
     const days = dayKeys(14);
-    const rs = reportsInScope();
-    const cnt = days.map(d => rs.filter(r => (r.checkedAt || '').startsWith(d)).length);
-    const comp = days.map(d => rs.filter(r => (r.checkedAt || '').startsWith(d) && r.intrusion === 'compromise').length);
+    const { cnt, comp } = dailyCounts(days);
     const Wd = 360, Ht = 170, L = 24, B = 22, Tp = 14;
     const max = Math.max(1, ...cnt);
     const slot = (Wd - L) / days.length, bw = Math.max(4, slot * 0.5);
@@ -1475,8 +1511,7 @@
   // ---------------------------------------------------------------- 침해 의심 추이 (영역)
   function renderIntrusionArea() {
     const days = dayKeys(14);
-    const rs = reportsInScope();
-    const v = days.map(d => rs.filter(r => (r.checkedAt || '').startsWith(d) && r.intrusion === 'compromise').length);
+    const v = dailyCounts(days).comp;
     const Wd = 360, Ht = 110, L = 20, B = 20, Tp = 10;
     const max = Math.max(1, ...v);
     const x = i => L + (Wd - L - 6) * i / (days.length - 1);
@@ -1535,14 +1570,29 @@
   }
 
   async function load() {
+    let changed = !state.loadedOnce;
     try {
-      state.reports = await api('reports');
+      const [rep, daily] = await Promise.all([apiCached('reports'), apiCached('daily?days=14')]);
+      state.reports = rep.data;
+      state.totalReports = rep.total;
+      state.daily = daily.data;
+      changed = changed || rep.changed || daily.changed;
+      if (!$('#f-latest').checked) {
+        const all = await apiCached('reports?scope=all');
+        state.allReports = all.data;
+        changed = changed || all.changed;
+      } else {
+        state.allReports = null; // 메모리 절약: 전체 이력은 필요할 때만
+        etagCache.delete('reports?scope=all');
+      }
       showAlert('');
     } catch (e) {
       showAlert('리포트를 불러오지 못했습니다: ' + e.message);
-      state.reports = [];
+      if (!state.reports) state.reports = [];
+      changed = true;
     }
-    render();
+    state.loadedOnce = true;
+    if (changed) render(); // 바뀐 것이 없으면 다시 그리지 않음 (보고 있던 툴팁·확대 위치 유지)
   }
 
   async function init() {
@@ -1557,7 +1607,13 @@
     $('#logout-csrf').value = state.me.csrf;
     if (state.me.reportDir) $('#report-dir').textContent = `(리포트 폴더: ${state.me.reportDir})`;
 
-    ['#f-q', '#f-status', '#f-latest', '#f-dq'].forEach(s => $(s).addEventListener('input', render));
+    ['#f-q', '#f-status', '#f-dq'].forEach(s => $(s).addEventListener('input', () => { state.tableLimit = TABLE_PAGE; render(); }));
+    $('#f-latest').addEventListener('change', async () => { // 끄면 전체 이력을 받아 옴
+      if (!$('#f-latest').checked) $('#f-count').textContent = '전체 이력을 불러오는 중…';
+      state.tableLimit = TABLE_PAGE;
+      state.loadedOnce = false;
+      await load();
+    });
     $('#btn-refresh').addEventListener('click', refreshAll);
     $$('#servers th[data-sort]').forEach(th => th.addEventListener('click', () => {
       const k = th.dataset.sort;

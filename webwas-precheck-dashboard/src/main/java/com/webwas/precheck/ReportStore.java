@@ -41,6 +41,7 @@ public class ReportStore {
     public synchronized List<Report> all() {
         List<Report> out = new ArrayList<>();
         Set<String> seen = new HashSet<>();
+        long h = 17;
         try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir, "*.txt")) {
             for (Path p : ds) {
                 String name = p.getFileName().toString();
@@ -54,15 +55,22 @@ public class ReportStore {
                     r = ReportParser.parse(name, text);
                     r.fileSize = size;
                     r.fileModified = mod;
+                    // 원문·[4] 원문은 캐시에 두지 않음 (서버 300대 × 30개 = 9,000개면 수백 MB). 상세·PDF 는 full() 로 다시 읽음
+                    r.raw = null;
+                    r.section4Raw.clear();
                     cache.put(name, r);
                 }
                 seen.add(name);
                 out.add(r);
+                h = h * 31 + name.hashCode();
+                h = h * 31 + Long.hashCode(size);
+                h = h * 31 + Long.hashCode(mod);
             }
         } catch (IOException e) {
             throw new IllegalStateException("리포트 폴더를 읽을 수 없습니다: " + dir, e);
         }
         cache.keySet().retainAll(seen);
+        version = h ^ out.size();
         out.sort(Comparator.comparing((Report r) -> r.checkedAt == null ? "" : r.checkedAt).reversed()
                 .thenComparing(r -> r.id));
         return out;
@@ -71,6 +79,26 @@ public class ReportStore {
     public Report get(String id) {
         if (!isSafeName(id)) return null;
         return all().stream().filter(r -> r.id.equals(id)).findFirst().orElse(null);
+    }
+
+    /** 마지막 all() 때의 폴더 상태(파일명·크기·수정 시각) 요약값. 바뀌지 않았으면 화면에 같은 데이터를 다시 보내지 않음 */
+    private volatile long version;
+
+    public long version() {
+        return version;
+    }
+
+    /** 원문까지 포함한 리포트 1건 (상세 화면·원본 받기·PDF 용). 캐시에 넣지 않음. 없으면 null */
+    public Report full(String id) throws IOException {
+        if (!isSafeName(id)) return null;
+        Path p = dir.resolve(id);
+        if (!Files.isRegularFile(p) || Files.size(p) > MAX_FILE_BYTES) return null;
+        String text = ReportParser.decode(Files.readAllBytes(p));
+        if (!ReportParser.looksLikeReport(text)) return null;
+        Report r = ReportParser.parse(id, text);
+        r.fileSize = Files.size(p);
+        r.fileModified = Files.getLastModifiedTime(p).toMillis();
+        return r;
     }
 
     /** 업로드 파일 저장. 리포트 형식이 아니면 예외. 반환값은 저장된 파일명. */

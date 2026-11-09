@@ -118,6 +118,44 @@ detail()  { printf '        %s\n' "$*"; printf '        %s\n' "$*" >> "$REPORT";
 section() { log ""; log "=================================================================="; log " $*"; log "=================================================================="; }
 show()    { while IFS= read -r line; do detail "$line"; done; }
 
+# 실행 계정의 다른 프로세스를 "누가 띄웠는지"로 나눔 (부모 프로세스를 거슬러 올라가며 확인)
+#   srv   : 서버 프로세스(PRECHECK_PID 또는 서버 프로그램)가 띄운 것 → 웹쉘·리버스쉘의 전형적인 모습
+#   login : sshd/su/sudo/login 에서 시작해 터미널이 붙어 있는 것 → 사람이 그 계정으로 로그인한 세션
+#   other : 그 밖 (부모가 이미 끝나 init 에 붙은 백그라운드 프로세스 등) → 출처 확인 필요
+# 사용: split_user_procs 계정 '제외할 명령줄 정규식' '서버 프로그램 이름 정규식(ps comm)'
+# 결과: $WORK/ps_srv, $WORK/ps_login, $WORK/ps_other (한 줄: PID PPID 터미널 실행시간 명령줄 ← 시작한 곳)
+split_user_procs() {
+  : > "$WORK/ps_srv"; : > "$WORK/ps_login"; : > "$WORK/ps_other"
+  ps -u "$1" -o pid=,ppid=,tty=,etime=,args= 2>/dev/null | grep -vE "$2" | while read -r pid ppid tty etime args; do
+    [ "$pid" = "$$" ] && continue
+    case "$args" in *"ps -u"*|grep\ *|*"<defunct>"*) continue ;; esac   # 점검 명령 자신, 이미 끝난 좀비 프로세스는 제외
+    kind=other; via=""; a="$ppid"; n=0
+    while [ -n "$a" ] && [ "$a" -gt 1 ] 2>/dev/null && [ "$n" -lt 40 ]; do
+      c="$(ps -o comm= -p "$a" 2>/dev/null)"
+      if [ "$a" = "${PRECHECK_PID:-none}" ] || printf '%s' "$c" | grep -qxE "$3"; then kind=srv; via="$c($a)"; break; fi
+      case "$c" in sshd|sshd-session|sshd-auth|su|sudo|login) kind=login; via="$c($a)"; break ;; esac
+      a="$(ps -o ppid= -p "$a" 2>/dev/null | tr -d ' ')"; n=$((n+1))
+    done
+    # 로그인에서 시작했어도 터미널이 없으면(백그라운드로 떼어 둔 것) 확인 필요로 분류
+    [ "$kind" = login ] && [ "$tty" = "?" ] && kind=other
+    printf '%s %s %s %s %s  <- %s\n' "$pid" "$ppid" "$tty" "$etime" "$args" "${via:-시작한 곳 확인 불가(부모 종료)}" >> "$WORK/ps_$kind"
+  done
+}
+# 위 결과를 리포트에 기록. $1 = 계정 설명(예: "WildFly 실행계정(was)"), $2 = 서버 이름(예: "WildFly")
+report_user_procs() {
+  local any=0
+  if [ -s "$WORK/ps_srv" ]; then any=1
+    risk "$1 으로 $2 프로세스가 띄운 다른 프로세스 (리버스쉘/웹쉘 의심)"; cut -c1-220 "$WORK/ps_srv" | show
+  fi
+  if [ -s "$WORK/ps_other" ]; then any=1
+    warn "$1 으로 실행 중인 다른 프로세스 (백그라운드 실행 — 채굴기 등 출처 확인 필요)"; cut -c1-220 "$WORK/ps_other" | show
+  fi
+  if [ -s "$WORK/ps_login" ]; then any=1
+    info "$1 으로 로그인한 터미널 세션 (관리자 작업인지 확인: last ${RUN_USER} / /var/log/secure)"; cut -c1-220 "$WORK/ps_login" | show
+  fi
+  [ "$any" -eq 0 ] && ok "$1 의 비정상 프로세스 없음"
+}
+
 # Maven 식 버전 비교: vcmp a b → -1 / 0 / 1
 #   숫자 부분(최대 5자리) → 수식어 순위(Alpha<Beta<CR<SNAPSHOT<Final=GA<SP) → 수식어 번호
 vcmp() {
@@ -910,9 +948,9 @@ fi
 
 # 4-4 실행 계정의 의심 프로세스 / 크론 / 임시파일 / 외부 연결
 if [ -n "$RUN_USER" ] && [ "$RUN_USER" != "root" ] && id "$RUN_USER" >/dev/null 2>&1; then
-  PS="$(ps -u "$RUN_USER" -o pid=,ppid=,etime=,args= 2>/dev/null | grep -vE 'jboss-modules\.jar|standalone\.sh|domain\.sh|grep|ps -u' | grep -vE "^ *$$ ")"
-  if [ -n "$PS" ]; then risk "WildFly 실행계정($RUN_USER)으로 실행 중인 다른 프로세스 (리버스쉘/채굴기 의심)"; printf '%s\n' "$PS" | cut -c1-200 | show
-  else ok "실행계정의 비정상 프로세스 없음"; fi
+  # 누가 띄웠는지로 나눔: WildFly 가 띄운 것 = 위험, 사람의 로그인 터미널 = 정보, 그 밖 = 주의
+  split_user_procs "$RUN_USER" 'jboss-modules\.jar|standalone\.sh|domain\.sh' 'java'
+  report_user_procs "WildFly 실행계정($RUN_USER)" "WildFly"
 
   CR="$(crontab -l -u "$RUN_USER" 2>/dev/null | grep -vE '^\s*(#|$)')"
   if [ -n "$CR" ]; then risk "실행계정($RUN_USER)에 크론 작업 등록됨 (지속성 확보 의심)"; printf '%s\n' "$CR" | show

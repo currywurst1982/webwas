@@ -1,0 +1,145 @@
+Tomcat 패치 전 보안 사전 점검  |  호스트: vm  |  일시: 2026-11-09 08:10:17
+
+==================================================================
+ [1] 버전 및 설치 방식 확인
+==================================================================
+[정보] 실행 중인 Tomcat 프로세스 자동 탐지: PID 375
+[정보] 서버 IP: 192.0.2.2
+[정보] 설치 폴더: /opt/tomcat9
+[정보] 메인 설정 파일: /opt/tomcat9/conf/server.xml
+[정보] 버전 정보: Apache Tomcat/9.0.80
+[주의] Tomcat 9.0.80 : 9.0 브랜치 최신(9.0.123) 미만입니다. 아래 [2]에서 해당 CVE를 확인하세요.
+[정보] Java EE(javax) 계열 Tomcat(9.0)입니다. 10.1 이상(jakarta 계열)으로 올릴 때 애플리케이션의 javax → jakarta 변경이 필요합니다.
+[정보] 설치 방식: ZIP 배포본 (공식 압축 파일을 푼 설치)
+[정보] Java: Unknown option: -e (/usr/local/bin/python3.13)
+[정보] 구성요소(jar) 수: 32
+        tomcat-jasper (jasper.jar)
+        tomcat-websocket (tomcat-websocket.jar)
+        tomcat-tribes (catalina-tribes.jar)
+
+==================================================================
+ [2] 버전별 해당 CVE 판정 (OSV 기준)
+==================================================================
+[정보] CVE 목록 출처: 스크립트 내장본 (OSV 2026-11-02 기준, 684줄)
+[주의] CVE-2023-42794 [moderate] Apache Tomcat Incomplete Cleanup vulnerability (영향: Tomcat 9.0.70~9.0.81 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-jm7m-8jh6-29hp)
+[주의] CVE-2023-42795 [moderate] Apache Tomcat Incomplete Cleanup vulnerability (영향: Tomcat 9.0.0-M1~9.0.81 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-g8pj-r55q-5c2v)
+[주의] CVE-2023-44487 [moderate] HTTP/2 Stream Cancellation Attack (영향: Tomcat 9.0.0~9.0.81 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-qppj-fm5r-hxr3)
+[주의] CVE-2023-45648 [moderate] Apache Tomcat Improper Input Validation vulnerability (영향: Tomcat 9.0.0-M1~9.0.81 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-r6j3-px5g-cq3x)
+[위험] CVE-2023-46589 [high] Apache Tomcat Improper Input Validation vulnerability (영향: Tomcat 9.0.0-M1~9.0.83 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-fccv-jmmp-qg76)
+[주의] CVE-2024-24549 [moderate] Apache Tomcat Denial of Service due to improper input validation vulnerability for HTTP/2 requests (영향: Tomcat 9.0.0-M1~9.0.86 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-7w75-32cg-r6g2)
+[위험] CVE-2024-34750 [high] Apache Tomcat - Denial of Service (영향: Tomcat 9.0.0-M1~9.0.90 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-wm9w-rjj3-j356)
+[위험] CVE-2024-38286 [high] Apache Tomcat Allocation of Resources Without Limits or Throttling vulnerability (영향: Tomcat 9.0.13~9.0.90 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-7jqf-v358-p8g7)
+[위험] CVE-2024-50379 [high] Apache Tomcat Time-of-check Time-of-use (TOCTOU) Race Condition vulnerability (영향: Tomcat 9.0.0.M1~9.0.98 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-5j33-cvvr-w245)
+[위험] CVE-2024-52316 [critical] Apache Tomcat - Authentication Bypass (영향: Tomcat 0~9.0.96 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-xcpr-7mr4-h4xq)
+[주의] CVE-2024-54677 [moderate] Apache Tomcat Uncontrolled Resource Consumption vulnerability (영향: Tomcat 9.0.0.M1~9.0.98 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-653p-vg55-5652)
+[위험] CVE-2024-56337 [high] Apache Tomcat Time-of-check Time-of-use (TOCTOU) Race Condition vulnerability (영향: Tomcat 9.0.0.M1~9.0.98 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-27hp-xhwr-wr2m)
+[위험] CVE-2025-24813 [critical] Apache Tomcat: Potential RCE and/or information disclosure and/or information corruption with partial PUT (영향: Tomcat 9.0.0.M1~9.0.99 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-83qj-6fr2-vhqg)
+[주의] CVE-2025-31650 [moderate] Apache Tomcat Denial of Service via invalid HTTP priority header (영향: Tomcat 9.0.76~9.0.104 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-3p2h-wqq4-wf4h)
+[주의] CVE-2025-31651 [low] Apache Tomcat Rewrite rule bypass (영향: Tomcat 9.0.76~9.0.104 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-ff77-26x5-69cr)
+[주의] CVE-2025-46701 [low] Apache Tomcat - CGI security constraint bypass (영향: Tomcat 9.0.0.M1~9.0.105 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-h2fw-rfh5-95r3)
+[위험] CVE-2025-48988 [high] Apache Tomcat - DoS in multipart upload (영향: Tomcat 9.0.0.M1~9.0.106 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-h3gc-qfqq-6h8f)
+[위험] CVE-2025-48989 [high] Apache Tomcat Improper Resource Shutdown or Release vulnerability (영향: Tomcat 9.0.0.M1~9.0.108 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-gqp3-2cvr-x8m3)
+[주의] CVE-2025-49124 [moderate] Apache Tomcat installer for Windows has an untrusted search path vulnerability (영향: Tomcat 9.0.23~9.0.106 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-42wg-hm62-jcwg)
+[주의] CVE-2025-49125 [moderate] Apache Tomcat - Security constraint bypass for pre/post-resources (영향: Tomcat 9.0.0.M1~9.0.106 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-wc4r-xq3c-5cf3)
+[주의] CVE-2025-52434 [moderate] Apache Tomcat is vulnerable to resource exhaustion when using the APR/Native connector (영향: Tomcat 9.0.0.M1~9.0.107 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-4j3c-42xv-3f84)
+[위험] CVE-2025-52520 [high] Apache Tomcat Catalina is vulnerable to DoS attack through bypassing of size limits (영향: Tomcat 9.0.0.M1~9.0.107 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-wr62-c79q-cv37)
+[위험] CVE-2025-53506 [high] Apache Tomcat Coyote vulnerable to Denial of Service via excessive HTTP/2 streams (영향: Tomcat 9.0.0.M1~9.0.107 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-25xr-qj8w-c4vf)
+[주의] CVE-2025-55668 [moderate] Apache Tomcat Session Fixation vulnerability (영향: Tomcat 9.0.0.M1~9.0.106 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-23hv-mwm6-g8jf)
+[위험] CVE-2025-55752 [high] Apache Tomcat Vulnerable to Relative Path Traversal (영향: Tomcat 9.0.0-M11~9.0.109 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-wmwf-9ccg-fff5)
+[주의] CVE-2025-55754 [low] Apache Tomcat Vulnerable to Improper Neutralization of Escape, Meta, or Control Sequences (영향: Tomcat 9.0.40~9.0.109 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-vfww-5hm6-hx2j)
+[주의] CVE-2025-61795 [low] Apache Tomcat Vulnerable to Improper Resource Shutdown or Release (영향: Tomcat 9.0.0.M1~9.0.110 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-hgrr-935x-pq79)
+[주의] CVE-2025-66614 [moderate] Apache Tomcat - Client certificate verification bypass (영향: Tomcat 9.0.0-M1~9.0.113 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-fpj8-gq4v-p354)
+[주의] CVE-2026-24733 [low] Apache Tomcat - Security constraint bypass with HTTP/0.9 (영향: Tomcat 0~9.0.113 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-qq5r-98hh-rxc9)
+[위험] CVE-2026-24880 [high] Apache Tomcat has an HTTP Request/Response Smuggling vulnerability (영향: Tomcat 7.0.0~9.0.116 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-563x-q5rq-57qp)
+[주의] CVE-2026-25854 [moderate] Apache Tomcat has an Open Redirect vulnerability (영향: Tomcat 8.5.30~9.0.116 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-9m3c-qcxr-9x87)
+[위험] CVE-2026-29146 [high] Apache Tomcat: Padding Oracle vulnerability in EncryptInterceptor (영향: Tomcat 9.0.13~9.0.116 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-h468-7pvh-8vr8)
+[위험] CVE-2026-34483 [high] Apache Tomcat has an Improper Encoding or Escaping of Output vulnerability in the JsonAccessLogValve (영향: Tomcat 9.0.40~9.0.116 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-rv64-5gf8-9qq8)
+[위험] CVE-2026-34487 [high] Apache Tomcat vulnerable to Insertion of Sensitive Information into Log File (영향: Tomcat 9.0.13~9.0.117 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-x4m4-345f-5h5g)
+[위험] CVE-2026-41284 [high] Apache Tomcat: Unbounded read in WebDAV LOCK and PROPFIND handling (영향: Tomcat 0~9.0.118 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-gx5v-xp9w-j4cg)
+[위험] CVE-2026-41293 [critical] Apache Tomcat - HTTP/2 request headers not validated (영향: Tomcat 8.5.0~9.0.118 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-r29c-68gh-xp6x)
+[위험] CVE-2026-42498 [high] Apache Tomcat - WebSocket authentication header exposure (영향: Tomcat 0~9.0.118 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-fv25-8xcx-gqjc)
+[위험] CVE-2026-43512 [critical] Apache Tomcat - Digest authenticator will authenticate any unknown user (영향: Tomcat 0~9.0.118 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-h6fc-48rj-7qqh)
+[위험] CVE-2026-43513 [high] Apache Tomcat: LockOutRealm treats user names as case-sensitive (영향: Tomcat 0~9.0.118 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-5mp6-jrq3-r938)
+[주의] CVE-2026-43514 [low] Apache Tomcat - AJP secret compared in non-constant time (영향: Tomcat 0~9.0.118 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-9m89-8frq-c98c)
+[위험] CVE-2026-43515 [critical] Apache Tomcat - Security constraints not correctly applied (영향: Tomcat 0~9.0.118 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-5m62-pw8w-7w9f)
+[위험] CVE-2026-65182 [critical] Apache Tomcat has an Improper Access Control, Incorrect Authorization vulnerability (영향: Tomcat 9.0.0-M1~9.0.121 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-gcx9-497g-6cp6)
+[위험] CVE-2026-65905 [critical] Apache Tomcat's DIGEST authenticator has an Authentication Bypass by Capture-replay vulnerability (영향: Tomcat 9.0.0.M1~9.0.121 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-9xv2-5v5q-p794)
+[위험] CVE-2026-68525 [critical] Apache Tomcat's FORM authentication process has an Incorrect Authorization vulnerability (영향: Tomcat 9.0.0-M1~9.0.121 미만, 조건: Tomcat 9.0.80 설치됨, 출처: GHSA-h3x4-894j-xpx5)
+[주의] CVE-2024-23672 [moderate] Denial of Service via incomplete cleanup vulnerability in Apache Tomcat (영향: Tomcat 9.0.0-M1~9.0.86 미만, 조건: tomcat-websocket 9.0.80 설치됨, 출처: GHSA-v682-8vv8-vpwr)
+[미해당] CVE-2016-8735 (critical) - 필요 모듈(tomcat-catalina-jmx-remote) 미사용
+[미해당] CVE-2026-29145 (critical) - 필요 모듈(tomcat-coyote-ffm) 미사용
+[미해당] CVE-2026-34500 (moderate) - 필요 모듈(tomcat-coyote-ffm) 미사용
+
+  → 해당 CVE: 45건 / 구성요소가 없어 미해당: 3건 / 나머지는 수정된 버전이라 미해당 (전체 230건 중)
+
+==================================================================
+ [3] 위험 설정 점검 (셧다운 포트·커넥터·관리자 앱·계정·실행 옵션·파일 권한)
+==================================================================
+[주의] 셧다운 포트(8005)가 기본 명령어(SHUTDOWN)로 열려 있음 → 서버의 다른 계정이 Tomcat 을 종료할 수 있음. port="-1" 또는 추측하기 어려운 명령어로 변경 권장
+[위험] AJP 커넥터(포트 8009)가 secret 없이 외부 주소에서 열림 → Ghostcat(CVE-2020-1938)류 파일 읽기·코드 실행 위험. 미사용 시 제거, 사용 시 secret 설정 + address="127.0.0.1"
+        <Connector protocol="AJP/1.3" address="0.0.0.0" port="8009" redirectPort="8443" secretRequired="false" />
+[정보] Tomcat 에 HTTPS 커넥터 없음 (앞단 프록시/로드밸런서에서 TLS 를 처리하는지 확인)
+[주의] 오류 페이지에 Tomcat 버전 노출 (ErrorReportValve showServerInfo="false" showReport="false" 미설정) → 공격자가 버전별 CVE 를 골라 공격 가능
+[양호] HTTP 응답 헤더에 서버 정보(Server/X-Powered-By) 없음
+[양호] DefaultServlet 쓰기(PUT) 비활성(readonly 기본값)
+[양호] 디렉터리 목록 노출 설정 없음
+[위험] 관리자 앱(manager)이 IP 제한(RemoteAddrValve) 없이 배포됨 → 외부에서 로그인 시도·WAR 업로드(웹쉘 배포) 가능. 미사용 시 삭제, 사용 시 관리망 IP 로 제한
+[정보] 관리자 앱(host-manager) 배포됨, 접근 IP 제한: 127\.\d+\.\d+\.\d+|::1|0:0:0:0:0:0:0:1
+[정보] tomcat-users.xml 계정 2개 (관리 권한 2개): admin deploy 
+[위험] 관리 계정에 추측하기 쉬운 비밀번호 사용: admin → 즉시 변경 (tomcat-users.xml)
+[주의] tomcat-users.xml 비밀번호가 평문으로 저장됨 → CredentialHandler(예: SecretKeyCredentialHandler)로 해시 저장 권장
+[주의] 기본 예제/문서 앱 배포됨: examples docs → 예제 서블릿(세션 조작 등) 악용·버전 노출. 운영 서버에서는 삭제 권장
+[주의] 기본 ROOT 페이지(Tomcat 환영 화면)가 그대로 있음 → Tomcat 사용 사실·버전 노출. 운영 앱으로 교체하거나 삭제 권장
+[양호] 실행 계정: was
+[양호] 원격 디버그(JDWP) 옵션 없음
+[양호] 설정·배포·라이브러리·실행 폴더에 모든 계정 쓰기 권한 없음
+
+==================================================================
+ [4] 침해 흔적 점검 (이미 해킹당했는지)
+==================================================================
+[정보] 점검 대상 접근 로그: 1개
+        /opt/tomcat9/logs/localhost_access_log.2026-11-01.txt
+[주의] 경로 탐색·WEB-INF 접근 시도 1건 (성공 응답 없음) → 스캔 대상이 되고 있음
+[위험] 명령실행/웹쉘/JNDI·클래스로더 주입 의심 요청 중 200 응답 1건
+        203.0.113.7 - - [01/Nov/2026:10:00:01 +0900] "GET /up.jsp?cmd=whoami HTTP/1.1" 200 12
+[위험] 관리자 앱 배포/PUT JSP 업로드 요청 중 성공 응답 1건 → 정상 배포 이력과 대조 필요 (웹쉘 배포 가능성)
+        203.0.113.7 - - [01/Nov/2026:10:00:00 +0900] "PUT /x.jsp/ HTTP/1.1" 201 0
+[정보] 의심 요청 상위 IP (차단 검토용)
+              2 203.0.113.7
+              1 198.51.100.2
+[정보] 배포된 애플리케이션 5개
+        ROOT
+        docs
+        examples
+        host-manager
+        manager
+[위험] 웹쉘 의심 코드 패턴(명령 실행·클래스 주입)을 포함한 JSP 1개 (오탐 가능, 내용 확인 필수)
+        /opt/tomcat9/webapps/ROOT/up.jsp
+[주의] 최근 30일 내 변경된 배포 파일(JSP/WAR/클래스/JAR) 1개 → 배포 이력과 대조 필요
+        -rw-r--r-- 1 root root 103 2026-11-03_07:40:10 /opt/tomcat9/webapps/ROOT/up.jsp
+[정보] 점검 대상 Tomcat 로그: 1개
+        /opt/tomcat9/logs/catalina.out
+[양호] Tomcat 로그에 역직렬화 공격·JNDI 주입 흔적 없음
+[정보] 최근 배포 기록 (Tomcat 로그, 최근 10건) → 배포 이력과 대조
+        01-Nov-2026 10:00:00 INFO [main] Deploying web application directory [/opt/x/webapps/ROOT]
+[위험] Tomcat 실행계정(was) 으로 Tomcat 프로세스가 띄운 다른 프로세스 (리버스쉘/웹쉘 의심)
+        376 375 ? 00:10 sleep 500  <- python3(375)
+[주의] Tomcat 실행계정(was) 으로 실행 중인 다른 프로세스 (백그라운드 실행 — 채굴기 등 출처 확인 필요)
+        397 1 ? 00:06 sleep 402  <- 시작한 곳 확인 불가(부모 종료)
+[정보] Tomcat 실행계정(was) 으로 로그인한 터미널 세션 (관리자 작업인지 확인: last was / /var/log/secure)
+        383 382 pts/0 00:09 -bash  <- su(382)
+        394 383 pts/0 00:08 sleep 401  <- su(382)
+[양호] 실행계정 크론 작업 없음
+[양호] 임시 디렉터리에 실행계정 소유 파일 없음
+
+==================================================================
+ 점검 요약
+==================================================================
+  [위험] 32건   [주의] 29건   [양호] 9건   [정보] 19건
+
+  ※ 이 결과는 '알려진 패턴' 기준이며 안전을 보증하지 않습니다.
+    - [위험] 중 침해 흔적(로그 200 응답, 웹쉘, 비정상 프로세스)이 있으면 설정 보완보다 침해사고 대응이 우선입니다.
+    - CVE 판정은 Tomcat 버전과 OSV 영향 구간 기준이며, 패키지 설치본은 배포판 보안 공지로 최종 확인하세요.
+    - 근본 대책은 같은 브랜치의 최신 버전(9.0.123) 이상으로의 업그레이드입니다.
+
+  리포트 파일: /tmp/tomcat_precheck_vm_20261109_081017_pid375.txt

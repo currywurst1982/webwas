@@ -209,6 +209,25 @@ public class AgentStore {
         return n;
     }
 
+    /**
+     * 에이전트의 점검 상태만 초기화 (등록·토큰·주기·접속 정보는 유지).
+     * 마지막 점검 시각이 없어지므로 자동 점검 주기가 있으면 다음 접속(1분 안) 때 바로 다시 점검함.
+     */
+    public synchronized boolean resetHistory(String name) throws IOException {
+        Agent a = agents.get(name);
+        if (a == null) return false;
+        a.versions.clear();
+        a.pendingRun = false;
+        a.runStartedAt = 0;
+        a.lastRunAt = 0;
+        a.lastExit = -1;
+        a.lastReportCount = 0;
+        a.lastMessage = "";
+        a.lastReportAt = 0;
+        save();
+        return true;
+    }
+
     public synchronized boolean remove(String name) throws IOException {
         boolean r = agents.remove(name) != null;
         if (r) save();

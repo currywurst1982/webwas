@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -190,9 +191,77 @@ public class ReportStore {
         }
     }
 
+    /** 리포트 1건 삭제 = 휴지통으로 이동 */
     public synchronized boolean delete(String id) throws IOException {
-        if (!isSafeName(id)) return false;
-        cache.remove(id);
-        return Files.deleteIfExists(dir.resolve(id));
+        return trash(List.of(id), "one") == 1;
+    }
+
+    /** 휴지통 보관 일수 (-Dwebwas.precheck.trash.days, 기본 30. 0 이면 바로 지움) */
+    public static int trashDays() {
+        try {
+            return Math.max(0, Integer.parseInt(System.getProperty("webwas.precheck.trash.days", "30").trim()));
+        } catch (NumberFormatException e) {
+            return 30;
+        }
+    }
+
+    /** 휴지통 위치: <데이터폴더>/reports-trash */
+    public Path trashRoot() {
+        Path parent = dir.toAbsolutePath().getParent();
+        return (parent == null ? dir.toAbsolutePath() : parent).resolve("reports-trash");
+    }
+
+    private static final java.time.format.DateTimeFormatter TRASH_TS = java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS");
+
+    /**
+     * 리포트들을 휴지통(<데이터>/reports-trash/<시각>_<사유>/)으로 옮김. 옮긴 개수를 돌려줌.
+     * 되살리기: 그 폴더의 파일을 reports 폴더로 다시 옮기면 됨. 보관 기간이 지난 휴지통 폴더는 이때 함께 비움.
+     */
+    public synchronized int trash(Collection<String> ids, String reason) throws IOException {
+        String tag = reason == null ? "reset" : reason.replaceAll("[^A-Za-z0-9_-]", "").toLowerCase(java.util.Locale.ROOT);
+        Path target = trashRoot().resolve(java.time.LocalDateTime.now().format(TRASH_TS) + "_" + (tag.isEmpty() ? "reset" : tag));
+        int n = 0;
+        for (String id : ids) {
+            if (!isSafeName(id)) continue;
+            Path src = dir.resolve(id);
+            if (!Files.isRegularFile(src)) continue;
+            if (n == 0) Files.createDirectories(target);
+            Files.move(src, target.resolve(id), StandardCopyOption.REPLACE_EXISTING);
+            cache.remove(id);
+            n++;
+        }
+        lastTrash = n > 0 ? target : null;
+        purgeTrash();
+        return n;
+    }
+
+    private volatile Path lastTrash;
+
+    /** 마지막 trash() 가 옮긴 폴더 (없으면 null) */
+    public Path lastTrash() {
+        return lastTrash;
+    }
+
+    /** 보관 기간이 지난 휴지통 폴더 삭제 (실패해도 조용히 넘어감) */
+    public void purgeTrash() {
+        Path root = trashRoot();
+        if (!Files.isDirectory(root)) return;
+        long limit = System.currentTimeMillis() - trashDays() * 86_400_000L;
+        try (DirectoryStream<Path> ds = Files.newDirectoryStream(root)) {
+            for (Path d : ds) {
+                if (!Files.isDirectory(d) || Files.getLastModifiedTime(d).toMillis() > limit) continue;
+                try (java.util.stream.Stream<Path> w = Files.walk(d)) {
+                    w.sorted(Comparator.reverseOrder()).forEach(x -> {
+                        try {
+                            Files.deleteIfExists(x);
+                        } catch (IOException ignored) {
+                            // 다음 정리 때 다시 시도
+                        }
+                    });
+                }
+            }
+        } catch (IOException ignored) {
+            // 휴지통을 못 읽어도 대시보드 동작에는 영향 없음
+        }
     }
 }

@@ -1022,6 +1022,8 @@
         h('select', { 'aria-label': `${a.name} 점검 주기`, onchange: e => agentInterval(a.name, e.target.value) },
           ...INTERVALS.map(([v, l]) => h('option', { value: String(v), selected: v === a.intervalHours || null }, l))),
         h('button', { class: 'btn small', type: 'button', onclick: () => agentToken(a.name) }, '토큰 재발급'),
+        h('button', { class: 'btn small btn-danger', type: 'button', title: '이 에이전트가 보낸 점검 기록과 상태를 초기화 (등록·토큰은 유지)',
+          onclick: () => resetRecords('agent', a.name, `${a.name} 에이전트 기록 초기화`, { agentState: 'true' }) }, '기록 초기화'),
         h('button', { class: 'btn small btn-danger', type: 'button', onclick: () => agentDelete(a.name) }, '삭제')));
       return h('tr', null,
         h('td', null, h('span', { class: 'badge ' + st.cls }, h('span', { class: 'ic', 'aria-hidden': 'true' }, st.icon), st.label),
@@ -1040,6 +1042,11 @@
     if (!rows.length) rows.push(h('tr', null, h('td', { colspan: '9', class: 'muted' },
       state.me.admin ? '등록된 에이전트가 없습니다. [에이전트 추가]로 점검할 서버(Apache·WildFly·Tomcat)에 에이전트를 설치하세요.' : '등록된 에이전트가 없습니다.')));
     $('#agents tbody').replaceChildren(...rows);
+    const rsel = $('#r-agent');
+    if (rsel) {
+      const keep = rsel.value;
+      rsel.replaceChildren(h('option', { value: '' }, '— 고르세요 —'), ...data.agents.map(a => h('option', { value: a.name, selected: a.name === keep || null }, a.name)));
+    }
     renderAgentAlert();
     renderSideAgents();
     renderAgentTiles();
@@ -1141,6 +1148,32 @@
       $('#agent-dlg').showModal();
     } catch (e) { alert(e.message); }
   }
+  /**
+   * 점검 기록 초기화: 먼저 미리보기로 건수를 보여 주고, '초기화' 를 직접 입력해야 실행.
+   * scope = instance | agent | product | old | all (ReportReset 과 같음)
+   */
+  async function resetRecords(scope, value, title, extra) {
+    const body = new URLSearchParams(Object.assign({ scope, value: value == null ? '' : String(value) }, extra || {}));
+    let pv;
+    try { pv = await api('reset', { method: 'POST', body: new URLSearchParams([...body, ['dryRun', 'true']]) }); }
+    catch (e) { alert(e.message); return false; }
+    if (!pv.count && !(extra && extra.agentState === 'true')) { alert(`${title}: 지울 점검 기록이 없습니다.`); return false; }
+    const sample = (pv.sample || []).map(s => ' · ' + s).join('\n');
+    const word = prompt(`${title}\n\n점검 기록 ${pv.count}건 (서버 ${pv.instances}대)을 지웁니다.`
+      + (sample ? `\n${sample}${pv.count > 5 ? '\n · …' : ''}` : '')
+      + (extra && extra.agentState === 'true' ? '\n\n에이전트 상태(마지막 점검·버전·메시지)도 초기화합니다. 자동 점검 주기가 있으면 1분 안에 다시 점검합니다.' : '')
+      + `\n\n지운 기록은 휴지통(reports-trash)에 ${pv.trashDays}일 동안 보관됩니다.\n계속하려면 초기화 라고 입력하세요.`);
+    if (word === null) return false;
+    if (word.trim() !== '초기화') { alert("입력한 문구가 '초기화' 가 아니라 취소했습니다."); return false; }
+    try {
+      const r = await api('reset', { method: 'POST', body: new URLSearchParams([...body, ['confirm', '초기화']]) });
+      alert(`${title}: ${r.count}건을 휴지통으로 옮겼습니다.` + (r.agentReset ? '\n에이전트 상태도 초기화했습니다.' : '') + (r.trash ? `\n(휴지통 폴더: reports-trash/${r.trash})` : ''));
+      await load();
+      if (state.me && state.me.admin) await loadAgents();
+      return true;
+    } catch (e) { alert(e.message); return false; }
+  }
+
   async function agentDelete(name) {
     if (!confirm(`${name} 에이전트를 삭제할까요? 이미 받은 리포트는 남습니다. 서버의 에이전트는 'sudo bash /tmp/webwas-precheck-install.sh --uninstall' 로 따로 삭제하세요.`)) return;
     try { await api('agents/' + encodeURIComponent(name), { method: 'DELETE' }); await loadAgents(); }
@@ -1813,9 +1846,37 @@
     });
     $$('#detail .tab').forEach(t => t.addEventListener('click', () => selectTab(t.dataset.tab)));
     $('#d-delete').addEventListener('click', async () => {
-      if (!current || !confirm(`${current.id} 리포트를 삭제할까요? 되돌릴 수 없습니다.`)) return;
+      if (!current || !confirm(`${current.id} 점검 1건을 삭제할까요? (휴지통 reports-trash 로 옮겨지며 일정 기간 뒤 완전히 지워집니다)`)) return;
       try { await api('reports/' + encodeURIComponent(current.id), { method: 'DELETE' }); $('#detail').close(); await load(); }
       catch (e) { alert(e.message); }
+    });
+
+    $('#d-reset-instance').addEventListener('click', async () => {
+      if (!current) return;
+      const label = `${PRODUCTS[current.product] || current.product} ${current.host}` + (current.binary ? ` (${current.binary})` : '');
+      if (await resetRecords('instance', current.instanceKey, `${label} 서버의 점검 이력 삭제`)) $('#detail').close();
+    });
+    // 설정 → 점검 기록 초기화
+    const rScope = () => $('#r-scope').value;
+    const rShow = () => {
+      const s = rScope();
+      $('#r-keep-wrap').hidden = s !== 'old';
+      $('#r-agent-wrap').hidden = s !== 'agent';
+      $('#r-agent-state-wrap').hidden = s !== 'agent';
+      $('#r-product-wrap').hidden = s !== 'product';
+    };
+    $('#r-product').replaceChildren(...Object.entries(PRODUCTS).map(([k, v]) => h('option', { value: k }, v)));
+    $('#r-scope').addEventListener('change', rShow);
+    rShow();
+    $('#btn-reset').addEventListener('click', () => {
+      const s = rScope();
+      if (s === 'old') resetRecords('old', $('#r-keep').value, `오래된 이력 정리 (서버마다 최근 ${$('#r-keep').value}개만 남김)`);
+      else if (s === 'agent') {
+        const n = $('#r-agent').value;
+        if (!n) { alert('에이전트를 고르세요.'); return; }
+        resetRecords('agent', n, `${n} 에이전트 기록 초기화`, $('#r-agent-state').checked ? { agentState: 'true' } : null);
+      } else if (s === 'product') resetRecords('product', $('#r-product').value, `${PRODUCTS[$('#r-product').value]} 점검 기록 전체 삭제`);
+      else resetRecords('all', '', '전체 점검 기록 삭제');
     });
 
     $('#btn-upload').addEventListener('click', () => { $('#u-results').replaceChildren(); $('#upload').showModal(); });

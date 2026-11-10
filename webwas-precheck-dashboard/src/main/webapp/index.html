@@ -302,6 +302,28 @@
             <p class="muted small-note">선택은 이 브라우저에만 저장됩니다. '시스템 설정'은 PC·휴대폰의 다크 모드 설정을 따라갑니다. 머리글의 해/달 버튼으로도 바로 바꿀 수 있습니다.</p>
           </article>
 
+          <article class="card admin-only" aria-labelledby="reset-title">
+            <div class="card-head"><h2 id="reset-title">점검 기록 초기화</h2></div>
+            <div class="reset-form">
+              <label>범위
+                <select id="r-scope">
+                  <option value="old">오래된 이력 정리 (서버마다 최근 N개만 남김)</option>
+                  <option value="agent">에이전트별 (그 에이전트가 보낸 기록 전체)</option>
+                  <option value="product">제품별 (그 제품의 기록 전체)</option>
+                  <option value="all">전체 점검 기록</option>
+                </select>
+              </label>
+              <label id="r-keep-wrap">남길 개수 <input id="r-keep" type="number" min="1" max="1000" value="5" inputmode="numeric"></label>
+              <label id="r-agent-wrap" hidden>에이전트 <select id="r-agent"></select></label>
+              <label id="r-agent-state-wrap" class="chk" hidden><input id="r-agent-state" type="checkbox" checked> 에이전트 상태(마지막 점검·버전)도 초기화</label>
+              <label id="r-product-wrap" hidden>제품 <select id="r-product"></select></label>
+              <button class="btn btn-danger" id="btn-reset" type="button">초기화…</button>
+            </div>
+            <p class="muted small-note">누르면 먼저 지워질 건수를 보여 주고, <b>초기화</b> 라고 직접 입력해야 실행됩니다. 지운 기록은 바로 없어지지 않고 데이터 폴더의
+              <code>reports-trash</code> 로 옮겨져 30일 동안 보관됩니다(되살리기: 그 폴더의 파일을 <code>reports</code> 폴더로 다시 옮기기). 에이전트 등록·토큰·사용자·설정은 지우지 않습니다.
+              서버 1대의 이력은 서버 상세 창, 에이전트 1대의 기록은 에이전트 관리의 [기록 초기화]로도 지울 수 있습니다.</p>
+          </article>
+
           <article class="card" aria-labelledby="acct-title">
             <div class="card-head"><h2 id="acct-title">계정 · 데이터</h2></div>
             <div class="link-list">
@@ -336,7 +358,8 @@
       <div class="dialog-actions">
         <a class="btn" id="d-raw" download>원본 받기</a>
         <a class="btn" id="d-pdf" download>침해 흔적 PDF</a>
-        <button class="btn btn-danger admin-only" id="d-delete" type="button">삭제</button>
+        <button class="btn btn-danger admin-only" id="d-delete" type="button" title="지금 보고 있는 점검 1건만 삭제(휴지통으로 이동)">이 점검 삭제</button>
+        <button class="btn btn-danger admin-only" id="d-reset-instance" type="button" title="이 서버(인스턴스)의 점검 이력 전체를 삭제(휴지통으로 이동)">이 서버 이력 삭제</button>
         <button class="btn" data-close type="button">닫기</button>
       </div>
     </div>

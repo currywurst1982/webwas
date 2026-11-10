@@ -25,7 +25,9 @@ import java.util.logging.Logger;
  *  GET    /api/reports/{파일명}       리포트 상세
  *  GET    /api/reports/{파일명}/raw   원본 텍스트
  *  POST   /api/reports               리포트 업로드 (관리자, multipart "files")
- *  DELETE /api/reports/{파일명}       리포트 삭제 (관리자)
+ *  DELETE /api/reports/{파일명}       리포트 삭제 (관리자, 휴지통으로 이동)
+ *  POST   /api/reset                 점검 기록 초기화 (관리자) scope=instance|agent|product|old|all, value, dryRun=true(미리보기),
+ *                                    confirm=초기화(실행 시 필수), agentState=true(scope=agent 일 때 에이전트 상태도 초기화)
  *  GET    /api/users                 사용자 목록 (관리자)
  *  POST   /api/users                 사용자 추가 (관리자) → 임시 비밀번호 반환
  *  POST   /api/users/{아이디}/reset   비밀번호 초기화 (관리자) → 임시 비밀번호 반환
@@ -244,6 +246,8 @@ public class ApiServlet extends HttpServlet {
             Web.json(resp, 202, Map.of("started", true));
         } else if (p.length == 1 && p[0].equals("reports")) {
             upload(req, resp);
+        } else if (p.length == 1 && p[0].equals("reset")) {
+            reset(req, resp);
         } else if (p.length == 1 && p[0].equals("users")) {
             String name = trim(req.getParameter("name"));
             String role = req.getParameter("role");
@@ -453,6 +457,40 @@ public class ApiServlet extends HttpServlet {
 
     private static String ascii(String s) {
         return s == null ? "unknown" : s.replaceAll("[^A-Za-z0-9.-]+", "_");
+    }
+
+    /** 점검 기록 초기화. 미리보기(dryRun) → 확인 문구(confirm=초기화)를 넣어 실행. 지운 리포트는 휴지통으로 */
+    private void reset(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        String scope = req.getParameter("scope"), value = req.getParameter("value");
+        ReportStore store = Web.reports(getServletContext());
+        List<Report> picked;
+        try {
+            picked = ReportReset.select(store.all(), scope, value);
+        } catch (IllegalArgumentException e) {
+            Web.json(resp, 400, Map.of("error", e.getMessage()));
+            return;
+        }
+        boolean agentState = "agent".equals(scope) && "true".equals(req.getParameter("agentState"));
+        Map<String, Object> out = ReportReset.preview(picked);
+        out.put("trashDays", ReportStore.trashDays());
+        if ("true".equals(req.getParameter("dryRun"))) {
+            out.put("dryRun", true);
+            Web.json(resp, 200, out);
+            return;
+        }
+        if (!ReportReset.CONFIRM_WORD.equals(req.getParameter("confirm"))) {
+            Web.json(resp, 400, Map.of("error", "확인 문구가 맞지 않습니다. '" + ReportReset.CONFIRM_WORD + "' 를 입력하세요."));
+            return;
+        }
+        int n = store.trash(picked.stream().map(r -> r.id).toList(), scope);
+        boolean agentReset = agentState && Web.agents(getServletContext()).resetHistory(value.trim());
+        java.nio.file.Path trash = store.lastTrash();
+        LOG.warning("[webwas-precheck] 점검 기록 초기화(" + scope + (value == null ? "" : "=" + value) + "): 리포트 " + n + "건 휴지통으로"
+                + (trash == null ? "" : " (" + trash + ")") + (agentReset ? ", 에이전트 상태 초기화" : "") + " by " + Web.user(req));
+        out.put("count", n);
+        out.put("trash", trash == null ? null : trash.getFileName().toString());
+        out.put("agentReset", agentReset);
+        Web.json(resp, 200, out);
     }
 
     private boolean requireAdmin(HttpServletRequest req, HttpServletResponse resp) throws IOException {

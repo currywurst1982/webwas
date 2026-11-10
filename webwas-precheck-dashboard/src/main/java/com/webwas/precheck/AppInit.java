@@ -90,7 +90,9 @@ public class AppInit implements ServletContextListener {
             UserStore users = new UserStore(data.resolve("users.properties"));
             if (users.isEmpty()) createInitialAdmin(users, data);
             ctx.setAttribute(ATTR_USERS, users);
-            ctx.setAttribute(ATTR_REPORTS, new ReportStore(reports));
+            ReportStore store = new ReportStore(reports);
+            store.purgeTrash();   // 보관 기간이 지난 휴지통 비우기
+            ctx.setAttribute(ATTR_REPORTS, store);
             if (httpsOnly()) {
                 ctx.getSessionCookieConfig().setSecure(true);
                 LOG.info("[webwas-precheck] HTTPS 전용 모드: 로그인 쿠키 Secure, 브라우저 HTTP 접속은 https 포트 " + httpsPort() + " 로 이동");

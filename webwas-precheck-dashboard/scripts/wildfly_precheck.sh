@@ -738,6 +738,57 @@ OFFSET="$(resolve "$(sed -n 's/.*<socket-binding-group [^>]*port-offset="\([^"]*
 OFFSET="${OFFSET:-0}"; [[ "$OFFSET" =~ ^[0-9]+$ ]] || OFFSET=0
 port_of() { local p; p="$(resolve "$(sed -n "s/.*<socket-binding name=\"$1\"[^>]* port=\"\([^\"]*\)\".*/\1/p" "$CFG" | head -n1)")"; [[ "$p" =~ ^[0-9]+$ ]] && echo $((p + OFFSET)); }
 
+# 포트(socket-binding)의 바인드 주소가 "어디서" 정해졌는지 리포트에 적기 (대시보드에서 원인 판단용)
+#   사용: bind_trace socket-binding이름   → detail 줄로 출력
+#   socket-binding 의 interface → (없으면) socket-binding-group 의 default-interface → <interface> 내용 → 값 출처
+bind_trace() {
+  local sb="$1" ifn dflt blk expr prop def val src pf
+  ifn="$(sed -n "s/.*<socket-binding name=\"$sb\"[^>]* interface=\"\([^\"]*\)\".*/\1/p" "$CFG" | head -n1)"
+  dflt="$(sed -n 's/.*<socket-binding-group [^>]*default-interface="\([^"]*\)".*/\1/p' "$CFG" | head -n1)"
+  if [ -n "$ifn" ]; then detail "판단 근거① socket-binding \"$sb\" 에 interface=\"$ifn\" 지정"
+  else ifn="$dflt"; detail "판단 근거① socket-binding \"$sb\" 에 interface 지정 없음 → 기본 인터페이스(default-interface) \"${dflt:-?}\" 사용"; fi
+  [ -z "$ifn" ] && { detail "판단 근거② 기본 인터페이스를 설정에서 찾지 못함"; return; }
+  blk="$(awk -v n="$ifn" '
+    !f && $0 ~ "<interface name=\"" n "\"" { f=1; print; if ($0 ~ /<\/interface>/ || $0 ~ /<interface [^>]*\/>/) exit; next }
+    f { print; if ($0 ~ /<\/interface>|\/>[ \t]*$/) exit }' "$CFG" | tr -s ' \t\n' ' ' | sed 's/^ //; s/ $//')"
+  detail "판단 근거② <interface name=\"$ifn\"> 내용: ${blk:-(설정에 없음)}"
+  if printf '%s' "$blk" | grep -q '<any-address'; then
+    detail "판단 근거③ <any-address/> → 모든 주소(*)에서 열림"; return
+  fi
+  if printf '%s' "$blk" | grep -q '<loopback'; then
+    detail "판단 근거③ <loopback/> → 127.0.0.1 전용"; return
+  fi
+  expr="$(printf '%s' "$blk" | sed -n 's/.*<inet-address value="\([^"]*\)".*/\1/p' | head -n1)"
+  if [[ "$expr" =~ ^\$\{([^:}]+)(:([^}]*))?\}$ ]]; then
+    prop="${BASH_REMATCH[1]}"; def="${BASH_REMATCH[3]}"
+    val="$(sysprop "$prop")"; src="시작 옵션 -D$prop=$val"
+    if [ -z "$val" ]; then
+      case "$prop" in
+        jboss.bind.address) val="$(cliarg -b)"; src="시작 옵션 -b $val" ;;
+        jboss.bind.address.management) val="$(cliarg -bmanagement)"; src="시작 옵션 -bmanagement $val" ;;
+      esac
+    fi
+    if [ -n "$val" ]; then
+      detail "판단 근거③ 값 $expr → $src 가 기본값(${def:-없음})을 덮어씀 → $val"
+    else
+      detail "판단 근거③ 값 $expr → 시작 옵션에 $prop 없음 → 기본값 ${def:-(없음)} 사용"
+    fi
+  elif [ -n "$expr" ]; then
+    detail "판단 근거③ 고정값 $expr"
+  else
+    detail "판단 근거③ 주소 설정 형식을 해석하지 못함 (직접 확인 필요)"
+  fi
+  # -P / --properties 속성 파일로도 값이 들어올 수 있음 (명령줄에는 안 보임)
+  pf="$(cliarg -P)"; [ -z "$pf" ] && pf="$(cliarg --properties)"
+  if [ -n "$pf" ]; then
+    if [ -r "$pf" ] && [ -n "$prop" ] && grep -qE "^[[:space:]]*$prop[[:space:]]*[=:]" "$pf"; then
+      detail "판단 근거④ 속성 파일 $pf 에 $prop 값 있음 (이 값이 쓰였을 수 있음): $(grep -E "^[[:space:]]*$prop[[:space:]]*[=:]" "$pf" | tail -n1 | cut -c1-120)"
+    else
+      detail "판단 근거④ 속성 파일 옵션 사용 중($pf) → 그 파일에서 ${prop:-주소} 값 확인 필요"
+    fi
+  fi
+}
+
 # 3-1 관리 인터페이스(관리 콘솔·HTTP 관리 API) 노출
 MGMT_ADDR="$(iface_addr management)"
 MGMT_PORT="$(port_of management-http)"; MGMT_PORT="${MGMT_PORT:-$((9990 + OFFSET))}"
@@ -862,14 +913,21 @@ if grep -q '<ajp-listener' "$CFG"; then
     detail "$AJP_LINE (socket-binding=$AJP_SB, interface=${AJP_IF:-?})"
     detail "→ 이 점검은 방화벽 규칙은 보지 않습니다. 외부 접속 확인: 다른 서버에서  timeout 3 bash -c '</dev/tcp/<이 서버 IP>/$AJP_PORT' && echo 열림 || echo 막힘"
     detail "→ 프록시가 AJP 를 쓰지 않으면 ajp-listener 제거, 같은 서버의 프록시만 쓰면 interface 를 127.0.0.1 로"
+    bind_trace "$AJP_SB"
+    if [ -n "$AJP_ADDR" ] && is_loopback "$AJP_ADDR"; then
+      detail "※ 설정상 주소($AJP_ADDR)와 실제 열린 주소가 다름 → 다른 설정 파일·속성 파일(-P)·관리 CLI 로 바뀐 값일 수 있음. 확인: jboss-cli 에서 /socket-binding-group=*/socket-binding=$AJP_SB:read-resource(include-runtime=true)"
+    fi
   elif [ -n "$AJP_ALL" ]; then
     info "AJP 리스너(포트 $AJP_PORT) 사용 중 — 루프백에서만 열림 (같은 서버의 프록시만 접속 가능, 실제로 열린 주소 기준)"
     printf '%s\n' "$AJP_ALL" | show
+    bind_trace "$AJP_SB"
   elif [ -z "$LISTEN" ] && [ -n "$AJP_ADDR" ] && ! is_loopback "$AJP_ADDR"; then
     warn "AJP 리스너 바인드 주소가 $AJP_ADDR (설정 기준, interface=$AJP_IF) → 외부에서 AJP 접속 가능. 방화벽 제한 또는 127.0.0.1 로 제한 필요 (AJP 계열 CVE 대상)"
     detail "$AJP_LINE"
+    bind_trace "$AJP_SB"
   elif [ -z "$LISTEN" ] && [ -n "$AJP_ADDR" ]; then
     info "AJP 리스너 사용 중 — 루프백($AJP_ADDR)에서만 열림 (설정 기준)"
+    bind_trace "$AJP_SB"
   elif [ -n "$LISTEN" ]; then
     info "AJP 리스너 설정은 있으나 포트($AJP_PORT)가 열려 있지 않음 (사용하지 않으면 ajp-listener 제거 권장)"
     detail "$AJP_LINE"

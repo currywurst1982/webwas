@@ -239,7 +239,9 @@
   }
 
   function kpi(label, value, unit, hint, kind, onclick) {
-    return h('div', { class: 'kpi' + (onclick ? ' clickable' : ''), onclick, role: onclick ? 'button' : null, tabindex: onclick ? '0' : null },
+    return h('div', { class: 'kpi' + (onclick ? ' clickable' : ''), onclick, role: onclick ? 'button' : null, tabindex: onclick ? '0' : null,
+      title: onclick ? '누르면 아래 해당 항목으로 이동' : null,
+      onkeydown: onclick ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onclick(); } } : null },
       h('div', { class: 'label' }, kind ? badge(kind, STATUS[kind].label) : null, label),
       h('div', { class: 'value' }, String(value), unit ? h('small', null, unit) : null),
       hint ? h('div', { class: 'hint' }, hint) : null);
@@ -532,12 +534,16 @@
 
     const un = Object.values(r.cveUnpatched).reduce((a, b) => a + b, 0);
     const ap = r.cves.filter(c => c.applicable).length;
+    // 건수를 누르면 아래 목록의 해당 항목으로 이동 (0건이면 누를 수 없음)
+    const go = (n, tab, sel) => n > 0 ? () => jumpTo(tab, sel) : null;
     $('#d-kpis').replaceChildren(
-      kpi('', r.counts.risk, '건', null, 'risk'),
-      kpi('', r.counts.warn, '건', null, 'warn'),
-      kpi('', r.counts.ok, '건', null, 'ok'),
-      kpi('해당 CVE', ap, '건', r.product === 'apache' ? `미조치 추정 ${un} / 백포트 추정 ${ap - un}` : `critical ${r.cveApplicable.critical || 0} · high ${r.cveApplicable.high || 0}`),
-      kpi('미해당 CVE', r.cves.length - ap, '건', r.product === 'apache' ? '필요 모듈 미사용' : '구성요소 없음/다른 프로젝트')
+      kpi('', r.counts.risk, '건', null, 'risk', go(r.counts.risk, 'findings', '.finding[data-level="risk"]')),
+      kpi('', r.counts.warn, '건', null, 'warn', go(r.counts.warn, 'findings', '.finding[data-level="warn"]')),
+      kpi('', r.counts.ok, '건', null, 'ok', go(r.counts.ok, 'findings', '.finding[data-level="ok"]')),
+      kpi('해당 CVE', ap, '건', r.product === 'apache' ? `미조치 추정 ${un} / 백포트 추정 ${ap - un}` : `critical ${r.cveApplicable.critical || 0} · high ${r.cveApplicable.high || 0}`,
+        null, go(ap, 'cves', 'tr[data-applicable="1"]')),
+      kpi('미해당 CVE', r.cves.length - ap, '건', r.product === 'apache' ? '필요 모듈 미사용' : '구성요소 없음/다른 프로젝트',
+        null, go(r.cves.length - ap, 'cves', 'tr[data-applicable="0"]'))
     );
 
     renderFindings(r);
@@ -545,6 +551,8 @@
     renderHistory(r);
     $('#d-rawtext').textContent = r.raw;
     selectTab('findings');
+    $('#detail .dialog-body').scrollTop = 0;
+    $('#d-top').hidden = true;
     if (!dlg.open) dlg.showModal();
   }
 
@@ -556,7 +564,7 @@
         .sort((a, b) => STATUS[a.level].rank - STATUS[b.level].rank);
       if (!items.length) return;
       out.push(h('div', { class: 'sec' }, h('h3', null, SECTION_TITLE[sec] || sec),
-        ...items.map(f => h('div', { class: 'finding' },
+        ...items.map(f => h('div', { class: 'finding', 'data-level': f.level },
           h('div', null, badge(f.level)),
           h('div', null, f.text,
             f.details.length ? h('details', { open: f.level === 'risk' || null },
@@ -578,7 +586,7 @@
       h('p', { class: 'muted' }, CVE_NOTE[r.product] + (r.cveDbInfo ? ` (CVE 목록: ${r.cveDbInfo})` : '')),
       h('div', { class: 'table-scroll' }, h('table', { class: 'servers' },
         h('thead', null, h('tr', null, ...['판정', 'CVE', '등급', '설명', '영향 구간', r.product === 'apache' ? '필요 모듈' : '설치된 구성요소'].map(t => h('th', null, t)))),
-        h('tbody', null, ...rows.map(c => h('tr', null,
+        h('tbody', null, ...rows.map(c => h('tr', { 'data-applicable': c.applicable ? '1' : '0' },
           h('td', null, !c.applicable ? h('span', { class: 'badge b-skip' }, '미해당')
             : c.backported ? h('span', { class: 'badge b-backport' }, '백포트 추정') : badge(c.severity === 'critical' || c.severity === 'high' ? 'risk' : 'warn', '해당')),
           h('td', { class: 'mono nowrap' }, h('a', { href: 'https://www.cve.org/CVERecord?id=' + encodeURIComponent(c.id), target: '_blank', rel: 'noopener noreferrer' }, c.id),
@@ -607,6 +615,17 @@
           h('td', { class: 'num' }, String(x.counts.risk)), h('td', { class: 'num' }, String(x.counts.warn)),
           h('td', { class: 'num' }, String(x.counts.ok)), h('td', { class: 'num' }, String(cveTotal(x))),
           h('td', { class: 'mono' }, x.id))))));
+  }
+
+  /** 상세 창에서 탭을 열고 해당 항목(첫 번째)으로 스크롤, 같은 종류 항목을 잠깐 강조 */
+  function jumpTo(tab, selector) {
+    selectTab(tab);
+    const els = $$(`#detail [data-panel="${tab}"] ${selector}`);
+    if (!els.length) return;
+    const smooth = !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+    els[0].scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+    els.forEach(el => { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); });
+    setTimeout(() => els.forEach(el => el.classList.remove('flash')), 2600);
   }
 
   function selectTab(name) {
@@ -1693,6 +1712,14 @@
       render();
     }));
     $$('dialog [data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
+    // 상세 창: 아래로 내려가면 "건수 요약으로" 버튼 표시
+    const dBody = $('#detail .dialog-body');
+    dBody.addEventListener('scroll', () => { $('#d-top').hidden = dBody.scrollTop < 240; }, { passive: true });
+    $('#d-top').addEventListener('click', () => {
+      const smooth = !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+      dBody.scrollTo({ top: 0, behavior: smooth ? 'smooth' : 'auto' });
+      const first = $('#d-kpis .kpi.clickable'); if (first) first.focus({ preventScroll: true });
+    });
     $$('#detail .tab').forEach(t => t.addEventListener('click', () => selectTab(t.dataset.tab)));
     $('#d-delete').addEventListener('click', async () => {
       if (!current || !confirm(`${current.id} 리포트를 삭제할까요? 되돌릴 수 없습니다.`)) return;

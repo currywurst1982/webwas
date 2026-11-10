@@ -289,7 +289,7 @@
 
   /** 점검 사각지대 (Report.gaps() 코드) → 이름, 설명(무엇이 빠졌고 어떻게 메우는지) */
   const GAPS = {
-    accessLog: ['접근 로그 없음', '경로 탐색·웹쉘·JNDI 요청 등 요청 기반 공격 흔적을 못 봄 → 접근 로그를 켜거나 에이전트 설정 *_LOG_PATHS(-l)로 위치 지정'],
+    accessLog: ['접근 로그 없음', '경로 탐색·웹쉘 요청·성공(200) 응답 등 요청 단위 흔적을 못 봄. server.log·catalina.out 의 JNDI·역직렬화 흔적은 따로 점검하지만, 요청 스트림은 접근 로그에만 남습니다(요청 URL·응답 코드). → WildFly 접근 로그 켜기, 또는 앞단 Apache·Nginx 접근 로그를 에이전트 설정 *_LOG_PATHS(-l)로 지정'],
     serverLog: ['서버 로그 못 찾음', 'server.log·catalina.out 의 역직렬화·JNDI 흔적을 못 봄 → 에이전트 설정 WILDFLY_/TOMCAT_SERVER_LOG_PATHS(-s)로 위치 지정'],
     webFiles: ['웹 파일 위치 못 찾음', 'DocumentRoot·배포 폴더를 못 찾아 웹쉘 파일 점검을 못 함'],
     authLog: ['OS 로그인 기록 못 읽음', '/var/log/secure·auth.log·journal 을 읽지 못해 로그인 공격 점검을 못 함 (root 권한·로그 위치 확인)'],

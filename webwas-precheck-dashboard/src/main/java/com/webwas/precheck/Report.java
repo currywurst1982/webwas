@@ -162,6 +162,39 @@ public class Report {
         return toSummary(null);
     }
 
+    /**
+     * 점검 사각지대: 이 리포트에서 실제로 수행되지 못한 점검 (리포트 문구로 판단).
+     * accessLog 접근 로그 없음 / serverLog 서버 로그 없음 / webFiles 웹 파일 위치 못 찾음 /
+     * authLog OS 로그인 기록 못 읽음 / oldScript 로그인 기록 점검이 없는 이전 스크립트 /
+     * noRoot root 권한 없이 실행 / incomplete 점검이 중간에 끝남
+     */
+    public List<String> gaps() {
+        List<String> g = new ArrayList<>();
+        boolean auth = false;
+        for (Finding f : findings) {
+            String t = f.text;
+            if (t.contains("접근 로그") && t.contains("찾지 못했")) add(g, "accessLog");
+            if (t.contains("server.log 를 찾지 못했") || t.contains("catalina 로그를 찾지 못했")) add(g, "serverLog");
+            if (t.contains("DocumentRoot 를 찾지 못했") || t.contains("배포 폴더를 찾지 못했")) add(g, "webFiles");
+            if (t.contains("OS 로그인 기록")) {
+                auth = true;
+                if (t.contains("읽지 못해")) add(g, "authLog");
+            }
+        }
+        boolean incomplete = false;
+        for (String d : dataQuality) {
+            if (d.contains("root 권한 없이")) add(g, "noRoot");
+            if (d.contains("'점검 요약'이 없습니다") || d.contains("초기 단계에서 중단")) incomplete = true;
+        }
+        if (incomplete) add(g, "incomplete");
+        else if (!auth) add(g, "oldScript"); // 끝까지 돌았는데 4-5 로그인 기록 점검이 없음 = 2026-11-10 이전 스크립트
+        return g;
+    }
+
+    private static void add(List<String> g, String code) {
+        if (!g.contains(code)) g.add(code);
+    }
+
     /** 최신 버전 미만인가 (latest 가 없거나 버전을 모르면 false) */
     public boolean belowLatest(LatestVersions latest) {
         return latest != null && latest.below(product, version);
@@ -222,6 +255,7 @@ public class Report {
                 .filter(f -> "3".equals(f.section) && ("risk".equals(f.level) || "warn".equals(f.level)))
                 .map(f -> Map.of("level", f.level, "text", f.text)).toList());
         m.put("dataQuality", dataQuality);
+        m.put("gaps", gaps());
         m.put("fileModified", fileModified);
         return m;
     }

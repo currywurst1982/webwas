@@ -161,6 +161,7 @@
       if (st && r.status !== st) return false;
       if (dqOnly && !r.dataQuality.length) return false;
       if (src && r.source !== src) return false;
+      if (state.gapFilter && !(r.gaps || []).includes(state.gapFilter)) return false;
       if (!q) return true;
       const hay = [r.host, ...(r.ips || []), r.productLabel, r.version, r.versionLine, r.binary, r.id, r.cveList.map(c => c.id).join(' ')].join(' ').toLowerCase();
       return hay.includes(q);
@@ -223,6 +224,12 @@
       chip.replaceChildren(`에이전트: ${state.sourceFilter} `,
         h('button', { class: 'btn-link', type: 'button', 'aria-label': '에이전트 필터 해제', onclick: () => { state.sourceFilter = null; render(); renderSideAgents(); } }, '✕'));
     }
+    const gchip = $('#f-gap');
+    gchip.hidden = !state.gapFilter;
+    if (state.gapFilter) {
+      gchip.replaceChildren(`사각지대: ${(GAPS[state.gapFilter] || [state.gapFilter])[0]} `,
+        h('button', { class: 'btn-link', type: 'button', 'aria-label': '사각지대 필터 해제', onclick: () => { state.gapFilter = null; render(); } }, '✕'));
+    }
     renderProductTabs();
     // 개요
     renderKpis(ov);
@@ -233,9 +240,45 @@
     renderSuspects();
     renderCveChart(ov);
     renderConfigChart(ov);
+    renderGaps(ov);
     // 서버 목록
     renderTable(list);
     renderFindingsChart(list);
+  }
+
+  /** 점검 사각지대 (Report.gaps() 코드) → 이름, 설명(무엇이 빠졌고 어떻게 메우는지) */
+  const GAPS = {
+    accessLog: ['접근 로그 없음', '경로 탐색·웹쉘·JNDI 요청 등 요청 기반 공격 흔적을 못 봄 → 접근 로그를 켜거나 에이전트 설정 *_LOG_PATHS(-l)로 위치 지정'],
+    serverLog: ['서버 로그 못 찾음', 'server.log·catalina.out 의 역직렬화·JNDI 흔적을 못 봄 → 에이전트 설정 WILDFLY_/TOMCAT_SERVER_LOG_PATHS(-s)로 위치 지정'],
+    webFiles: ['웹 파일 위치 못 찾음', 'DocumentRoot·배포 폴더를 못 찾아 웹쉘 파일 점검을 못 함'],
+    authLog: ['OS 로그인 기록 못 읽음', '/var/log/secure·auth.log·journal 을 읽지 못해 로그인 공격 점검을 못 함 (root 권한·로그 위치 확인)'],
+    oldScript: ['이전 스크립트 결과', 'OS 로그인 기록 점검이 없는 옛 점검 스크립트로 만든 리포트 → 에이전트 재설치 후 다시 점검'],
+    noRoot: ['root 권한 없이 실행', '권한이 없어 로그·설정·프로세스 점검이 불완전'],
+    incomplete: ['점검 중단', '점검이 끝까지 실행되지 않아 결과가 불완전'],
+  };
+
+  function renderGaps(ov) {
+    const total = ov.length;
+    $('#gaps-meta').textContent = total ? `인스턴스 ${total}개 기준` : '';
+    const has = code => ov.filter(r => (r.gaps || []).includes(code));
+    const anyGap = ov.filter(r => (r.gaps || []).length).length;
+    const tiles = Object.entries(GAPS).map(([code, [label, desc]]) => {
+      const n = has(code).length;
+      const go = () => { state.gapFilter = code; showView('servers'); render(); };
+      return h('div', {
+        class: 'gap-tile' + (n ? ' on' : ''), title: desc + (n ? '\n누르면 해당 서버만 서버 목록에 표시' : ''),
+        role: n ? 'button' : null, tabindex: n ? '0' : null, onclick: n ? go : null,
+        onkeydown: n ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } } : null
+      },
+        h('div', { class: 'g-num' }, String(n), h('small', null, total ? ` / ${total}` : '')),
+        h('div', { class: 'g-label' }, label),
+        h('div', { class: 'g-desc' }, desc));
+    });
+    $('#gap-tiles').replaceChildren(
+      h('div', { class: 'gap-sum' + (anyGap ? ' bad' : '') }, total
+        ? (anyGap ? `점검이 일부 빠진 인스턴스 ${anyGap}개 / ${total}개` : `모든 인스턴스가 빠짐없이 점검됨 (${total}개)`)
+        : '아직 점검 결과가 없습니다.'),
+      ...tiles);
   }
 
   function kpi(label, value, unit, hint, kind, onclick) {
@@ -953,9 +996,14 @@
     const rows = data.agents.map(a => {
       const st = AGENT_STATE[a.state] || AGENT_STATE.never;
       const next = a.intervalHours === 0 ? '수동만' : a.lastReportAt ? rel(a.nextRunAt, now) : '설치 후 바로';
-      const scriptCell = a.scriptMatches === null || a.scriptMatches === undefined ? h('span', { class: 'zero' }, '-')
+      const scriptBadge = a.scriptMatches === null || a.scriptMatches === undefined ? h('span', { class: 'zero' }, '-')
         : a.scriptMatches ? h('span', { class: 'badge b-ok' }, '대시보드와 같음')
           : h('span', { class: 'badge b-warn', title: `에이전트: ${a.scriptSha256}\n대시보드: ${data.expectedScriptSha256}` }, h('span', { class: 'ic' }, '!'), '다름');
+      // 점검 스크립트가 같아도 에이전트 본체가 옛 버전이면 새 기능(예: 서버 로그 위치 -s 전달)이 동작하지 않음
+      const scriptCell = h('div', null, scriptBadge,
+        a.agentVersion ? h('div', { class: 'sub' + (a.agentOutdated ? ' warn-ink' : ''),
+          title: a.agentOutdated ? `대시보드의 에이전트는 ${data.expectedAgentVersion} 입니다. 에이전트를 재설치하세요.` : null },
+          `에이전트 ${a.agentVersion}`, a.agentOutdated ? ` → ${data.expectedAgentVersion} 재설치 필요` : '') : null);
       const lastRun = a.lastRunAt
         ? h('div', null, h('span', { title: abs(a.lastRunAt) }, rel(a.lastRunAt, now)), ' ',
           a.lastExit === 0 || (a.lastReportCount > 0 && a.lastExit !== 124) ? null : h('span', { class: 'badge b-risk' }, `실패(exit ${a.lastExit})`),
@@ -1668,8 +1716,9 @@
     const now = state.agents.now;
     const n = list.length;
     const online = list.filter(a => ['online', 'running', 'requested'].includes(a.state)).length;
-    const known = list.filter(a => a.scriptMatches !== null && a.scriptMatches !== undefined);
-    const same = known.filter(a => a.scriptMatches).length;
+    // 스크립트 해시나 에이전트 버전 중 하나라도 아는 에이전트 기준. 스크립트가 다르거나 에이전트가 옛 버전이면 "최신" 아님
+    const known = list.filter(a => (a.scriptMatches !== null && a.scriptMatches !== undefined) || a.agentVersion);
+    const same = known.filter(a => a.scriptMatches !== false && !a.agentOutdated).length;
     const recent = list.filter(a => a.lastReportAt && now - a.lastReportAt < 24 * 3600 * 1000).length;
     const tile = (ico, num, label, ratio, bad, title) => {
       const fill = h('i');
@@ -1679,7 +1728,7 @@
     };
     el.replaceChildren(
       tile('agent', `${online}/${n}`, '온라인', online / n, online < n, '최근 3분 안에 접속한 에이전트'),
-      tile('code', known.length ? `${same}/${known.length}` : '-', '스크립트 최신', known.length ? same / known.length : 0, same < known.length, '대시보드에 들어 있는 점검 스크립트 3개(apache/wildfly/tomcat)와 같은 에이전트 (다르면 install.sh 재실행)'),
+      tile('code', known.length ? `${same}/${known.length}` : '-', '스크립트 최신', known.length ? same / known.length : 0, same < known.length, `점검 스크립트 3개(apache/wildfly/tomcat)가 대시보드와 같고 에이전트 본체도 ${state.agents.expectedAgentVersion || '최신'} 이상인 에이전트 (아니면 재설치)`),
       tile('clock', `${recent}/${n}`, '24시간 내 점검', recent / n, false, '최근 24시간 안에 리포트를 보낸 에이전트'));
   }
 

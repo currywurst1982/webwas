@@ -160,6 +160,9 @@ public class ApiServlet extends HttpServlet {
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("now", now);
             out.put("expectedScriptSha256", expected);
+            Object av = getServletContext().getAttribute(AppInit.ATTR_AGENT_VERSION);
+            String expectedAgent = av == null ? null : av.toString();
+            out.put("expectedAgentVersion", expectedAgent);
             LatestVersions lv = Web.latest(getServletContext());
             List<Report> latestReports = ConfigIssues.latestPerInstance(allReports(Web.reports(getServletContext())));
             out.put("agents", Web.agents(getServletContext()).list().stream().map(a -> {
@@ -177,6 +180,9 @@ public class ApiServlet extends HttpServlet {
                     insts.add(im);
                 }
                 m.put("instances", insts);
+                // 에이전트 본체가 WAR 의 에이전트보다 낮으면 재설치 필요 (점검 스크립트 비교와 별개)
+                m.put("agentOutdated", expectedAgent != null && a.agentVersion != null
+                        && ReportParser.compareVersions(a.agentVersion, expectedAgent) < 0);
                 Map<String, Boolean> each = new LinkedHashMap<>();
                 a.versions.forEach((prod, v) -> each.put(prod.id, lv.isUpToDate(prod, v)));
                 m.put("versionUpToDate", each);

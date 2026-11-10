@@ -38,6 +38,9 @@ public class AppInit implements ServletContextListener {
      * 에이전트도 같은 순서로 계산해 보내므로 "에이전트 쪽 스크립트가 대시보드와 같은지" 비교에 씀.
      */
     public static final String ATTR_SCRIPT_SHA = "precheck.scriptSha";
+    /** WAR 에 들어 있는 에이전트(webwas-precheck-agent.sh)의 AGENT_VERSION (재설치 필요 여부 판단 기준) */
+    public static final String ATTR_AGENT_VERSION = "precheck.agentVersion";
+    static final Pattern AGENT_VERSION = Pattern.compile("(?m)^AGENT_VERSION=\"([0-9.]+)\"");
     public static final String ATTR_LATEST = "precheck.latest";
     public static final String ATTR_CVE = "precheck.cve";
     /** 스크립트의 최신 버전 기준값 */
@@ -111,6 +114,12 @@ public class AppInit implements ServletContextListener {
                 }
             }
             ctx.setAttribute(ATTR_SCRIPT_SHA, HexFormat.of().formatHex(sha.digest()));
+            try (InputStream in = AppInit.class.getResourceAsStream("/agent/webwas-precheck-agent.sh")) {
+                if (in != null) {
+                    Matcher av = AGENT_VERSION.matcher(new String(in.readAllBytes(), StandardCharsets.UTF_8));
+                    if (av.find()) ctx.setAttribute(ATTR_AGENT_VERSION, av.group(1));
+                }
+            }
             LatestVersions latest = new LatestVersions(data, baselines);
             ctx.setAttribute(ATTR_LATEST, latest);
             CveFeed cve = new CveFeed(data.resolve("cve"), scripts);

@@ -726,7 +726,10 @@ is_loopback() { [[ "$1" =~ ^(127\.|::1$|localhost$|\[::1\]$|\[?::ffff:127\.) ]];
 # 인터페이스 이름 → 주소 (inet-address / any-address / loopback)
 iface_addr() {
   local blk
-  blk="$(awk -v n="$1" '$0 ~ "<interface name=\"" n "\"" {f=1} f {print} f && /<\/interface>|\/>[ \t]*$/ && !/<interface name/ {exit}' "$CFG")"
+  # 시작 줄에서 끝나는 경우(<interface name="x"><inet-address .../></interface> 한 줄)도 그 줄만 읽음
+  blk="$(awk -v n="$1" '
+    !f && $0 ~ "<interface name=\"" n "\"" { f=1; print; if ($0 ~ /<\/interface>/ || $0 ~ /<interface [^>]*\/>/) exit; next }
+    f { print; if ($0 ~ /<\/interface>|\/>[ \t]*$/) exit }' "$CFG")"
   if printf '%s' "$blk" | grep -q '<any-address'; then echo "0.0.0.0"; return; fi
   if printf '%s' "$blk" | grep -q '<loopback'; then echo "127.0.0.1"; return; fi
   resolve "$(printf '%s' "$blk" | sed -n 's/.*<inet-address value="\([^"]*\)".*/\1/p' | head -n1)"
@@ -843,8 +846,37 @@ fi
 
 # 3-6 웹(Undertow) 설정
 if grep -q '<ajp-listener' "$CFG"; then
-  warn "AJP 리스너 사용 중 → 프록시(Apache/Nginx) 외에는 접근하지 못하게 방화벽 제한 필요 (AJP 계열 CVE 대상)"
-  grep '<ajp-listener' "$CFG" | sed 's/^[ \t]*//' | show
+  # 실제로 열린 주소로 판정 (관리 인터페이스와 같은 방식). 방화벽 규칙은 보지 않음
+  AJP_LINE="$(grep '<ajp-listener' "$CFG" | head -n1 | sed 's/^[ \t]*//')"
+  AJP_SB="$(printf '%s' "$AJP_LINE" | sed -n 's/.*socket-binding="\([^"]*\)".*/\1/p')"; AJP_SB="${AJP_SB:-ajp}"
+  AJP_PORT="$(port_of "$AJP_SB")"; AJP_PORT="${AJP_PORT:-$((8009 + OFFSET))}"
+  # 바인드 주소(설정 기준): socket-binding 의 interface, 없으면 socket-binding-group 의 default-interface
+  AJP_IF="$(sed -n "s/.*<socket-binding name=\"$AJP_SB\"[^>]* interface=\"\([^\"]*\)\".*/\1/p" "$CFG" | head -n1)"
+  [ -z "$AJP_IF" ] && AJP_IF="$(sed -n 's/.*<socket-binding-group [^>]*default-interface="\([^"]*\)".*/\1/p' "$CFG" | head -n1)"
+  AJP_ADDR="$([ -n "$AJP_IF" ] && iface_addr "$AJP_IF")"
+  AJP_ALL="$(printf '%s\n' "$LISTEN" | grep -E ":$AJP_PORT$")"
+  AJP_OPEN="$(printf '%s\n' "$AJP_ALL" | grep -vE '^(127\.|\[::1\]|::1|\[?::ffff:127\.)')"
+  if [ -n "$AJP_OPEN" ]; then
+    warn "AJP 리스너(포트 $AJP_PORT)가 외부 주소에서 열림 → 프록시(Apache/Nginx) 외에는 접근하지 못하게 방화벽 제한 또는 127.0.0.1 로 제한 필요 (AJP 계열 CVE 대상)"
+    printf '%s\n' "$AJP_OPEN" | show
+    detail "$AJP_LINE (socket-binding=$AJP_SB, interface=${AJP_IF:-?})"
+    detail "→ 이 점검은 방화벽 규칙은 보지 않습니다. 외부 접속 확인: 다른 서버에서  timeout 3 bash -c '</dev/tcp/<이 서버 IP>/$AJP_PORT' && echo 열림 || echo 막힘"
+    detail "→ 프록시가 AJP 를 쓰지 않으면 ajp-listener 제거, 같은 서버의 프록시만 쓰면 interface 를 127.0.0.1 로"
+  elif [ -n "$AJP_ALL" ]; then
+    info "AJP 리스너(포트 $AJP_PORT) 사용 중 — 루프백에서만 열림 (같은 서버의 프록시만 접속 가능, 실제로 열린 주소 기준)"
+    printf '%s\n' "$AJP_ALL" | show
+  elif [ -z "$LISTEN" ] && [ -n "$AJP_ADDR" ] && ! is_loopback "$AJP_ADDR"; then
+    warn "AJP 리스너 바인드 주소가 $AJP_ADDR (설정 기준, interface=$AJP_IF) → 외부에서 AJP 접속 가능. 방화벽 제한 또는 127.0.0.1 로 제한 필요 (AJP 계열 CVE 대상)"
+    detail "$AJP_LINE"
+  elif [ -z "$LISTEN" ] && [ -n "$AJP_ADDR" ]; then
+    info "AJP 리스너 사용 중 — 루프백($AJP_ADDR)에서만 열림 (설정 기준)"
+  elif [ -n "$LISTEN" ]; then
+    info "AJP 리스너 설정은 있으나 포트($AJP_PORT)가 열려 있지 않음 (사용하지 않으면 ajp-listener 제거 권장)"
+    detail "$AJP_LINE"
+  else
+    warn "AJP 리스너 사용 중(열린 주소 확인 불가) → 프록시(Apache/Nginx) 외에는 접근하지 못하게 방화벽 제한 필요 (AJP 계열 CVE 대상)"
+    detail "$AJP_LINE"
+  fi
 else
   ok "AJP 리스너 없음"
 fi

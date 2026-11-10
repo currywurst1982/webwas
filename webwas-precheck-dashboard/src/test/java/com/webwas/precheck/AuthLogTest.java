@@ -29,6 +29,18 @@ class AuthLogTest {
         assertEquals("compromise", r.intrusionStatus());
     }
 
+    /** Apache 리포트에도 같은 점검 (웹 실행 계정 apache 의 직접 로그인·sudo·su 포함) */
+    @Test
+    void apacheAuthLog() throws Exception {
+        Report r = ReportParserTest.load("apache_precheck_vm_authlog.txt");
+        assertEquals(Product.APACHE, r.product);
+        assertEquals("risk", find(r, "로그인 실패가 몰린 직후").level);
+        assertEquals("warn", find(r, "실행계정(apache)으로 SSH 직접 로그인").level);
+        assertEquals("warn", find(r, "실행계정(apache)이 sudo").level);
+        assertEquals("info", find(r, "su 로 실행계정(apache)").level);
+        assertEquals("compromise", r.intrusionStatus());
+    }
+
     private static Report.Finding find(Report r, String text) {
         return r.findings.stream().filter(f -> "4".equals(f.section) && f.text.contains(text)).findFirst()
                 .orElseThrow(() -> new AssertionError("없음: " + text));

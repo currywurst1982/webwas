@@ -36,7 +36,7 @@ public class AppInit implements ServletContextListener {
     public static final String ATTR_EXCEPTIONS = "precheck.exceptions";
     public static final String ATTR_SETTINGS = "precheck.settings";
     /**
-     * WAR 에 들어 있는 점검 스크립트 3개(apache → wildfly → tomcat 순서로 이어 붙인 내용)의 SHA-256.
+     * WAR 에 들어 있는 점검 스크립트 전체(Product 순서: apache → wildfly → tomcat → nginx 로 이어 붙인 내용)의 SHA-256.
      * 에이전트도 같은 순서로 계산해 보내므로 "에이전트 쪽 스크립트가 대시보드와 같은지" 비교에 씀.
      */
     public static final String ATTR_SCRIPT_SHA = "precheck.scriptSha";

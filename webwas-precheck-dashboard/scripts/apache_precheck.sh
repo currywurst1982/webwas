@@ -726,14 +726,27 @@ if [ -n "${PRECHECK_PID:-}" ]; then
   # 자식 중 httpd 만 (rotatelogs 같은 로그 프로그램은 마스터 계정으로 돌 수 있어 제외)
   PROC_USER="$(ps -o user=,comm= --ppid "$PRECHECK_PID" 2>/dev/null | awk '$2 ~ /^(httpd|apache2)/ {print $1}' | sort | uniq -c | sort -rn | awk 'NR==1{print $2}')"
 fi
+# httpd 바이너리에 setuid-root 가 걸려 있으면(예: chmod 4750 root:web), 어떤 계정으로 띄워도 마스터의 유효 사용자(euid)는 root 가 됨.
+#   그래서 ps 의 user 칸(=euser, 유효 사용자)도 root 로 보이고, 80·443 을 열 수 있는 것도 이 root 권한 덕분. 설정·실행파일을 바꾸면 root 로 실행됨.
+BIN_SETUID_ROOT=""
+if [ -n "${HTTPD_BIN:-}" ]; then
+  bm="$(stat -c '%a %U' "$HTTPD_BIN" 2>/dev/null)"; bp="${bm%% *}"; bo="${bm#* }"
+  [ -n "$bp" ] && [ "$bo" = "root" ] && [ $(( 8#$bp & 8#4000 )) -ne 0 ] && BIN_SETUID_ROOT=1
+fi
 if [ -n "$PROC_USER" ]; then RUN_USER="$PROC_USER"
 elif [ -n "$MASTER_USER" ] && [ "$MASTER_USER" != "root" ]; then RUN_USER="$MASTER_USER"
 else RUN_USER="$CFG_USER"; fi
 [ -z "$RUN_USER" ] && RUN_USER="$(ps -eo user=,comm= | awk '$2 ~ /httpd|apache2/ && $1!="root"{print $1; exit}')"
+# 마스터가 root 권한으로 동작하는가 (직접 root 기동이거나 setuid-root 바이너리)
+MASTER_ROOT=""; { [ "$MASTER_USER" = "root" ] || [ -n "$BIN_SETUID_ROOT" ]; } && MASTER_ROOT=1
+MASTER_DESC="$MASTER_USER"
+[ -n "$BIN_SETUID_ROOT" ] && MASTER_DESC="${MASTER_USER:-?} / setuid-root 바이너리라 유효 권한은 root"
 if [ "$RUN_USER" = "root" ]; then risk "워커 실행 계정이 root"
-elif [ -n "$RUN_USER" ]; then ok "워커 실행 계정: $RUN_USER${MASTER_USER:+ (마스터 프로세스: $MASTER_USER)}"
+elif [ -n "$RUN_USER" ]; then ok "워커 실행 계정: $RUN_USER${MASTER_USER:+ (마스터 프로세스: $MASTER_DESC)}"
 else warn "워커 실행 계정을 확인하지 못함"; fi
-if [ -n "$CFG_USER" ] && [ -n "$RUN_USER" ] && [ "$CFG_USER" != "$RUN_USER" ] && [ -n "$MASTER_USER" ] && [ "$MASTER_USER" != "root" ]; then
+if [ -n "$BIN_SETUID_ROOT" ]; then
+  info "httpd 바이너리($HTTPD_BIN)에 setuid 가 설정돼 있고 소유자가 root 입니다 → ${MASTER_USER:-web} 계정으로 기동해도 마스터는 root 권한(euid=root)으로 동작합니다(80·443 개방용). 설정·실행파일 변조 시 root 로 실행되므로, 아래 설정 파일 소유권 점검은 이 점을 반영합니다."
+elif [ -n "$CFG_USER" ] && [ -n "$RUN_USER" ] && [ "$CFG_USER" != "$RUN_USER" ] && [ -n "$MASTER_USER" ] && [ "$MASTER_USER" != "root" ]; then
   info "설정의 User $CFG_USER 는 httpd 를 root 로 기동할 때만 적용됩니다. 이 서버는 $MASTER_USER 계정으로 기동해 실제 실행 계정은 $RUN_USER 입니다. (점검은 실제 계정 기준)"
 fi
 
@@ -747,14 +760,15 @@ if [ -s "$CONF_LIST" ]; then
     m="$(stat -c '%a %U' "$f" 2>/dev/null)"; perm="${m%% *}"; own="${m#* }"
     if [ $(( 8#$perm & 8#002 )) -ne 0 ]; then BADP="$BADP$f ($perm $own, 누구나 수정 가능)"$'\n'
     elif [ "$own" != "root" ] && [ -n "$RUN_USER" ] && [ "$own" = "$RUN_USER" ]; then
-      if [ -n "$MASTER_USER" ] && [ "$MASTER_USER" = "$RUN_USER" ]; then SAMEP="$SAMEP$f ($perm $own)"$'\n'
-      else BADP="$BADP$f ($perm $own, 웹 실행계정 소유${MASTER_USER:+ — 마스터는 $MASTER_USER})"$'\n'; fi
+      # 마스터·자식이 모두 같은 일반 계정(web 등)이고 마스터가 root 권한이 아님 → 일반적 구성 = 정보
+      if [ -z "$MASTER_ROOT" ] && [ -n "$MASTER_USER" ] && [ "$MASTER_USER" = "$RUN_USER" ]; then SAMEP="$SAMEP$f ($perm $own)"$'\n'
+      else BADP="$BADP$f ($perm $own, 웹 실행계정 소유${MASTER_ROOT:+ — 마스터는 root 권한${BIN_SETUID_ROOT:+(setuid-root)}})"$'\n'; fi
     fi
   done < "$CONF_LIST"
   if [ -n "$BADP" ]; then
-    risk "설정 파일을 웹 실행계정이나 다른 사용자가 수정할 수 있음 → 설정 변조로 웹쉘·프록시 악용 가능(마스터가 root 면 권한 상승 통로). root 소유 + 644 권장"
+    risk "설정 파일을 웹 실행계정이나 다른 사용자가 수정할 수 있음 → 설정 변조로 웹쉘·프록시 악용 가능. 마스터가 root 권한(직접 root 기동 또는 setuid-root 바이너리)이면 web 계정 탈취가 root 권한 상승으로 이어짐. root 소유 + 644 권장"
     printf '%s' "$BADP" | head -n 20 | show
-    [ -z "$MASTER_USER" ] && detail "→ httpd 가 실행 중이 아니라 마스터 프로세스 계정을 확인하지 못했습니다. 일반 계정으로 직접 기동하는 구성이면 위험이 낮을 수 있습니다."
+    [ -z "$MASTER_USER" ] && [ -z "$BIN_SETUID_ROOT" ] && detail "→ httpd 가 실행 중이 아니라 마스터 프로세스 계정을 확인하지 못했습니다. 일반 계정으로 직접 기동하는 구성이면 위험이 낮을 수 있습니다."
   fi
   if [ -n "$SAMEP" ]; then
     info "httpd 를 실행 계정($RUN_USER)으로 직접 기동하는 구성(마스터·자식 모두 $RUN_USER) — 설정 파일이 같은 계정 소유인 것은 이 구성에서 일반적이며 권한 상승 통로가 아닙니다. 다만 $RUN_USER 계정이 탈취되면 설정을 바꿔 트래픽 가로채기·프록시 악용이 가능하므로, 더 강화하려면 root 소유 644(읽기만 허용) + 설정 변경은 sudo 로"

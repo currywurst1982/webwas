@@ -1229,7 +1229,8 @@ tags() { tr '\n' ' ' < "$1" | sed 's/>/>\n/g' | grep -E "<$2[ />]" | sed 's/^[^<
 attr() { printf '%s' "$1" | sed -n "s/.*[[:space:]]$2=\"\([^\"]*\)\".*/\1/p" | head -n1; }
 # ${prop} 값 풀기 (명령줄 -Dprop 값)
 resolve() { local e="$1"; if [[ "$e" =~ ^\$\{([^}]+)\}$ ]]; then sysprop "${BASH_REMATCH[1]}"; else printf '%s' "$e"; fi; }
-is_loopback() { [[ "$1" =~ ^(127\.|::1$|localhost$|\[::1\]$) ]]; }
+# [::ffff:127.0.0.1] = Java 가 IPv6 방식으로 연 127.0.0.1 (ss 에 이렇게 보임, 외부 접속 불가)
+is_loopback() { [[ "$1" =~ ^(127\.|::1$|localhost$|\[::1\]$|\[?::ffff:127\.) ]]; }
 
 LISTEN=""
 if [ -n "${PRECHECK_PID:-}" ] && command -v ss >/dev/null 2>&1; then
@@ -1262,7 +1263,8 @@ if [ -n "$AJP" ]; then
     ap="$(resolve "$(attr "$c" port)")"; aa="$(attr "$c" address)"
     sec="$(attr "$c" secret)"; [ -z "$sec" ] && sec="$(attr "$c" requiredSecret)"
     sreq="$(attr "$c" secretRequired)"
-    open="$(printf '%s\n' "$LISTEN" | grep -E ":$ap$" | grep -vE '^(127\.|\[::1\]|::1)')"
+    # 루프백(127.x, ::1, [::ffff:127.x])이 아닌 주소에 열린 것만 = 외부에서 접속 가능
+    open="$(printf '%s\n' "$LISTEN" | grep -E ":$ap$" | grep -vE '^(127\.|\[::1\]|::1|\[?::ffff:127\.)')"
     if [ "$sreq" = "false" ] || [ -z "$sec" ]; then
       if [ -n "$open" ] || { [ -z "$LISTEN" ] && [ -n "$aa" ] && ! is_loopback "$aa"; }; then
         risk "AJP 커넥터(포트 $ap)가 secret 없이 외부 주소에서 열림 → Ghostcat(CVE-2020-1938)류 파일 읽기·코드 실행 위험. 미사용 시 제거, 사용 시 secret 설정 + address=\"127.0.0.1\""

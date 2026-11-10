@@ -721,7 +721,8 @@ resolve() {
     printf '%s' "$e"
   fi
 }
-is_loopback() { [[ "$1" =~ ^(127\.|::1$|localhost$|\[::1\]$) ]]; }
+# [::ffff:127.0.0.1] = Java 가 IPv6 방식으로 연 127.0.0.1 (ss 에 이렇게 보임, 외부 접속 불가)
+is_loopback() { [[ "$1" =~ ^(127\.|::1$|localhost$|\[::1\]$|\[?::ffff:127\.) ]]; }
 # 인터페이스 이름 → 주소 (inet-address / any-address / loopback)
 iface_addr() {
   local blk
@@ -742,14 +743,24 @@ LISTEN=""
 if [ -n "${PRECHECK_PID:-}" ] && command -v ss >/dev/null 2>&1; then
   LISTEN="$(ss -ltnpH 2>/dev/null | grep "pid=$PRECHECK_PID," | awk '{print $4}' | sort -u)"
 fi
-MGMT_OPEN="$(printf '%s\n' "$LISTEN" | grep -E ":($MGMT_PORT|$MGMT_SPORT)$" | grep -vE '^(127\.|\[::1\]|::1)')"
+# 루프백(127.x, ::1, [::ffff:127.x])이 아닌 주소에 열린 것만 = 외부에서 접속 가능
+MGMT_OPEN="$(printf '%s\n' "$LISTEN" | grep -E ":($MGMT_PORT|$MGMT_SPORT)$" | grep -vE '^(127\.|\[::1\]|::1|\[?::ffff:127\.)')"
+MGMT_ALL="$(printf '%s\n' "$LISTEN" | grep -E ":($MGMT_PORT|$MGMT_SPORT)$")"
 if [ -n "$MGMT_OPEN" ]; then
   risk "관리 인터페이스(관리 콘솔/관리 API, 포트 $MGMT_PORT/$MGMT_SPORT)가 외부 주소에서 접속 가능 → 비밀번호 추측·관리 API 공격 대상. 127.0.0.1 또는 관리망 전용 주소로 제한 권장"
   printf '%s\n' "$MGMT_OPEN" | show
-elif [ -z "$LISTEN" ] && [ -n "$MGMT_ADDR" ] && ! is_loopback "$MGMT_ADDR"; then
-  risk "관리 인터페이스 바인드 주소가 $MGMT_ADDR (설정 기준) → 외부에서 관리 콘솔 접속 가능. 127.0.0.1 또는 관리망 전용 주소로 제한 권장"
+elif [ -n "$MGMT_ALL" ]; then
+  # 실제로 열린 주소가 모두 루프백 ([::ffff:127.0.0.1] 포함)
+  ok "관리 인터페이스(포트 $MGMT_PORT/$MGMT_SPORT)는 루프백에서만 열림 (실제로 열린 주소 기준)"
+  printf '%s\n' "$MGMT_ALL" | show
+elif [ -n "$MGMT_ADDR" ] && ! is_loopback "$MGMT_ADDR"; then
+  if [ -z "$LISTEN" ]; then
+    risk "관리 인터페이스 바인드 주소가 $MGMT_ADDR (설정 기준) → 외부에서 관리 콘솔 접속 가능. 127.0.0.1 또는 관리망 전용 주소로 제한 권장"
+  else
+    warn "관리 인터페이스 설정 주소가 $MGMT_ADDR 인데 관리 포트($MGMT_PORT/$MGMT_SPORT)가 열려 있지 않음 (관리 기능 꺼짐 또는 포트 다름) → 켜질 때 외부에 노출되지 않도록 127.0.0.1 로 제한 권장"
+  fi
 elif [ -n "$MGMT_ADDR" ]; then
-  ok "관리 인터페이스는 루프백($MGMT_ADDR)에서만 열림"
+  ok "관리 인터페이스는 루프백($MGMT_ADDR)에서만 열림 (설정 기준)"
 else
   info "관리 인터페이스 바인드 주소를 확인하지 못함"
 fi

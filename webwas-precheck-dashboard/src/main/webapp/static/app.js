@@ -676,8 +676,34 @@
     return s ? '?' + s : '';
   }
 
-  /** 에이전트가 마지막 점검에서 읽은 제품별 버전 */
+  /** 인스턴스 구분 이름 (hostLabel 과 같은 규칙: Apache -f 설정 파일 / WAS 는 서버 폴더 또는 설치 폴더 이름) */
+  function instName(r) {
+    if (r.confArg) return r.confArg.length <= 40 ? r.confArg : '…' + r.confArg.slice(-39);
+    if (r.product !== 'apache' && r.binary) return r.binary.slice(r.binary.lastIndexOf('/') + 1);
+    return null;
+  }
+
+  /** 에이전트의 [제품, 버전] 목록 (같은 제품·버전은 한 번만). 사이드바 요약용 */
+  function agentVersions(a) {
+    if (a.instances && a.instances.length) {
+      const seen = new Set();
+      return a.instances.map(i => [i.product, i.version || '버전 미확인']).filter(([p, v]) => !seen.has(p + v) && seen.add(p + v));
+    }
+    return Object.entries(a.versions || {});
+  }
+
+  /** 에이전트가 마지막 점검에서 읽은 제품·버전 (인스턴스마다 한 줄) */
   function versionCell(a) {
+    const insts = a.instances || [];
+    if (insts.length) {
+      return h('div', { class: 'ver-list' }, ...insts.map(i => {
+        const name = instName(i);
+        return h('div', { title: [i.binary, i.confArg].filter(Boolean).join(' · ') || null },
+          prodBadge(i.product), ' ', i.version ? i.version : h('span', { class: 'zero' }, '버전 미확인'), ' ',
+          !i.version ? null : i.upToDate ? h('span', { class: 'badge b-ok' }, '최신') : h('span', { class: 'badge b-warn' }, '최신 미만'),
+          name ? h('span', { class: 'sub mono' }, ' ' + name) : null);
+      }));
+    }
     const vs = Object.entries(a.versions || {});
     if (!vs.length) return h('span', { class: 'zero' }, '미확인');
     return h('div', { class: 'ver-list' }, ...vs.map(([p, v]) => h('div', null, prodBadge(p), ' ', v, ' ',
@@ -790,7 +816,8 @@
         h('span', { class: 'sched-time' }, when),
         h('span', { class: 'sched-ico' }, icon('server')),
         h('span', { class: 'sched-name' }, a.name,
-          h('span', { class: 'sched-meta' }, meta + Object.entries(a.versions || {}).map(([p, v]) => ` · ${PRODUCTS[p]} ${v.replace(/\.Final$/, '')}`).join('') + (rep ? ` · 점검 ${rel(rep.fileModified, now)}` : ''))),
+          (() => { const t = meta + agentVersions(a).map(([p, v]) => ` · ${PRODUCTS[p]} ${v.replace(/\.Final$/, '')}`).join('') + (rep ? ` · 점검 ${rel(rep.fileModified, now)}` : '');
+            return h('span', { class: 'sched-meta', title: t }, t); })()),
         rep && rep.intrusion === 'compromise' ? badge('compromise')
           : h('span', { class: 'badge ' + st.cls }, h('span', { class: 'ic', 'aria-hidden': 'true' }, st.icon), st.label)));
     }), ...(more > 0 ? [h('li', { class: 'side-more' }, h('button', { class: 'btn-link', type: 'button', onclick: () => { showView('agents'); loadAgents(); } },

@@ -161,8 +161,22 @@ public class ApiServlet extends HttpServlet {
             out.put("now", now);
             out.put("expectedScriptSha256", expected);
             LatestVersions lv = Web.latest(getServletContext());
+            List<Report> latestReports = ConfigIssues.latestPerInstance(allReports(Web.reports(getServletContext())));
             out.put("agents", Web.agents(getServletContext()).list().stream().map(a -> {
                 Map<String, Object> m = a.toMap(now, expected);
+                // 마지막 점검의 제품·인스턴스 전체 (같은 제품이 여러 개여도, 버전을 못 읽었어도 모두)
+                List<Map<String, Object>> insts = new ArrayList<>();
+                for (Report r : AgentStore.lastRunInstances(latestReports, a.name)) {
+                    Map<String, Object> im = new LinkedHashMap<>();
+                    im.put("product", r.product.id);
+                    im.put("version", r.version);
+                    im.put("upToDate", r.version != null && lv.isUpToDate(r.product, r.version));
+                    im.put("binary", r.binary);
+                    im.put("confArg", r.confArg);
+                    im.put("reportId", r.id);
+                    insts.add(im);
+                }
+                m.put("instances", insts);
                 Map<String, Boolean> each = new LinkedHashMap<>();
                 a.versions.forEach((prod, v) -> each.put(prod.id, lv.isUpToDate(prod, v)));
                 m.put("versionUpToDate", each);

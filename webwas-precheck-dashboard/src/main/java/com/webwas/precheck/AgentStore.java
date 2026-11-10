@@ -300,6 +300,25 @@ public class AgentStore {
         return a.versions.entrySet().stream().allMatch(e -> latest.isUpToDate(e.getKey(), e.getValue()));
     }
 
+    /** 마지막 점검 묶음으로 보는 범위: 가장 최근 리포트로부터 이 시간 안에 받은 리포트 (재전송 지연 포함) */
+    static final long LAST_RUN_WINDOW_MILLIS = 30 * 60_000L;
+
+    /**
+     * 에이전트의 마지막 점검에서 온 인스턴스 목록 (제품·인스턴스마다 한 줄, 버전을 못 읽은 것도 포함).
+     * latest = 인스턴스별 최신 리포트 (ConfigIssues.latestPerInstance 결과).
+     * 마지막 점검보다 훨씬 전에 온 인스턴스(이미 지운 서버 등)는 뺌.
+     */
+    public static List<Report> lastRunInstances(List<Report> latest, String agent) {
+        List<Report> mine = new ArrayList<>();
+        for (Report r : latest) if (agent.equals(r.source)) mine.add(r);
+        long newest = mine.stream().mapToLong(r -> r.fileModified).max().orElse(0);
+        mine.removeIf(r -> r.fileModified < newest - LAST_RUN_WINDOW_MILLIS);
+        mine.sort(java.util.Comparator.comparing((Report r) -> r.product.ordinal())
+                .thenComparing(r -> r.binary == null ? "" : r.binary)
+                .thenComparing(r -> r.confArg == null ? "" : r.confArg));
+        return mine;
+    }
+
     /** 리포트 1건 수신 */
     public synchronized void reportReceived(String name, long now) throws IOException {
         reportReceived(name, now, null, null);

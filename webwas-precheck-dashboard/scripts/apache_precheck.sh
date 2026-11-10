@@ -690,15 +690,55 @@ if [ -n "$LRF" ]; then
   printf '%s\n' "$LRF" | show
 else ok "LimitRequestFieldSize 기본값 유지"; fi
 
-# 3-10 실행 계정
-RUN_USER="$(cfg_grep ':User[ \t]+' | tail -n1 | awk '{print $NF}' | tr -d '"')"
-if printf '%s' "$RUN_USER" | grep -q '^\$'; then   # ${APACHE_RUN_USER} 같은 변수
-  v="${RUN_USER#\$}"; v="${v#\{}"; v="${v%\}}"; RUN_USER="${!v:-}"
+# 3-10 실행 계정: 실제 프로세스 기준
+#   설정의 User 는 httpd 를 root 로 기동할 때만 적용됨 (mod_unixd). web 같은 일반 계정으로 기동하면 그 계정 그대로 실행되므로
+#   설정 값이 아니라 마스터·자식 프로세스의 계정을 봄 (그래야 [4] 의 프로세스·크론·임시 파일·로그인 기록 점검 대상이 맞음)
+CFG_USER="$(cfg_grep ':User[ \t]+' | tail -n1 | awk '{print $NF}' | tr -d '"')"
+if printf '%s' "$CFG_USER" | grep -q '^\$'; then   # ${APACHE_RUN_USER} 같은 변수
+  v="${CFG_USER#\$}"; v="${v#\{}"; v="${v%\}}"; CFG_USER="${!v:-}"
 fi
+MASTER_USER=""; PROC_USER=""
+if [ -n "${PRECHECK_PID:-}" ]; then
+  MASTER_USER="$(ps -o user= -p "$PRECHECK_PID" 2>/dev/null | tr -d ' ')"
+  # 자식 중 httpd 만 (rotatelogs 같은 로그 프로그램은 마스터 계정으로 돌 수 있어 제외)
+  PROC_USER="$(ps -o user=,comm= --ppid "$PRECHECK_PID" 2>/dev/null | awk '$2 ~ /^(httpd|apache2)/ {print $1}' | sort | uniq -c | sort -rn | awk 'NR==1{print $2}')"
+fi
+if [ -n "$PROC_USER" ]; then RUN_USER="$PROC_USER"
+elif [ -n "$MASTER_USER" ] && [ "$MASTER_USER" != "root" ]; then RUN_USER="$MASTER_USER"
+else RUN_USER="$CFG_USER"; fi
 [ -z "$RUN_USER" ] && RUN_USER="$(ps -eo user=,comm= | awk '$2 ~ /httpd|apache2/ && $1!="root"{print $1; exit}')"
 if [ "$RUN_USER" = "root" ]; then risk "워커 실행 계정이 root"
-elif [ -n "$RUN_USER" ]; then ok "워커 실행 계정: $RUN_USER"
+elif [ -n "$RUN_USER" ]; then ok "워커 실행 계정: $RUN_USER${MASTER_USER:+ (마스터 프로세스: $MASTER_USER)}"
 else warn "워커 실행 계정을 확인하지 못함"; fi
+if [ -n "$CFG_USER" ] && [ -n "$RUN_USER" ] && [ "$CFG_USER" != "$RUN_USER" ] && [ -n "$MASTER_USER" ] && [ "$MASTER_USER" != "root" ]; then
+  info "설정의 User $CFG_USER 는 httpd 를 root 로 기동할 때만 적용됩니다. 이 서버는 $MASTER_USER 계정으로 기동해 실제 실행 계정은 $RUN_USER 입니다. (점검은 실제 계정 기준)"
+fi
+
+# 3-10b 설정 파일 권한 (nginx_precheck.sh 와 같은 기준)
+#   마스터가 root 인데 설정이 웹 실행계정 소유 → 웹 계정 탈취 시 설정을 바꿔 root 마스터가 읽게 함(권한 상승 통로) = 위험
+#   마스터·자식이 모두 같은 일반 계정(web 등)으로 기동 → 그 계정 소유는 이 구성에서 일반적 = 정보
+BADP=""; SAMEP=""
+if [ -s "$CONF_LIST" ]; then
+  while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    m="$(stat -c '%a %U' "$f" 2>/dev/null)"; perm="${m%% *}"; own="${m#* }"
+    if [ $(( 8#$perm & 8#002 )) -ne 0 ]; then BADP="$BADP$f ($perm $own, 누구나 수정 가능)"$'\n'
+    elif [ "$own" != "root" ] && [ -n "$RUN_USER" ] && [ "$own" = "$RUN_USER" ]; then
+      if [ -n "$MASTER_USER" ] && [ "$MASTER_USER" = "$RUN_USER" ]; then SAMEP="$SAMEP$f ($perm $own)"$'\n'
+      else BADP="$BADP$f ($perm $own, 웹 실행계정 소유${MASTER_USER:+ — 마스터는 $MASTER_USER})"$'\n'; fi
+    fi
+  done < "$CONF_LIST"
+  if [ -n "$BADP" ]; then
+    risk "설정 파일을 웹 실행계정이나 다른 사용자가 수정할 수 있음 → 설정 변조로 웹쉘·프록시 악용 가능(마스터가 root 면 권한 상승 통로). root 소유 + 644 권장"
+    printf '%s' "$BADP" | head -n 20 | show
+    [ -z "$MASTER_USER" ] && detail "→ httpd 가 실행 중이 아니라 마스터 프로세스 계정을 확인하지 못했습니다. 일반 계정으로 직접 기동하는 구성이면 위험이 낮을 수 있습니다."
+  fi
+  if [ -n "$SAMEP" ]; then
+    info "httpd 를 실행 계정($RUN_USER)으로 직접 기동하는 구성(마스터·자식 모두 $RUN_USER) — 설정 파일이 같은 계정 소유인 것은 이 구성에서 일반적이며 권한 상승 통로가 아닙니다. 다만 $RUN_USER 계정이 탈취되면 설정을 바꿔 트래픽 가로채기·프록시 악용이 가능하므로, 더 강화하려면 root 소유 644(읽기만 허용) + 설정 변경은 sudo 로"
+    printf '%s' "$SAMEP" | head -n 20 | show
+  fi
+  [ -z "$BADP" ] && [ -z "$SAMEP" ] && ok "설정 파일 권한 이상 없음 (누구나 수정 가능·웹 실행계정 소유 파일 없음)"
+fi
 
 # 3-11 클라이언트 인증서 + SSLStrictSNIVHostCheck
 if cfg_grep ':SSLVerifyClient[ \t]+require' >/dev/null && ! cfg_grep ':SSLStrictSNIVHostCheck[ \t]+On' >/dev/null; then

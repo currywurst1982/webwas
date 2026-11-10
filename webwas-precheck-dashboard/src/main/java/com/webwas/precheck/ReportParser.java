@@ -283,7 +283,8 @@ public final class ReportParser {
         } else if (body.startsWith("설정 파일 목록 확인 방법: ")) {
             r.confMethod = body.substring("설정 파일 목록 확인 방법: ".length()).trim();
         } else if (body.startsWith("워커 실행 계정: ")) {
-            r.runUser = body.substring("워커 실행 계정: ".length()).trim();
+            String u = body.substring("워커 실행 계정: ".length()).trim();   // "web (마스터 프로세스: web)" → web
+            r.runUser = u.contains(" ") ? u.substring(0, u.indexOf(' ')) : u;
         } else if (body.startsWith("워커 실행 계정이 root")) {
             r.runUser = "root";
         } else if (body.startsWith("접근 로그 파일을 찾지 못했습니다")) {

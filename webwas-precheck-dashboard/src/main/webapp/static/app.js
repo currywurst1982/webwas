@@ -240,7 +240,6 @@
 
   function kpi(label, value, unit, hint, kind, onclick) {
     return h('div', { class: 'kpi' + (onclick ? ' clickable' : ''), onclick, role: onclick ? 'button' : null, tabindex: onclick ? '0' : null,
-      title: onclick ? '누르면 아래 해당 항목으로 이동' : null,
       onkeydown: onclick ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onclick(); } } : null },
       h('div', { class: 'label' }, kind ? badge(kind, STATUS[kind].label) : null, label),
       h('div', { class: 'value' }, String(value), unit ? h('small', null, unit) : null),
@@ -532,50 +531,98 @@
       h('b', null, '데이터 품질 경고 — 아래 결과를 그대로 믿기 전에 확인하세요'), ...r.dataQuality.map(d => h('div', null, '· ' + d)))] : []),
       ...(r.compromise ? [h('div', { class: 'alert' }, h('b', null, '침해 의심: '), '[4] 침해 흔적 점검에 [위험] 항목이 있습니다. 설정 보완·패치보다 침해사고 대응(격리·증거 보존·분석)이 우선입니다.')] : []));
 
-    const un = Object.values(r.cveUnpatched).reduce((a, b) => a + b, 0);
-    const ap = r.cves.filter(c => c.applicable).length;
-    // 건수를 누르면 아래 목록의 해당 항목으로 이동 (0건이면 누를 수 없음)
-    const go = (n, tab, sel) => n > 0 ? () => jumpTo(tab, sel) : null;
-    $('#d-kpis').replaceChildren(
-      kpi('', r.counts.risk, '건', null, 'risk', go(r.counts.risk, 'findings', '.finding[data-level="risk"]')),
-      kpi('', r.counts.warn, '건', null, 'warn', go(r.counts.warn, 'findings', '.finding[data-level="warn"]')),
-      kpi('', r.counts.ok, '건', null, 'ok', go(r.counts.ok, 'findings', '.finding[data-level="ok"]')),
-      kpi('해당 CVE', ap, '건', r.product === 'apache' ? `미조치 추정 ${un} / 백포트 추정 ${ap - un}` : `critical ${r.cveApplicable.critical || 0} · high ${r.cveApplicable.high || 0}`,
-        null, go(ap, 'cves', 'tr[data-applicable="1"]')),
-      kpi('미해당 CVE', r.cves.length - ap, '건', r.product === 'apache' ? '필요 모듈 미사용' : '구성요소 없음/다른 프로젝트',
-        null, go(r.cves.length - ap, 'cves', 'tr[data-applicable="0"]'))
-    );
-
+    dFilter = { tab: null, value: null };
+    renderDetailKpis(r);
     renderFindings(r);
     renderCves(r);
     renderHistory(r);
     $('#d-rawtext').textContent = r.raw;
     selectTab('findings');
+    if (!dlg.open) dlg.showModal();
+    // 창이 열린 뒤에 맨 위로 (닫힌 창에서는 스크롤 위치가 바뀌지 않음)
     $('#detail .dialog-body').scrollTop = 0;
     $('#d-top').hidden = true;
-    if (!dlg.open) dlg.showModal();
+  }
+
+  /** 상세 창 걸러 보기: tab = findings | cves, value = risk/warn/ok 또는 '1'(해당 CVE)/'0'(미해당 CVE) */
+  let dFilter = { tab: null, value: null };
+  const FILTER_LABEL = { risk: '위험', warn: '주의', ok: '양호', '1': '해당 CVE', '0': '미해당 CVE' };
+
+  /** 위쪽 건수 카드. 누르면 아래 목록을 그 등급만 걸러 보기 (다시 누르면 전체, 0건이면 누를 수 없음) */
+  function renderDetailKpis(r) {
+    const un = Object.values(r.cveUnpatched).reduce((a, b) => a + b, 0);
+    const ap = r.cves.filter(c => c.applicable).length;
+    const card = (n, tab, value, el) => {
+      const on = dFilter.tab === tab && dFilter.value === value;
+      if (n > 0) {
+        el.classList.add('clickable');
+        el.classList.toggle('selected', on);
+        el.setAttribute('role', 'button'); el.setAttribute('tabindex', '0');
+        el.setAttribute('aria-pressed', String(on));
+        el.title = on ? '다시 누르면 전체 보기' : `누르면 아래 목록을 ${FILTER_LABEL[value]} 항목만 걸러 보기`;
+        const act = () => setFilter(r, tab, value);
+        el.addEventListener('click', act);
+        el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); act(); } });
+      }
+      return el;
+    };
+    $('#d-kpis').replaceChildren(
+      card(r.counts.risk, 'findings', 'risk', kpi('', r.counts.risk, '건', null, 'risk')),
+      card(r.counts.warn, 'findings', 'warn', kpi('', r.counts.warn, '건', null, 'warn')),
+      card(r.counts.ok, 'findings', 'ok', kpi('', r.counts.ok, '건', null, 'ok')),
+      card(ap, 'cves', '1', kpi('해당 CVE', ap, '건', r.product === 'apache' ? `미조치 추정 ${un} / 백포트 추정 ${ap - un}` : `critical ${r.cveApplicable.critical || 0} · high ${r.cveApplicable.high || 0}`)),
+      card(r.cves.length - ap, 'cves', '0', kpi('미해당 CVE', r.cves.length - ap, '건', r.product === 'apache' ? '필요 모듈 미사용' : '구성요소 없음/다른 프로젝트'))
+    );
+  }
+
+  function setFilter(r, tab, value) {
+    const off = dFilter.tab === tab && dFilter.value === value;
+    dFilter = off ? { tab: null, value: null } : { tab, value };
+    renderDetailKpis(r);
+    renderFindings(r);
+    renderCves(r);
+    selectTab(tab);
+    // 걸러 본 목록이 바로 보이도록 탭 줄을 창 위쪽으로
+    const tabs = $('#detail .tabs'), body = $('#detail .dialog-body');
+    if (!off && tabs.offsetTop > body.scrollTop + 80) {
+      const smooth = !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+      tabs.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+    }
+    const k = $('#d-kpis .kpi.selected'); if (k) k.focus({ preventScroll: true });
+  }
+
+  /** 걸러 보는 중일 때 목록 맨 위 안내 줄 */
+  function filterBar(r, n) {
+    return h('div', { class: 'filter-bar', role: 'status' },
+      h('span', null, h('b', null, FILTER_LABEL[dFilter.value]), ` 항목만 보는 중 (${n}건)`),
+      h('button', { class: 'btn small', type: 'button', onclick: () => setFilter(r, dFilter.tab, dFilter.value) }, '전체 보기'));
   }
 
   function renderFindings(r) {
     const panel = $('[data-panel="findings"]');
     const out = [];
+    const lv = dFilter.tab === 'findings' ? dFilter.value : null;
+    let shown = 0;
     ['4', '3', '1', '2'].forEach(sec => { // 침해 흔적을 가장 먼저
-      const items = r.findings.filter(f => f.section === sec)
+      const items = r.findings.filter(f => f.section === sec && (!lv || f.level === lv))
         .sort((a, b) => STATUS[a.level].rank - STATUS[b.level].rank);
+      shown += items.length;
       if (!items.length) return;
       out.push(h('div', { class: 'sec' }, h('h3', null, SECTION_TITLE[sec] || sec),
-        ...items.map(f => h('div', { class: 'finding', 'data-level': f.level },
+        ...items.map(f => h('div', { class: 'finding' },
           h('div', null, badge(f.level)),
           h('div', null, f.text,
             f.details.length ? h('details', { open: f.level === 'risk' || null },
               h('summary', null, `상세 ${f.details.length}줄`), h('pre', { class: 'details' }, f.details.join('\n'))) : null)))));
     });
-    panel.replaceChildren(...(out.length ? out : [h('p', { class: 'muted' }, '점검 항목이 없습니다.')]));
+    if (lv) out.unshift(filterBar(r, shown));
+    panel.replaceChildren(...(shown ? out : [...out, h('p', { class: 'muted' }, lv ? `점검 결과 목록에 ${FILTER_LABEL[lv]} 항목이 없습니다.` : '점검 항목이 없습니다.')]));
   }
 
   function renderCves(r) {
     const panel = $('[data-panel="cves"]');
-    const rows = r.cves.slice().sort((a, b) =>
+    const want = dFilter.tab === 'cves' ? dFilter.value : null;
+    const rows = r.cves.filter(c => !want || (c.applicable ? '1' : '0') === want).sort((a, b) =>
       (b.applicable - a.applicable) || (a.backported - b.backported) || SEVERITY[a.severity].rank - SEVERITY[b.severity].rank);
     if (!rows.length) {
       panel.replaceChildren(h('p', { class: 'muted' }, r.product === 'apache' && r.version && !r.version.startsWith('2.4.')
@@ -583,10 +630,11 @@
       return;
     }
     panel.replaceChildren(
+      ...(want ? [filterBar(r, rows.length)] : []),
       h('p', { class: 'muted' }, CVE_NOTE[r.product] + (r.cveDbInfo ? ` (CVE 목록: ${r.cveDbInfo})` : '')),
       h('div', { class: 'table-scroll' }, h('table', { class: 'servers' },
         h('thead', null, h('tr', null, ...['판정', 'CVE', '등급', '설명', '영향 구간', r.product === 'apache' ? '필요 모듈' : '설치된 구성요소'].map(t => h('th', null, t)))),
-        h('tbody', null, ...rows.map(c => h('tr', { 'data-applicable': c.applicable ? '1' : '0' },
+        h('tbody', null, ...rows.map(c => h('tr', null,
           h('td', null, !c.applicable ? h('span', { class: 'badge b-skip' }, '미해당')
             : c.backported ? h('span', { class: 'badge b-backport' }, '백포트 추정') : badge(c.severity === 'critical' || c.severity === 'high' ? 'risk' : 'warn', '해당')),
           h('td', { class: 'mono nowrap' }, h('a', { href: 'https://www.cve.org/CVERecord?id=' + encodeURIComponent(c.id), target: '_blank', rel: 'noopener noreferrer' }, c.id),
@@ -615,17 +663,6 @@
           h('td', { class: 'num' }, String(x.counts.risk)), h('td', { class: 'num' }, String(x.counts.warn)),
           h('td', { class: 'num' }, String(x.counts.ok)), h('td', { class: 'num' }, String(cveTotal(x))),
           h('td', { class: 'mono' }, x.id))))));
-  }
-
-  /** 상세 창에서 탭을 열고 해당 항목(첫 번째)으로 스크롤, 같은 종류 항목을 잠깐 강조 */
-  function jumpTo(tab, selector) {
-    selectTab(tab);
-    const els = $$(`#detail [data-panel="${tab}"] ${selector}`);
-    if (!els.length) return;
-    const smooth = !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
-    els[0].scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
-    els.forEach(el => { el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); });
-    setTimeout(() => els.forEach(el => el.classList.remove('flash')), 2600);
   }
 
   function selectTab(name) {

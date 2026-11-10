@@ -528,15 +528,14 @@ table.servers { width: 100%; border-collapse: collapse; font-variant-numeric: ta
 .sec h3 { font-size: 14px; margin: 4px 0 8px; color: var(--accent); }
 .finding { display: grid; grid-template-columns: 70px 1fr; gap: 10px; padding: 7px 0; border-top: 1px solid var(--line); }
 .finding:first-of-type { border-top: 0; }
-.finding { scroll-margin-top: 12px; }
-tr[data-applicable] { scroll-margin-top: 12px; }
-/* 위 건수 카드를 눌러 이동했을 때 해당 항목 잠깐 강조 */
-.flash { animation: flash-row 2.4s ease-out; }
+/* 상세 창: 건수 카드로 걸러 보기 */
+.tabs { scroll-margin-top: 8px; }
+.kpi.selected { border-color: var(--accent); box-shadow: var(--glow), inset 0 0 0 1px var(--accent); }
+.filter-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 10px; padding: 8px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: rgba(56, 189, 248, .08); font-size: 13px; }
 /* 상세 창 아래쪽에 떠 있는 "건수 요약으로" 버튼 */
 .dialog-body > .to-top { position: sticky; bottom: 4px; display: block; margin: 12px 0 0 auto; background: var(--dialog-bg); border-color: var(--accent); color: var(--accent); box-shadow: 0 6px 20px rgba(0,0,0,.45); }
 .dialog-body > .to-top[hidden] { display: none; }
-@keyframes flash-row { 0%, 35% { background: rgba(56, 189, 248, .16); box-shadow: inset 3px 0 0 var(--accent); } 100% { background: transparent; box-shadow: inset 3px 0 0 transparent; } }
-@media (prefers-reduced-motion: reduce) { .flash { animation: none; background: rgba(56, 189, 248, .12); } }
 .finding .details { margin: 6px 0 0; padding: 8px 10px; background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; white-space: pre; }
 .finding details summary { cursor: pointer; color: var(--accent); font-size: 12.5px; margin-top: 2px; }
 .dq { display: grid; gap: 6px; }

@@ -28,6 +28,10 @@ final class Web {
         return (ReportStore) c.getAttribute(AppInit.ATTR_REPORTS);
     }
 
+    static SiteSettings settings(ServletContext c) {
+        return (SiteSettings) c.getAttribute(AppInit.ATTR_SETTINGS);
+    }
+
     static ExceptionStore exceptions(ServletContext c) {
         return (ExceptionStore) c.getAttribute(AppInit.ATTR_EXCEPTIONS);
     }

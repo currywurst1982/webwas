@@ -255,6 +255,18 @@
           <div id="reinstall-cmd"></div>
         </article>
 
+        <article class="card admin-only" aria-labelledby="agurl-title">
+          <div class="card-head"><h2 id="agurl-title">에이전트 접속 주소</h2><span class="card-meta" id="agurl-meta"></span></div>
+          <p class="card-hint">[에이전트 추가]·[토큰 재발급] 때 나오는 설치 명령에 들어갈 대시보드 주소입니다. 점검할 서버에서 접속하는 주소가 브라우저 주소와 다르면
+            (예: 관리자는 https 로, 서버는 <code>http://대시보드IP:8580/webwas-precheck</code> 로) 여기에 적어 두세요. 비우면 지금 브라우저 주소창의 주소를 씁니다.</p>
+          <form id="agurl-form" class="agurl-form">
+            <input id="agurl-input" type="text" inputmode="url" spellcheck="false" autocomplete="off" placeholder="예: http://10.0.0.5:8580/webwas-precheck">
+            <button class="btn btn-primary" type="submit">저장</button>
+            <button class="btn" type="button" id="agurl-clear">비우기(브라우저 주소 사용)</button>
+          </form>
+          <div id="agurl-check"></div>
+        </article>
+
         <article class="card">
           <div class="card-head">
             <div><h2 id="agents-title">에이전트 관리</h2><div class="card-meta" id="agents-summary"></div></div>

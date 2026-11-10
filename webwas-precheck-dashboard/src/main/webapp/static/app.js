@@ -1124,6 +1124,7 @@
     let data;
     try { data = await api('agents'); } catch (e) { $('#agents tbody').replaceChildren(h('tr', null, h('td', { colspan: '9', class: 'muted' }, '에이전트 목록을 불러오지 못했습니다: ' + e.message))); return; }
     state.agents = data;
+    renderAgentUrl();
     const now = data.now;
     const count = {};
     data.agents.forEach(a => { count[a.state] = (count[a.state] || 0) + 1; });
@@ -1216,8 +1217,36 @@
     box.hidden = false;
   }
 
-  function dashboardUrl() {
+  /** 브라우저 주소창 기준 대시보드 주소 */
+  function browserUrl() {
     return new URL('.', location.href).href.replace(/\/$/, '');
+  }
+  /** 설치 명령에 넣을 주소: 설정의 "에이전트 접속 주소" 가 있으면 그것, 없으면 브라우저 주소 */
+  function dashboardUrl() {
+    return (state.agents && state.agents.agentUrl) || browserUrl();
+  }
+
+  function renderAgentUrl() {
+    const saved = (state.agents && state.agents.agentUrl) || '';
+    const input = $('#agurl-input');
+    if (document.activeElement !== input) input.value = saved;
+    const url = dashboardUrl();
+    $('#agurl-meta').textContent = saved ? '직접 지정한 주소 사용' : '브라우저 주소 사용';
+    $('#agurl-check').replaceChildren(
+      h('p', { class: 'muted small-note' }, '설치 명령에 들어가는 주소: ', h('b', { class: 'mono' }, url)),
+      h('p', { class: 'muted small-note' }, '점검할 서버에서 먼저 연결을 확인하세요. 200 이 나오면 정상입니다 (000 = 연결 안 됨 → 방화벽·포트 확인, 404 = 주소 뒤 경로 확인).'),
+      codeBox(`curl -s -o /dev/null -w "%{http_code}\\n" ${url}/agent-api/files/install.sh`),
+      url.startsWith('http://') ? h('p', { class: 'muted small-note warn-ink' },
+        'http 주소라 에이전트 토큰·점검 결과가 암호화되지 않고 오갑니다. 내부망에서만 쓰고, 가능하면 https 주소를 쓰세요.') : null);
+  }
+
+  async function saveAgentUrl(v) {
+    try {
+      const r = await api('agent-url', { method: 'POST', body: new URLSearchParams({ url: v }) });
+      if (state.agents) state.agents.agentUrl = r.agentUrl;
+      $('#agurl-input').value = r.agentUrl;
+      renderAgentUrl();
+    } catch (e) { alert(e.message); }
   }
 
   /** 서버에서 붙여 넣을 재설치 명령 (기존 설정 파일에서 주소·이름·토큰을 읽고, 빈 폴더에 install.sh 를 받아 실행) */
@@ -1279,7 +1308,7 @@
           codeBox(`D=$(mktemp -d) && curl -fsSo "$D/install.sh" ${url}/agent-api/files/install.sh && sudo bash "$D/install.sh" ${url} ${name}`)),
         h('li', null, h('p', null, '토큰을 물어보면 아래 토큰을 붙여 넣고 Enter 를 누릅니다. 출력에 "대시보드에서 받음" 과 "설치 완료" 가 보여야 합니다.'), codeBox(token)),
         h('li', null, h('p', null, '"설치 완료"가 나오면 1~2분 안에 이 화면의 상태가 "온라인"이 되고, 첫 점검이 자동으로 시작됩니다.'))),
-      h('p', { class: 'muted' }, `※ 점검할 서버에서 ${url} 로 접속할 수 있어야 합니다(방화벽 확인). 서버에서 보이는 주소가 다르면 명령의 주소를 바꿔서 실행하세요. `
+      h('p', { class: 'muted' }, `※ 명령의 주소(${url})는 ${state.agents && state.agents.agentUrl ? '에이전트 화면의 [에이전트 접속 주소]에 지정한 값' : '지금 브라우저 주소'}입니다. 점검할 서버에서 이 주소로 접속할 수 있어야 합니다(방화벽 확인). 다르면 에이전트 화면 위쪽 [에이전트 접속 주소]에서 바꾸세요. `
         + 'HTTP 주소면 토큰과 설치 파일이 암호화되지 않은 채 오가므로, 대시보드에 HTTPS 를 켰다면 https 주소와 --ca-cert 옵션을 쓰는 것이 안전합니다. '
         + '대시보드에 연결할 수 없는 서버는 install.sh, webwas-precheck-agent.sh, apache_precheck.sh, wildfly_precheck.sh, tomcat_precheck.sh, nginx_precheck.sh 여섯 파일을 빈 폴더에 함께 복사한 뒤 그 폴더에서 install.sh 를 실행하면 됩니다.'));
     box.hidden = false;
@@ -2015,6 +2044,8 @@
     });
 
     $('#exc-form').addEventListener('submit', submitExc);
+    $('#agurl-form').addEventListener('submit', ev => { ev.preventDefault(); saveAgentUrl($('#agurl-input').value); });
+    $('#agurl-clear').addEventListener('click', () => saveAgentUrl(''));
     $('#d-reset-instance').addEventListener('click', async () => {
       if (!current) return;
       const label = `${PRODUCTS[current.product] || current.product} ${current.host}` + (current.binary ? ` (${current.binary})` : '');

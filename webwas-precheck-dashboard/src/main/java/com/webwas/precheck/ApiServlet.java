@@ -26,6 +26,7 @@ import java.util.logging.Logger;
  *  GET    /api/reports/{파일명}/raw   원본 텍스트
  *  POST   /api/reports               리포트 업로드 (관리자, multipart "files")
  *  DELETE /api/reports/{파일명}       리포트 삭제 (관리자, 휴지통으로 이동)
+ *  POST   /api/agent-url             (관리자) 에이전트 설치 명령에 쓸 대시보드 주소: url= (비우면 브라우저 주소 사용)
  *  GET    /api/exceptions            예외(위험 수용) 목록
  *  POST   /api/exceptions            (관리자) 예외 등록: report, section, text, scope=instance|product, reason, days=30|90|180|365
  *  DELETE /api/exceptions/{id}       (관리자) 예외 해제
@@ -172,6 +173,7 @@ public class ApiServlet extends HttpServlet {
             Object av = getServletContext().getAttribute(AppInit.ATTR_AGENT_VERSION);
             String expectedAgent = av == null ? null : av.toString();
             out.put("expectedAgentVersion", expectedAgent);
+            out.put("agentUrl", Web.settings(getServletContext()).agentUrl());
             LatestVersions lv = Web.latest(getServletContext());
             List<Report> latestReports = ConfigIssues.latestPerInstance(allReports(Web.reports(getServletContext())));
             out.put("agents", Web.agents(getServletContext()).list().stream().map(a -> {
@@ -259,6 +261,14 @@ public class ApiServlet extends HttpServlet {
             upload(req, resp);
         } else if (p.length == 1 && p[0].equals("reset")) {
             reset(req, resp);
+        } else if (p.length == 1 && p[0].equals("agent-url")) {
+            try {
+                String u = Web.settings(getServletContext()).setAgentUrl(req.getParameter("url"));
+                LOG.info("[webwas-precheck] 에이전트 접속 주소: " + (u.isEmpty() ? "(브라우저 주소 사용)" : u) + " by " + Web.user(req));
+                Web.json(resp, 200, Map.of("agentUrl", u));
+            } catch (IllegalArgumentException e) {
+                Web.json(resp, 400, Map.of("error", e.getMessage()));
+            }
         } else if (p.length == 1 && p[0].equals("exceptions")) {
             addException(req, resp);
         } else if (p.length == 1 && p[0].equals("users")) {

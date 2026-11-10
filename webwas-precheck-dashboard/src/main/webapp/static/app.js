@@ -1176,15 +1176,15 @@
           ? h('li', null, h('p', null, '그 서버에서 아래 명령으로 설정 파일의 토큰만 바꿉니다. (또는 아래 2~3단계로 다시 설치)'),
             codeBox(`sudo sed -i "s|^AGENT_TOKEN=.*|AGENT_TOKEN='${token}'|" /etc/webwas-precheck-agent.conf && sudo /opt/webwas-precheck-agent/webwas-precheck-agent.sh test`))
           : null,
-        h('li', null, h('p', null, '점검할 서버(Apache·WildFly·Tomcat 중 하나 이상이 도는 서버)에 root 권한이 있는 계정으로 접속해 설치 파일을 받습니다. '
-          + '한 서버에 여러 제품이 있어도 에이전트는 하나만 설치하면 됩니다(실행 중인 제품을 자동으로 찾아 각각 점검).'),
-          codeBox(`curl -fsSo /tmp/webwas-precheck-install.sh ${url}/agent-api/files/install.sh`)),
-        h('li', null, h('p', null, '설치를 실행합니다. 토큰을 물어보면 아래 3번의 토큰을 붙여 넣고 Enter 를 누릅니다.'),
-          codeBox(`sudo bash /tmp/webwas-precheck-install.sh ${url} ${name}`)),
-        h('li', null, h('p', null, '에이전트 토큰'), codeBox(token)),
+        h('li', null, h('p', null, '점검할 서버(Apache·WildFly·Tomcat·Nginx 중 하나 이상이 도는 서버)에 root 권한이 있는 계정으로 접속해 아래 한 줄을 실행합니다. '
+          + '한 서버에 여러 제품이 있어도 에이전트는 하나만 설치하면 됩니다(실행 중인 제품을 자동으로 찾아 각각 점검). '
+          + '설치 파일은 매번 새로 만든 빈 폴더에 받습니다 — /tmp 에 예전 점검 스크립트가 남아 있으면 install.sh 가 그 파일을 먼저 써서 옛 버전이 설치되기 때문입니다.'),
+          codeBox(`D=$(mktemp -d) && curl -fsSo "$D/install.sh" ${url}/agent-api/files/install.sh && sudo bash "$D/install.sh" ${url} ${name}`)),
+        h('li', null, h('p', null, '토큰을 물어보면 아래 토큰을 붙여 넣고 Enter 를 누릅니다. 출력에 "대시보드에서 받음" 과 "설치 완료" 가 보여야 합니다.'), codeBox(token)),
         h('li', null, h('p', null, '"설치 완료"가 나오면 1~2분 안에 이 화면의 상태가 "온라인"이 되고, 첫 점검이 자동으로 시작됩니다.'))),
       h('p', { class: 'muted' }, `※ 점검할 서버에서 ${url} 로 접속할 수 있어야 합니다(방화벽 확인). 서버에서 보이는 주소가 다르면 명령의 주소를 바꿔서 실행하세요. `
-        + '대시보드에 연결할 수 없는 서버는 install.sh, webwas-precheck-agent.sh, apache_precheck.sh, wildfly_precheck.sh, tomcat_precheck.sh, nginx_precheck.sh 여섯 파일을 같은 폴더에 복사한 뒤 그 폴더에서 install.sh 를 실행하면 됩니다.'));
+        + 'HTTP 주소면 토큰과 설치 파일이 암호화되지 않은 채 오가므로, 대시보드에 HTTPS 를 켰다면 https 주소와 --ca-cert 옵션을 쓰는 것이 안전합니다. '
+        + '대시보드에 연결할 수 없는 서버는 install.sh, webwas-precheck-agent.sh, apache_precheck.sh, wildfly_precheck.sh, tomcat_precheck.sh, nginx_precheck.sh 여섯 파일을 빈 폴더에 함께 복사한 뒤 그 폴더에서 install.sh 를 실행하면 됩니다.'));
     box.hidden = false;
   }
 

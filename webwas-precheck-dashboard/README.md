@@ -223,11 +223,12 @@ mvn package
 ## 4. 에이전트 설치 (점검할 서버마다 한 번, 제품이 여러 개여도 한 번)
 
 1. 대시보드 → **에이전트** → **에이전트 추가** → 이름(예: `web02`) 입력 → **등록**
-2. 화면의 명령 2줄을 점검할 서버에서 실행(복사 버튼 사용), 토큰을 물으면 화면의 토큰을 붙여 넣고 Enter
+2. 화면의 명령 한 줄을 점검할 서버에서 실행(복사 버튼 사용), 토큰을 물으면 화면의 토큰을 붙여 넣고 Enter
    ```bash
-   curl -fsSo /tmp/webwas-precheck-install.sh http://<대시보드주소>/webwas-precheck/agent-api/files/install.sh
-   sudo bash /tmp/webwas-precheck-install.sh http://<대시보드주소>/webwas-precheck web02
+   D=$(mktemp -d) && curl -fsSo "$D/install.sh" http://<대시보드주소>/webwas-precheck/agent-api/files/install.sh && sudo bash "$D/install.sh" http://<대시보드주소>/webwas-precheck web02
    ```
+   설치 파일은 **빈 폴더**(`mktemp -d`)에 받습니다. install.sh 는 같은 폴더에 점검 스크립트가 있으면 그것을 먼저 쓰므로, `/tmp` 에 예전 스크립트가 남아 있으면 옛 버전이 설치됩니다.
+   HTTPS 를 켠 대시보드면 `https://…` 주소와 `--ca-cert CA파일`(curl 은 `--cacert`)을 쓰는 것이 안전합니다(HTTP 는 토큰이 암호화되지 않음).
 3. `설치 완료` 후 1~2분 안에 **온라인**이 되고 첫 점검이 시작됩니다.
 
 | 설치되는 것 | 내용 |

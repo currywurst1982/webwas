@@ -17,7 +17,8 @@
 #                   (원본 XML https://raw.githubusercontent.com/nginx/nginx.org/main/xml/en/security_advisories.xml,
 #                    2026-11-10 기준 66건). 대시보드에 연결된 에이전트로 실행하면 대시보드가 12시간마다
 #                   갱신한 최신 목록을 자동으로 받아 씁니다(PRECHECK_CVE_DB). 직접 실행할 때는 -C 로 지정.
-#  최신 버전 기준: https://nginx.org/en/download.html (원본 xml/versions.xml) mainline 1.31.8 / stable 1.30.6
+#  최신 버전 기준: https://nginx.org/en/download.html (원본 xml/versions.xml) 의 stable 1.30.6
+#                  (운영 기준을 stable 로 둠. stable 보다 새 mainline 은 "최신"으로 보되 mainline 최신 여부는 따로 확인)
 #
 #  사용법:  ./nginx_precheck.sh            ← 옵션 없이 실행 (권장)
 #    - 실행 중인 nginx 마스터 프로세스를 자동으로 찾아 실행파일·설정파일(-c)을 따라갑니다.
@@ -32,8 +33,8 @@
 #    -C : CVE 목록 파일 (대시보드의 /agent-api/cve/nginx 에서 받은 파일)
 # =====================================================================
 
-# 최신 버전 기준: 지원 중인 브랜치별 최신 (mainline stable). 대시보드 CVE 목록의 "# LATEST=" 값이 있으면 그 값을 사용
-LATEST_BRANCHES="1.31.8 1.30.6"
+# 최신 버전 기준: stable 브랜치 최신. 대시보드 CVE 목록의 "# LATEST=" 값이 있으면 그 값을 사용
+LATEST_BRANCHES="1.30.6"
 
 NGINX_BIN=""
 NGINX_CONF=""
@@ -140,11 +141,12 @@ ver_le() { [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" = "$1" ]; }
 # 브랜치 (1.30.6 → 1.30)
 br() { printf '%s' "$1" | cut -d. -f1-2; }
 
-# 대시보드에서 받은 CVE 목록의 최신 버전 기준 (# LATEST=1.31.8,1.30.6) 이 있으면 그 값을 사용
+# 대시보드에서 받은 CVE 목록의 최신 버전 기준 (# LATEST=1.30.6) 이 있으면 그 값을 사용 (홀수 = mainline 은 버림)
 if [ -n "${PRECHECK_CVE_DB:-}" ] && [ -r "$PRECHECK_CVE_DB" ]; then
   L="$(sed -n 's/^# LATEST=//p' "$PRECHECK_CVE_DB" | head -n1 | tr ',' ' ')"
   if printf '%s' "$L" | grep -qE '^ *[0-9]+\.[0-9]+\.[0-9]+( +[0-9]+\.[0-9]+\.[0-9]+)* *$'; then
-    LATEST_BRANCHES="$(printf '%s' "$L" | xargs)"
+    L2="$(for v in $L; do [ $(( $(printf '%s' "$v" | cut -d. -f2) % 2 )) -eq 0 ] && printf '%s ' "$v"; done | xargs)"
+    LATEST_BRANCHES="${L2:-$(printf '%s' "$L" | xargs)}"
   fi
 fi
 
@@ -237,7 +239,7 @@ else
 fi
 [ "$PKG_TYPE" != "source" ] && warn "패키지 설치본은 버전 숫자가 낮아도 배포판이 보안수정을 백포트했을 수 있습니다. [2]에서 changelog 반영 여부를 함께 표시합니다."
 
-# 브랜치 판정: nginx.org 는 mainline(홀수)·stable(짝수) 두 브랜치만 보안 수정을 냄
+# 브랜치 판정: nginx.org 는 mainline(홀수)·stable(짝수) 두 브랜치만 보안 수정을 냄. 이 점검은 stable 을 기준으로 봄
 LATEST_SAME=""
 for v in $LATEST_BRANCHES; do [ "$(br "$v")" = "$(br "$VER")" ] && LATEST_SAME="$v"; done
 NEWEST="$(printf '%s\n' $LATEST_BRANCHES | sort -V | tail -n1)"
@@ -249,10 +251,10 @@ if [ -n "$LATEST_SAME" ]; then
     risk "Nginx $VER : $(br "$VER") 브랜치 최신 $LATEST_SAME 미만입니다. 아래 [2]에서 해당 CVE를 확인하세요."
   fi
 elif ver_le "$NEWEST" "$VER"; then
-  ok "Nginx $VER : 지원 브랜치 최신($LATEST_SHOW)보다 새 버전입니다."
+  ok "Nginx $VER : stable 최신($LATEST_SHOW)보다 새 버전(mainline)입니다. mainline 은 그 브랜치의 최신인지 따로 확인하세요."
 else
-  m="지원 종료(EOL) 브랜치 Nginx $(br "$VER").x 입니다. nginx.org 는 지원 브랜치($LATEST_SHOW)에만 보안 수정을 냅니다."
-  if [ "$PKG_TYPE" = "source" ]; then risk "$m 지원 브랜치로 교체가 필요합니다."
+  m="지원 종료(EOL) 브랜치 Nginx $(br "$VER").x 입니다. nginx.org 는 stable($LATEST_SHOW)과 최신 mainline 브랜치에만 보안 수정을 냅니다."
+  if [ "$PKG_TYPE" = "source" ]; then risk "$m stable 브랜치($LATEST_SHOW)로 교체가 필요합니다."
   else warn "$m 배포판 패키지는 배포판이 보안 수정을 따로 백포트할 수 있으니 [2]의 changelog 표시와 배포판 보안 공지를 확인하세요."; fi
 fi
 
@@ -935,6 +937,6 @@ log ""
 log "  ※ 이 결과는 '알려진 패턴' 기준이며 안전을 보증하지 않습니다."
 log "    - [위험] 중 침해 흔적(로그 200 응답, 웹쉘, 비정상 프로세스)이 있으면 설정 보완보다 침해사고 대응이 우선입니다."
 log "    - CVE 판정은 nginx.org 보안 공지의 버전 기준이며, 패키지 설치본은 배포판 보안 공지로 최종 확인하세요."
-log "    - 근본 대책은 지원 브랜치 최신($LATEST_SHOW) 이상(또는 보안수정이 반영된 배포판 패키지)으로의 업그레이드입니다."
+log "    - 근본 대책은 stable 최신($LATEST_SHOW) 이상(또는 보안수정이 반영된 배포판 패키지)으로의 업그레이드입니다."
 log ""
 log "  리포트 파일: $REPORT"

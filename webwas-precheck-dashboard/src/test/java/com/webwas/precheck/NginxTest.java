@@ -66,18 +66,33 @@ class NginxTest {
         assertEquals("core", CveFeed.nginxFeature("Integer overflow in the range filter"));
     }
 
+    /** Nginx 최신 버전 기준 = stable 만 (2026-11-10 사용자 요청). stable 보다 새 mainline 은 최신으로 봄 */
     @Test
-    void latestVersionPerBranch(@TempDir Path dir) throws Exception {
-        assertEquals("1.31.8,1.30.6", LatestVersion.parseNginxVersions(res("nginx/versions.xml")));
-        LatestVersion lv = new LatestVersion(Product.NGINX, dir.resolve("lv.properties"), "file:/none", "1.31.8 1.30.6");
-        assertEquals("1.31.8 / 1.30.6", lv.display());
+    void latestVersionStableOnly(@TempDir Path dir) throws Exception {
+        assertEquals("1.30.6", LatestVersion.parseNginxVersions(res("nginx/versions.xml")));
+        LatestVersion lv = new LatestVersion(Product.NGINX, dir.resolve("lv.properties"), "file:/none", "1.30.6");
+        assertEquals("1.30.6", lv.display());
         assertTrue(lv.below("1.24.0"), "지원 종료 브랜치");
         assertTrue(lv.unsupportedBranch("1.28.2"));
+        assertTrue(lv.unsupportedBranch("1.29.8"), "지난 mainline");
         assertTrue(lv.below("1.30.5"));
         assertFalse(lv.below("1.30.6"));
-        assertFalse(lv.below("1.31.8"));
-        assertTrue(LatestVersion.validVersion(Product.NGINX, "1.31.9, 1.30.7"));
+        assertFalse(lv.below("1.31.8"), "stable 보다 새 mainline");
+        assertFalse(lv.unsupportedBranch("1.31.2"));
+        // 수동 지정·예전 값에 mainline 이 섞여 있어도 stable 만
+        lv.setManual("1.31.8, 1.30.6");
+        assertEquals("1.30.6", lv.current());
+        assertTrue(LatestVersion.validVersion(Product.NGINX, "1.30.7"));
         assertFalse(LatestVersion.validVersion(Product.NGINX, "nginx"));
+    }
+
+    /** 예전 대시보드가 저장한 자동 확인 값("1.31.8,1.30.6")이 남아 있어도 stable 만 씀 */
+    @Test
+    void oldStoredValueBecomesStable(@TempDir Path dir) throws Exception {
+        Path f = dir.resolve("latest-version-nginx.properties");
+        Files.writeString(f, "mode=auto\nautoVersion=1.31.8,1.30.6\nautoSuccessAt=1\n", StandardCharsets.UTF_8);
+        LatestVersion lv = new LatestVersion(Product.NGINX, f, "file:/none", "1.30.6");
+        assertEquals("1.30.6", lv.current());
     }
 
     /** 프록시 전용 서버: [정보] 로 나오고 점검 사각지대(웹 파일 위치 못 찾음)로 세지 않음. 폴더를 못 찾은 경우는 그대로 사각지대 */

@@ -274,7 +274,7 @@
               <button class="btn small admin-only" id="btn-latest-refresh" type="button"><svg><use href="#i-refresh"/></svg>모두 지금 확인</button></div>
             <div id="latest-list" class="latest-list"></div>
             <label class="check side-check admin-only"><input type="checkbox" id="latest-skip"> 점검한 제품이 모두 최신인 서버는 자동 점검 제외</label>
-            <p class="muted small-note">12시간마다 공식 배포 목록에서 자동으로 확인합니다. Tomcat 은 지원 중인 브랜치(예: 11.0 / 10.1 / 9.0)마다 최신 버전을 따로 비교하며, 목록에 없는 브랜치는 "지원 종료"로 표시합니다.</p>
+            <p class="muted small-note">12시간마다 공식 배포 목록에서 자동으로 확인합니다. Tomcat 은 지원 중인 브랜치(예: 11.0 / 10.1 / 9.0)마다 최신 버전을 따로 비교하며, 목록에 없는 브랜치는 "지원 종료"로 표시합니다. Nginx 는 stable 브랜치 최신만 기준으로 씁니다(그보다 새 mainline 은 최신으로 봄).</p>
           </article>
 
           <article class="card cve-feed" aria-labelledby="cve-feed-title">

@@ -110,7 +110,7 @@
 
 | 구분 | 내용 |
 |---|---|
-| [1] 버전 | `nginx -v`(OpenResty 등은 앞 세 자리), 설치 방식(RPM·DEB·소스), **브랜치 판정**: nginx.org 는 mainline·stable 두 브랜치만 보안 수정을 내므로 그 밖의 브랜치(예: 1.24·1.26·1.28)는 "지원 종료(EOL)" — 소스 설치는 [위험], 배포판 패키지는 [주의](배포판 백포트 가능) |
+| [1] 버전 | `nginx -v`(OpenResty 등은 앞 세 자리), 설치 방식(RPM·DEB·소스), **stable 기준 판정**: stable 최신(예: 1.30.6)과 같은 브랜치면 그 최신과 비교, stable 보다 새 mainline(1.31.x)은 최신으로 봄(mainline 최신 여부는 따로 확인), 그 밖의 브랜치(예: 1.24·1.28, 지난 mainline 1.29)는 "지원 종료(EOL)" — 소스 설치는 [위험], 배포판 패키지는 [주의](배포판 백포트 가능) |
 | [2] CVE | nginx.org 보안 공지의 영향 버전·수정 버전으로 판정하고, 설정에서 그 기능(HTTP/3·HTTP/2·mp4·mail·resolver·SSI 등)을 쓰지 않으면 [미해당]. 패키지 설치본은 changelog 에 CVE 번호가 있으면 "백포트 추정" |
 | [3] 설정 | `nginx -T`(실제로 읽는 설정 전체, 실패 시 include 직접 추적) 기준: server_tokens(버전 노출), autoindex, SSLv3·TLSv1.0/1.1, 약한 암호, **alias 경로 탐색(off-by-slash)**, 접근 제한 없는 stub_status, PHP location 의 try_files 누락, WebDAV 쓰기 메서드, proxy_pass 에 $host 등 요청 값(SSRF), 워커 root 실행, 설정 파일·개인키 권한 |
 | [4] 침해 흔적 | access_log(이 인스턴스가 연 파일·회전 파일 포함)의 경로 탐색·명령 실행·JNDI 요청, root·alias 폴더의 웹쉘 의심 파일·최근 변경 파일, 웹 실행계정의 의심 프로세스·크론·임시 파일·외부 연결, OS 로그인 기록 |
@@ -119,7 +119,7 @@
 에이전트 설정: `NGINX_LOG_PATHS`(-l). 에이전트는 `nginx: master process` 가 실행 중이면 자동으로 Nginx 를 점검합니다(에이전트 2.3.0 이상).
 
 - **CVE 출처**: https://nginx.org/en/security_advisories.html 의 원본 XML(`raw.githubusercontent.com/nginx/nginx.org/main/xml/en/security_advisories.xml`). 대시보드가 12시간마다 받아 `/agent-api/cve/nginx` 로 내려 주며, 주소는 `-Dwebwas.precheck.cve.nginx.url` 로 바꿀 수 있습니다. `<item>` 68개 중 CVE 번호가 없는 Windows 전용 1건과 등급 none(취약점 아님) 1건을 뺀 66건(2026-11-10).
-- **최신 버전 출처**: nginx.org 다운로드 페이지의 원본 XML(`xml/versions.xml`)에서 mainline·stable 첫 항목(2026-11-10: 1.31.8 / 1.30.6). `-Dwebwas.precheck.latest.nginx.url` 로 변경 가능.
+- **최신 버전 출처**: nginx.org 다운로드 페이지의 원본 XML(`xml/versions.xml`)의 **stable 첫 항목만**(2026-11-10: 1.30.6). 화면·판정 모두 stable 기준이며, 수동 지정이나 예전에 저장된 값에 mainline(두 번째 숫자가 홀수)이 섞여 있어도 stable 만 씁니다. `-Dwebwas.precheck.latest.nginx.url` 로 변경 가능.
 - **필요 기능은 공지 제목으로 정한 추정**입니다(`tools/gen_nginx_cve.py` 와 `CveFeed.nginxFeature` 가 같은 규칙, 테스트로 일치 확인). 예: 제목에 HTTP/3 → `listen ... quic` 또는 `http3 on` 을 쓸 때만 해당.
 - 시험: Ubuntu 24.04 nginx 1.24.0(DEB)에 위험 설정·웹쉘·공격 로그를 넣어 실행 → alias 경로 탐색 [위험], 웹쉘·공격 성공 로그 [위험](침해 의심), 해당 CVE 5건 모두 Ubuntu changelog 기준 백포트 추정, 두 인스턴스 각각 점검 확인.
 

@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,8 +44,8 @@ public class LatestVersion {
     private static final Pattern TOMCAT_RELEASE = Pattern.compile("href=\"v(\\d{1,2}\\.\\d{1,2}\\.\\d{1,3})/\"");
     private static final Pattern TOMCAT_META = Pattern.compile("<version>\\s*(\\d{1,2}\\.\\d{1,2}\\.\\d{1,3})\\s*</version>");
     private static final Pattern TOMCAT_ONE = Pattern.compile("^\\d{1,2}\\.\\d{1,2}\\.\\d{1,3}$");
-    /** nginx.org xml/versions.xml: <download tag="mainline" ...> 다음의 첫 <item ver="1.31.8" /> */
-    private static final Pattern NGINX_BRANCH = Pattern.compile("<download\\s+tag=\"(mainline|stable)\"[^>]*>\\s*<item\\s+ver=\"(\\d{1,2}\\.\\d{1,3}\\.\\d{1,3})\"");
+    /** nginx.org xml/versions.xml: <download tag="stable" ...> 다음의 첫 <item ver="1.30.6" /> (운영 기준을 stable 로 둠) */
+    private static final Pattern NGINX_BRANCH = Pattern.compile("<download\\s+tag=\"(stable)\"[^>]*>\\s*<item\\s+ver=\"(\\d{1,2}\\.\\d{1,3}\\.\\d{1,3})\"");
 
     public final Product product;
     private final Path file;
@@ -82,7 +83,7 @@ public class LatestVersion {
             case APACHE -> "2.4.69";
             case WILDFLY -> "41.0.1.Final";
             case TOMCAT -> "11.0.27,10.1.61,9.0.123";
-            case NGINX -> "1.31.8,1.30.6";
+            case NGINX -> "1.30.6";
         };
     }
 
@@ -91,7 +92,7 @@ public class LatestVersion {
             case APACHE -> "2.4.69";
             case WILDFLY -> "41.0.1.Final";
             case TOMCAT -> "11.0.27, 10.1.61, 9.0.123";
-            case NGINX -> "1.31.8, 1.30.6";
+            case NGINX -> "1.30.6";
         };
     }
 
@@ -100,8 +101,13 @@ public class LatestVersion {
         if (v == null) return null;
         if (!p.branched()) return v.trim();
         Map<String, String> best = new TreeMap<>((a, b) -> ReportParser.compareVersions(b, a));
-        for (String one : v.trim().split("[,\\s/]+")) {
-            if (!TOMCAT_ONE.matcher(one).matches()) return null;
+        String[] parts = v.trim().split("[,\\s/]+");
+        for (String one : parts) if (!TOMCAT_ONE.matcher(one).matches()) return null;
+        // Nginx 는 stable(두 번째 숫자가 짝수)만 기준으로 씀. 예전에 저장된 "1.31.8,1.30.6" 도 1.30.6 만 남음
+        if (p == Product.NGINX && Arrays.stream(parts).anyMatch(LatestVersion::nginxStable)) {
+            parts = Arrays.stream(parts).filter(LatestVersion::nginxStable).toArray(String[]::new);
+        }
+        for (String one : parts) {
             String br = branch(one);
             if (!best.containsKey(br) || ReportParser.compareVersions(one, best.get(br)) > 0) best.put(br, one);
         }
@@ -155,20 +161,25 @@ public class LatestVersion {
 
     /** 지금 판정에 쓰는 "최신 버전" (Tomcat 은 "11.0.27,10.1.61,9.0.123") */
     public synchronized String current() {
-        if ("manual".equals(mode) && manualVersion != null) return manualVersion;
+        if ("manual".equals(mode) && manualVersion != null) {
+            String m = normalize(product, manualVersion);
+            return m == null ? manualVersion : m;
+        }
         if (autoVersion != null) {
-            if (scriptBaseline == null) return autoVersion;
+            String auto = normalize(product, autoVersion);   // 예전에 저장된 값도 지금 규칙으로 (Nginx: stable 만)
+            if (auto == null) auto = autoVersion;
+            if (scriptBaseline == null) return auto;
             if (product.branched()) {
                 // 자동 확인한 브랜치 목록을 기준으로, 브랜치마다 스크립트 기준값과 높은 쪽
                 List<String> out = new ArrayList<>();
-                for (String v : autoVersion.split(",")) {
+                for (String v : auto.split(",")) {
                     String b = baselineFor(v);
                     out.add(b != null && ReportParser.compareVersions(b, v) > 0 ? b : v);
                 }
                 return String.join(",", out);
             }
             // 목록이 비정상이라 스크립트 기준보다 낮게 나오면 스크립트 기준을 사용
-            return ReportParser.compareVersions(autoVersion, scriptBaseline) < 0 ? scriptBaseline : autoVersion;
+            return ReportParser.compareVersions(auto, scriptBaseline) < 0 ? scriptBaseline : auto;
         }
         return scriptBaseline != null ? scriptBaseline : fallback(product);
     }
@@ -201,16 +212,24 @@ public class LatestVersion {
         return null;
     }
 
-    /** Tomcat 지원 브랜치가 아닌가 (다른 제품은 항상 false) */
+    /** 지원 브랜치가 아닌가 (Tomcat·Nginx. 목록의 모든 브랜치보다 새 버전이면 지원 종료 아님) */
     public boolean unsupportedBranch(String version) {
-        return product.branched() && version != null && latestFor(version) == null;
+        return product.branched() && version != null && latestFor(version) == null && !newerThanAll(version);
+    }
+
+    /** 목록의 어떤 최신 버전보다도 높은 버전인가 (예: stable 1.30.6 기준에서 mainline 1.31.8, Tomcat 12.0) */
+    private boolean newerThanAll(String version) {
+        for (String v : current().split(",")) {
+            if (ReportParser.compareVersions(version, v) <= 0) return false;
+        }
+        return true;
     }
 
     /** 최신 미만인가 (버전을 모르면 false). Tomcat 지원 종료 브랜치는 항상 true */
     public boolean below(String version) {
         if (version == null) return false;
         String l = latestFor(version);
-        if (l == null) return product.branched();
+        if (l == null) return product.branched() && !newerThanAll(version);
         return ReportParser.compareVersions(version, l) < 0;
     }
 
@@ -292,7 +311,17 @@ public class LatestVersion {
         }
     }
 
-    /** Nginx versions.xml → "1.31.8,1.30.6" (mainline·stable 각 브랜치의 최신). 없으면 null */
+    /** Nginx 버전 규칙: 두 번째 숫자가 짝수 = stable, 홀수 = mainline (nginx.org 다운로드 페이지 기준) */
+    static boolean nginxStable(String v) {
+        String[] t = v.split("\\.");
+        try {
+            return t.length >= 2 && Integer.parseInt(t[1]) % 2 == 0;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
+    /** Nginx versions.xml → "1.30.6" (stable 브랜치의 최신). 없으면 null */
     static String parseNginxVersions(String body) {
         Matcher m = NGINX_BRANCH.matcher(body == null ? "" : body);
         List<String> out = new ArrayList<>();

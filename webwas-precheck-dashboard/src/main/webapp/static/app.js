@@ -20,7 +20,7 @@
     apache: 'Apache 2.2 이하 — 공식 지원 종료(EOL), 보안 패치 없음. 교체가 근본 대책',
     wildfly: 'Java EE 8(javax) 계열(WildFly 26 이하) — 최신으로 올릴 때 앱의 javax → jakarta 변경 필요',
     tomcat: '지원 종료(EOL) 브랜치 — 보안 패치 없음. 지원 브랜치(11.0 / 10.1 / 9.0)로 교체 필요',
-    nginx: '지원 종료(EOL) 브랜치 — nginx.org 보안 수정 없음. 지원 브랜치(mainline / stable)로 교체 필요 (배포판 패키지는 배포판 백포트 확인)'
+    nginx: '지원 종료(EOL) 브랜치 — nginx.org 보안 수정 없음. stable 브랜치로 교체 필요 (배포판 패키지는 배포판 백포트 확인)'
   };
   const CVE_NOTE = {
     apache: '판정은 업스트림 버전 기준(Apache 보안팀 공지의 영향 버전 + 필요 모듈이 켜져 있는지)입니다. 패키지 설치본의 "백포트 추정"은 changelog 에 CVE 번호가 있다는 뜻일 뿐이므로 배포판 보안 공지로 최종 확인하세요.',

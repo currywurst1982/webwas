@@ -75,13 +75,21 @@ fi
 # (Spring Boot 등 내장 Tomcat 은 Bootstrap 을 쓰지 않으므로 대상 아님)
 # 출력: PID (한 줄에 하나)
 detect_instances() {
-  local pid cl
+  local pid cl ppid all="" parents=""
   for pid in $(ps -eo pid=,args= 2>/dev/null | awk '/org\.apache\.catalina\.startup\.Bootstrap/ && !/awk/ {print $1}'); do
     cl="$(tr '\0' ' ' < /proc/"$pid"/cmdline 2>/dev/null)"
     case "$cl" in
       *org.apache.catalina.startup.Bootstrap*\ stop*) ;;   # 종료 명령 프로세스 제외
-      *org.apache.catalina.startup.Bootstrap*) echo "$pid" ;;
+      *org.apache.catalina.startup.Bootstrap*) all="$all $pid" ;;
     esac
+  done
+  # jsvc: root 관리 프로세스(부모)와 실제 JVM 을 돌리는 자식(tomcat 계정)이 같은 명령줄 → 부모는 빼고 자식만 점검
+  for pid in $all; do
+    ppid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')"
+    case " $all " in *" $ppid "*) parents="$parents $ppid" ;; esac
+  done
+  for pid in $all; do
+    case " $parents " in *" $pid "*) ;; *) echo "$pid" ;; esac
   done
 }
 
@@ -1412,8 +1420,14 @@ WW="$(find "$CONF_DIR" "$APPBASE" "$CATALINA_HOME/lib" "$CATALINA_HOME/bin" -max
 if [ -n "$WW" ]; then risk "모든 계정이 쓸 수 있는 설정/배포/라이브러리/실행 파일·폴더 있음 → 설정 변조·악성 앱 배포 가능"; printf '%s\n' "$WW" | show
 else ok "설정·배포·라이브러리·실행 폴더에 모든 계정 쓰기 권한 없음"; fi
 if [ -n "$RUN_USER" ] && [ "$RUN_USER" != "root" ] && id "$RUN_USER" >/dev/null 2>&1; then
-  OWN="$(find "$CONF_DIR" "$CATALINA_HOME/bin" "$CATALINA_HOME/lib" -maxdepth 1 -user "$RUN_USER" 2>/dev/null | head -n 5)"
-  [ -n "$OWN" ] && { warn "실행 계정($RUN_USER)이 conf/bin/lib 를 소유 → 앱 취약점으로 Tomcat 설정·라이브러리 변조 가능. root 소유 + 읽기 전용 권장"; printf '%s\n' "$OWN" | show; }
+  # conf/Catalina(앱 배포 시 Tomcat 이 context 파일을 씀)는 제외
+  OWN="$(find "$CONF_DIR" "$CATALINA_HOME/bin" "$CATALINA_HOME/lib" -maxdepth 1 -user "$RUN_USER" ! -path "$CONF_DIR/Catalina" 2>/dev/null | head -n 5)"
+  if [ -n "$OWN" ]; then
+    warn "실행 계정($RUN_USER)이 conf/bin/lib 를 소유 → 배포한 앱이 뚫리면(원격 코드 실행) 공격자가 server.xml·lib 의 jar 를 바꿔 재배포해도 남는 뒷문을 만들 수 있음. 이 폴더는 Tomcat 이 쓸 필요가 없으므로 root(또는 별도 관리 계정) 소유 + 실행 계정은 읽기만 권장"
+    printf '%s\n' "$OWN" | while read -r o; do detail "$(ls -ld "$o" 2>/dev/null | awk '{print $1, $3":"$4, $NF}')"; done
+    detail "→ 권한 상승 문제는 아님(Tomcat 은 원래 $RUN_USER 로 실행). 앱 침해 시 피해를 Tomcat 설치본까지 넓히지 않기 위한 강화 항목"
+    detail "→ 쓰기가 필요한 곳: logs, temp, work, webapps(배포 방식에 따라), conf/Catalina. 예: sudo chown -R root:$RUN_USER $CATALINA_HOME/bin $CATALINA_HOME/lib && sudo chmod -R g-w,o-w $CATALINA_HOME/bin $CATALINA_HOME/lib (패치·업그레이드 작업 계정도 함께 정할 것)"
+  fi
 fi
 
 # =====================================================================

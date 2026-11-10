@@ -973,7 +973,12 @@ if [ -n "$WW" ]; then risk "모든 계정이 쓸 수 있는 설정/배포/모듈
 else ok "설정·배포·모듈·실행 폴더에 모든 계정 쓰기 권한 없음"; fi
 if [ -n "$RUN_USER" ] && [ "$RUN_USER" != "root" ] && id "$RUN_USER" >/dev/null 2>&1; then
   OWN="$(find "$JBOSS_HOME/bin" "$JBOSS_HOME/modules" -maxdepth 2 -user "$RUN_USER" 2>/dev/null | head -n 5)"
-  [ -n "$OWN" ] && { warn "실행 계정($RUN_USER)이 bin/modules 를 소유 → 앱 취약점으로 WildFly 자체 파일 변조 가능. root 소유 + 읽기 전용 권장"; printf '%s\n' "$OWN" | show; }
+  if [ -n "$OWN" ]; then
+    warn "실행 계정($RUN_USER)이 bin/modules 를 소유 → 배포한 앱이 뚫리면(원격 코드 실행) 공격자가 WildFly 모듈 jar·실행 스크립트를 바꿔 재배포해도 남는 뒷문을 만들 수 있음. 이 폴더는 WildFly 가 쓸 필요가 없으므로 root(또는 별도 관리 계정) 소유 + 실행 계정은 읽기만 권장"
+    printf '%s\n' "$OWN" | while read -r o; do detail "$(ls -ld "$o" 2>/dev/null | awk '{print $1, $3":"$4, $NF}')"; done
+    detail "→ 권한 상승 문제는 아님(WildFly 는 원래 $RUN_USER 로 실행). 앱 침해 시 피해를 WildFly 설치본까지 넓히지 않기 위한 강화 항목"
+    detail "→ 쓰기가 필요한 곳: standalone/configuration(WildFly 가 설정을 저장함)·data·log·tmp·deployments. 예: sudo chown -R root:$RUN_USER $JBOSS_HOME/bin $JBOSS_HOME/modules && sudo chmod -R g-w,o-w $JBOSS_HOME/bin $JBOSS_HOME/modules (패치·업그레이드 작업 계정도 함께 정할 것)"
+  fi
 fi
 
 # =====================================================================

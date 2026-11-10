@@ -32,9 +32,11 @@
 #    APACHE_LOG_PATHS=   (apache_precheck.sh  -l 값, 접근 로그 경로를 직접 지정할 때)
 #    WILDFLY_LOG_PATHS=  (wildfly_precheck.sh -l 값. 예: 앞단 Apache 로그)
 #    TOMCAT_LOG_PATHS=   (tomcat_precheck.sh  -l 값)
+#    WILDFLY_SERVER_LOG_PATHS= (wildfly_precheck.sh -s 값, server.log 가 표준 위치가 아닐 때)
+#    TOMCAT_SERVER_LOG_PATHS=  (tomcat_precheck.sh  -s 값, catalina.out 등이 logs 폴더 밖에 있을 때)
 # =====================================================================
 
-AGENT_VERSION="2.1.0"   # 2.1.0: 점검 중에도 1분마다 heartbeat(busy=1) 전송
+AGENT_VERSION="2.2.0"   # 2.1.0: 점검 중에도 1분마다 heartbeat(busy=1) 전송 / 2.2.0: 서버 로그 경로(-s) 전달
 CONF="${WEBWAS_PRECHECK_AGENT_CONF:-/etc/webwas-precheck-agent.conf}"
 BASE_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 ALL_PRODUCTS="apache wildfly tomcat"   # 순서 고정 (스크립트 SHA-256 계산 순서와 같음)
@@ -159,7 +161,7 @@ flush_outbox() {
 }
 
 do_run() {
-  local marker="$WORK/marker" rc=0 one n_made n_sent msg products p args cve lp script done_list="" fail_list=""
+  local marker="$WORK/marker" rc=0 one n_made n_sent msg products p args cve lp slp script done_list="" fail_list=""
   : > "$marker"; sleep 1
   keepalive_start
   products="$(detect_products)"
@@ -180,6 +182,12 @@ do_run() {
       tomcat) lp="${TOMCAT_LOG_PATHS:-}" ;;
     esac
     [ -n "$lp" ] && args+=(-l "$lp")
+    case "$p" in
+      wildfly) slp="${WILDFLY_SERVER_LOG_PATHS:-}" ;;
+      tomcat) slp="${TOMCAT_SERVER_LOG_PATHS:-}" ;;
+      *) slp="" ;;
+    esac
+    [ -n "$slp" ] && args+=(-s "$slp")
     cve="$(fetch_cve "$p")"
     log "점검 시작: $script ${args[*]}${cve:+ (CVE 목록: $cve)}"
     if command -v timeout >/dev/null 2>&1; then

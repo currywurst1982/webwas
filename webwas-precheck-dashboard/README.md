@@ -98,10 +98,24 @@
 | [1] 버전 | `lib/catalina.jar` 의 ServerInfo(server.info 를 숨겼으면 server.number) → RELEASE-NOTES 순서로 버전 확인. **브랜치별 최신**(11.0/10.1/9.0)과 비교하고, 지원 목록에 없는 브랜치(8.5, 10.0 등)는 "지원 종료(EOL)" [위험] |
 | [2] CVE | 위 "CVE 목록" 기준. 예: 9.0.80 → CVE-2025-24813(partial PUT RCE) 등 45건 |
 | [3] 설정 | 셧다운 포트(기본 명령어 SHUTDOWN), **AJP 커넥터 secret 미설정(Ghostcat 류)**, 관리자 앱(manager/host-manager) IP 제한 없음, `tomcat-users.xml` 의 쉬운 비밀번호·평문 저장, 예제/문서 앱·기본 ROOT 페이지, DefaultServlet `readonly=false`(PUT 업로드)·`listings=true`, CGI 서블릿, 오류 페이지 버전 노출(ErrorReportValve), HTTP 헤더 버전 노출, 원격 디버그(JDWP)·JMX 무인증, root 실행, 파일 권한 |
-| [4] 침해 흔적 | 접근 로그(AccessLogValve)의 경로 탐색·명령 실행·JNDI 주입·**관리자 앱 WAR 배포/PUT JSP 업로드 성공**, webapps(및 conf/Catalina/*/*.xml 이 가리키는 폴더)의 웹쉘 의심 JSP(war 안 포함), 최근 변경 파일, catalina 로그의 역직렬화·JNDI 흔적, 실행 계정의 의심 프로세스·크론·임시 파일·외부 연결 |
+| [4] 침해 흔적 | 접근 로그(AccessLogValve)의 경로 탐색·명령 실행·JNDI 주입·**관리자 앱 WAR 배포/PUT JSP 업로드 성공**, webapps(및 conf/Catalina/*/*.xml 이 가리키는 폴더)의 웹쉘 의심 JSP(war 안 포함), 최근 변경 파일, catalina 로그의 역직렬화·JNDI 흔적, 실행 계정의 의심 프로세스·크론·임시 파일·외부 연결, **OS 로그인 기록**(아래) |
 
-옵션: `-H 설치폴더`(CATALINA_HOME) `-B 인스턴스폴더`(CATALINA_BASE) `-d 일수` `-l '접근로그경로'` `-C CVE목록파일`. 옵션 없이 실행하면 실행 중인 Tomcat 을 자동으로 찾고, 여러 개면 각각 점검합니다.
-Apache·WildFly 스크립트의 점검 내용은 기존과 같고, `-C` 옵션과 대시보드 CVE 목록 받기만 추가되었습니다.
+옵션: `-H 설치폴더`(CATALINA_HOME) `-B 인스턴스폴더`(CATALINA_BASE) `-d 일수` `-l '접근로그경로'` `-s '서버로그경로'` `-C CVE목록파일`. 옵션 없이 실행하면 실행 중인 Tomcat 을 자동으로 찾고, 여러 개면 각각 점검합니다.
+
+### 서버 로그 위치 지정 (-s) · OS 로그인 기록 점검 (WildFly·Tomcat, 2026-11-10)
+
+- **`-s '경로'`**: server.log(WildFly)·catalina.out 등(Tomcat)이 표준 위치가 아닐 때 지정합니다. 자동으로 찾는 곳에 **더해서** 읽습니다(와일드카드 가능, 작은따옴표로 감쌀 것).
+  에이전트는 설정 파일의 `WILDFLY_SERVER_LOG_PATHS`·`TOMCAT_SERVER_LOG_PATHS` 값을 넘깁니다(에이전트 2.2.0 이상).
+- **4-5 OS 로그인 기록**: `/var/log/secure*`(RHEL/Rocky) 또는 `/var/log/auth.log*`(Debian/Ubuntu) 중 최근 `-d`일 안에 바뀐 파일, 없으면 journal 의 auth/authpriv 기록을 읽습니다. root 권한이 필요합니다.
+
+| 판정 | 내용 |
+|---|---|
+| [위험] | 같은 IP 에서 **1시간 안에 SSH 로그인 실패 10회 이상 → 그 IP 로 로그인 성공** (비밀번호 맞히기 공격 성공 의심) |
+| [주의] | 실패가 많았던 IP 에서 로그인 성공(1시간 밖) / 실행 계정으로 SSH 직접 로그인 / 실행 계정의 sudo 사용·시도 / 계정 생성·변경·비밀번호 변경 |
+| [정보] | su 로 실행 계정에 전환한 기록, 로그인 실패가 많은 IP 상위 5개 |
+
+한계: SSH(sshd) 로그인만 봅니다(콘솔·FTP 등 제외). 로그 형식이 표준(OpenSSH)과 다르거나 로그가 원격 서버로만 가면 탐지하지 못합니다. 실행 계정이 root 이면 계정 기준 항목(직접 로그인·sudo·su)은 생략합니다.
+Apache 스크립트에는 `-C` 옵션과 대시보드 CVE 목록 받기가 추가되었고, WildFly 스크립트에는 그에 더해 위의 `-s`·OS 로그인 기록 점검이 추가되었습니다.
 
 ## 1. 준비물
 
@@ -165,7 +179,7 @@ mvn package
 | 설치되는 것 | 내용 |
 |---|---|
 | `/opt/webwas-precheck-agent/` | 에이전트, 점검 스크립트 3개, 받은 CVE 목록(`cve/`), 보낸 리포트(`sent/`), 전송 대기(`outbox/`) |
-| `/etc/webwas-precheck-agent.conf` | 주소·이름·토큰(권한 600), `PRODUCTS`, `RECENT_DAYS`, `RUN_TIMEOUT`, `APACHE_LOG_PATHS`·`WILDFLY_LOG_PATHS`·`TOMCAT_LOG_PATHS` |
+| `/etc/webwas-precheck-agent.conf` | 주소·이름·토큰(권한 600), `PRODUCTS`, `RECENT_DAYS`, `RUN_TIMEOUT`, `APACHE_LOG_PATHS`·`WILDFLY_LOG_PATHS`·`TOMCAT_LOG_PATHS`(접근 로그, -l), `WILDFLY_SERVER_LOG_PATHS`·`TOMCAT_SERVER_LOG_PATHS`(서버 로그, -s) |
 | systemd 타이머 `webwas-precheck-agent.timer` | 1분마다 실행 (없으면 `/etc/cron.d/webwas-precheck-agent`) |
 
 ```bash
@@ -184,10 +198,13 @@ sudo bash /tmp/webwas-precheck-install.sh --uninstall             # 에이전트
   N=$(sed -n "s/^AGENT_NAME='\(.*\)'$/\1/p" $F)
   T=$(sed -n "s/^AGENT_TOKEN='\(.*\)'$/\1/p" $F)
   C=$(sed -n "s/^CA_CERT='\(.*\)'$/\1/p" $F)
-  echo "대시보드: $U / 에이전트: $N"
-  curl -fsSo /tmp/webwas-precheck-install.sh ${C:+--cacert "$C"} "$U/agent-api/files/install.sh" && PRECHECK_AGENT_TOKEN="$T" bash /tmp/webwas-precheck-install.sh "$U" "$N" ${C:+--ca-cert "$C"}
+  D=$(mktemp -d)
+  echo "대시보드: $U / 에이전트: $N / 받는 폴더: $D"
+  curl -fsSo "$D/install.sh" ${C:+--cacert "$C"} "$U/agent-api/files/install.sh" && PRECHECK_AGENT_TOKEN="$T" bash "$D/install.sh" "$U" "$N" ${C:+--ca-cert "$C"}
   ```
-  확인: `grep '^AGENT_VERSION' /opt/webwas-precheck-agent/webwas-precheck-agent.sh` → `2.1.0` 이상.
+  빈 폴더(`mktemp -d`)에 받는 이유: install.sh 는 **같은 폴더에 점검 스크립트가 있으면 그 파일을 먼저 씁니다.** `/tmp` 에 옛 스크립트가 남아 있으면 옛 버전이 설치됩니다.
+  출력에 `wildfly_precheck.sh : 대시보드에서 받음` 이 보여야 합니다.
+  확인: `grep '^AGENT_VERSION' /opt/webwas-precheck-agent/webwas-precheck-agent.sh` → `2.2.0` 이상.
   HTTPS 로 바꿀 때는 `U=` 줄 대신 `U=https://<대시보드주소>:8443/webwas-precheck`, `C=` 줄 대신 `C=/경로/dashboard-ca.pem` 처럼 직접 넣습니다.
 - 기존 Apache/WildFly 에이전트(`/opt/precheck-agent`, `/opt/wfprecheck-agent`)는 각 설치 파일의 `--uninstall` 로 지운 뒤 새 에이전트를 설치하세요(같이 두면 이중 점검됩니다).
 - "점검한 제품이 모두 최신인 서버는 자동 점검 제외"는 **그 서버의 모든 제품·인스턴스가 최신**일 때만 적용됩니다.

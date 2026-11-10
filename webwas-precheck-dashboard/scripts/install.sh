@@ -88,7 +88,7 @@ install -m 700 "$TMP/webwas-precheck-agent.sh" "$DEST/webwas-precheck-agent.sh"
 for f in apache_precheck.sh wildfly_precheck.sh tomcat_precheck.sh; do install -m 700 "$TMP/$f" "$DEST/$f"; done
 
 # 기존 설정의 선택 항목은 유지
-OLD_RECENT=""; OLD_TIMEOUT=""; OLD_PRODUCTS=""; OLD_A=""; OLD_W=""; OLD_T=""
+OLD_RECENT=""; OLD_TIMEOUT=""; OLD_PRODUCTS=""; OLD_A=""; OLD_W=""; OLD_T=""; OLD_WS=""; OLD_TS=""
 if [ -r "$CONF" ]; then
   OLD_RECENT="$(sed -n 's/^RECENT_DAYS=//p' "$CONF" | tail -n1)"
   OLD_TIMEOUT="$(sed -n 's/^RUN_TIMEOUT=//p' "$CONF" | tail -n1)"
@@ -96,6 +96,8 @@ if [ -r "$CONF" ]; then
   OLD_A="$(sed -n 's/^APACHE_LOG_PATHS=//p' "$CONF" | tail -n1)"
   OLD_W="$(sed -n 's/^WILDFLY_LOG_PATHS=//p' "$CONF" | tail -n1)"
   OLD_T="$(sed -n 's/^TOMCAT_LOG_PATHS=//p' "$CONF" | tail -n1)"
+  OLD_WS="$(sed -n 's/^WILDFLY_SERVER_LOG_PATHS=//p' "$CONF" | tail -n1)"
+  OLD_TS="$(sed -n 's/^TOMCAT_SERVER_LOG_PATHS=//p' "$CONF" | tail -n1)"
   cp -p "$CONF" "$CONF.bak"
 fi
 q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
@@ -116,6 +118,9 @@ RECENT_DAYS=${OLD_RECENT:-30}
 APACHE_LOG_PATHS=${OLD_A:-}
 WILDFLY_LOG_PATHS=${OLD_W:-}
 TOMCAT_LOG_PATHS=${OLD_T:-}
+# 서버 로그가 표준 위치가 아닐 때만 (제품별 -s 값, 자동 탐색에 더해서 읽음). 예: '/applog/wildfly/server.log*'
+WILDFLY_SERVER_LOG_PATHS=${OLD_WS:-}
+TOMCAT_SERVER_LOG_PATHS=${OLD_TS:-}
 EOF
 chmod 600 "$CONF"
 say "설정 파일 작성: $CONF"

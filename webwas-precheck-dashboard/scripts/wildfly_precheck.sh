@@ -25,11 +25,14 @@
 #      설치 폴더(jboss.home.dir)·서버 폴더(jboss.server.base.dir)·설정 파일(-c)을 따라갑니다.
 #    - 인스턴스가 여러 개면 각각 점검하고 리포트를 따로 만듭니다.
 #    - root 가 아니면 sudo 로 자동 재실행합니다(비밀번호를 물을 수 있음).
-#  선택 옵션: [-H WildFly설치폴더] [-d 일수] [-l '로그경로'] [-C CVE목록파일]
+#  선택 옵션: [-H WildFly설치폴더] [-d 일수] [-l '로그경로'] [-s '서버로그경로'] [-C CVE목록파일]
 #    -H : WildFly 설치 폴더(JBOSS_HOME) 직접 지정 (WildFly 가 꺼져 있어 자동 탐지가 안 될 때)
 #    -d : "최근 변경 파일" 점검 기간(일). 기본 30
 #    -l : 접근 로그 경로 직접 지정 (와일드카드 가능, 반드시 작은따옴표로 감쌀 것)
 #         예: -l '/logs/wildfly/access_log*'
+#    -s : 서버 로그(server.log) 경로 추가 지정 (자동으로 찾는 곳에 더해서 읽음. 작은따옴표로 감쌀 것)
+#         예: -s '/applog/wildfly/server.log*'
+#    -d 기간은 OS 로그인 기록(/var/log/secure 등) 점검 기간으로도 씁니다.
 #    -C : CVE 목록 파일 (대시보드의 [CVE 목록 받기] 또는 /agent-api/cve/wildfly 에서 받은 파일)
 # =====================================================================
 
@@ -37,12 +40,14 @@ LATEST_FINAL="41.0.1.Final"
 JBOSS_HOME_ARG=""
 RECENT_DAYS=30
 LOG_PATHS=""
+SERVER_LOG_PATHS=""
 ORIG_ARGS=("$@")
-while getopts "H:d:l:C:h" opt; do
+while getopts "H:d:l:s:C:h" opt; do
   case "$opt" in
     H) JBOSS_HOME_ARG="$OPTARG" ;;
     d) RECENT_DAYS="$OPTARG" ;;
     l) LOG_PATHS="$OPTARG" ;;
+    s) SERVER_LOG_PATHS="$OPTARG" ;;
     C) PRECHECK_CVE_DB="$(readlink -f "$OPTARG")"; export PRECHECK_CVE_DB ;;
     h) sed -n '2,/^# =\{10,\}$/p' "$0"; exit 0 ;;
     *) echo "알 수 없는 옵션입니다. -h 로 사용법을 확인하세요."; exit 1 ;;
@@ -85,6 +90,7 @@ if [ -z "$JBOSS_HOME_ARG" ] && [ -z "${PRECHECK_PID:-}" ]; then
       echo ""; echo "################ 인스턴스 ${i}/${N_INST} (PID ${pid}) ################"
       PASS=(-d "$RECENT_DAYS")
       [ -n "$LOG_PATHS" ] && PASS+=(-l "$LOG_PATHS")
+      [ -n "$SERVER_LOG_PATHS" ] && PASS+=(-s "$SERVER_LOG_PATHS")
       PRECHECK_NO_SUDO=1 PRECHECK_PID="$pid" bash "$SELF" "${PASS[@]}" </dev/null
     done <<< "$INSTANCES"
     echo ""; echo "[안내] 전체 인스턴스 점검 완료. 리포트 파일 목록:"
@@ -154,6 +160,98 @@ report_user_procs() {
     info "$1 으로 로그인한 터미널 세션 (관리자 작업인지 확인: last ${RUN_USER} / /var/log/secure)"; cut -c1-220 "$WORK/ps_login" | show
   fi
   [ "$any" -eq 0 ] && ok "$1 의 비정상 프로세스 없음"
+}
+
+# OS 로그인·권한 기록에서 침해 흔적 찾기.  사용: check_auth_log 실행계정
+#   읽는 곳: /var/log/secure* (RHEL/Rocky) 또는 /var/log/auth.log* (Debian/Ubuntu) 중 최근 RECENT_DAYS 일 안에 바뀐 파일
+#            (둘 다 없으면 journalctl 의 auth/authpriv 기록)
+#   [위험] 같은 IP 에서 1시간 안에 로그인 실패 AUTH_FAIL_MIN 회 이상 → 그 IP 로 로그인 성공 (비밀번호 맞히기 공격 성공 의심)
+#   [주의] 실패가 많았던 IP 에서 로그인 성공(1시간 안은 아님) / 실행 계정으로 SSH 직접 로그인 / 실행 계정의 sudo / 계정 생성·변경
+#   [정보] su 로 실행 계정 전환 기록, 로그인 실패가 많은 IP 상위 5개
+AUTH_FAIL_MIN=10
+check_auth_log() {
+  local u="$1" A="$WORK/auth.txt" files src n any=0
+  : > "$A"
+  # 오래된 파일부터 (secure-20261026 → secure, auth.log.2.gz → auth.log) 읽어야 시간 순서가 맞음
+  files="$(find /var/log -maxdepth 1 -type f \( -name 'secure*' -o -name 'auth.log*' \) -mtime "-$RECENT_DAYS" -printf '%T@ %p\n' 2>/dev/null | sort -n | cut -d' ' -f2-)"
+  if [ -n "$files" ]; then
+    printf '%s\n' "$files" | while IFS= read -r f; do zcat -f -- "$f" 2>/dev/null; done > "$A"
+    n="$(printf '%s\n' "$files" | wc -l)"
+    src="$(printf '%s\n' "$files" | tail -n 1)$( [ "$n" -gt 1 ] && echo " 외 $((n-1))개")"
+  elif command -v journalctl >/dev/null 2>&1; then
+    journalctl -q --no-pager -o short --since "$(date -d "-$RECENT_DAYS days" +%F 2>/dev/null)" SYSLOG_FACILITY=4 SYSLOG_FACILITY=10 > "$A" 2>/dev/null
+    src="journalctl (auth/authpriv)"
+  fi
+  if [ ! -s "$A" ]; then
+    info "OS 로그인 기록(/var/log/secure, /var/log/auth.log, journal)을 읽지 못해 로그인 기록 점검을 건너뜁니다. (root 권한 필요)"
+    return
+  fi
+  info "점검 대상 OS 로그인 기록 (최근 ${RECENT_DAYS}일): $src"
+
+  # 한 번 훑으며: IP 별 로그인 실패(최근 AUTH_FAIL_MIN 개 시각 기억) / 로그인 성공을 실패 기록과 대조
+  awk -v min="$AUTH_FAIL_MIN" -v u="$u" -v w="$WORK" '
+    function ts(   m, c) {   # "Nov 10 10:15:22 ..." 또는 "2026-11-10T10:15:22..." → 초 (연도 없음, 비교용)
+      if ($1 ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T/)
+        return ((substr($1,6,2)+0)*31 + substr($1,9,2))*86400 + substr($1,12,2)*3600 + substr($1,15,2)*60 + substr($1,18,2)
+      m = index("JanFebMarAprMayJunJulAugSepOctNovDec", $1)
+      if (!m || split($3, c, ":") < 3) return -1
+      return (((m+2)/3)*31 + $2)*86400 + c[1]*3600 + c[2]*60 + c[3]
+    }
+    function ipof(   s) { if (match($0, / from [0-9a-fA-F.:]+ port /)) return substr($0, RSTART+6, RLENGTH-12); return "" }
+    /sshd[^:]*: Failed / {
+      ip = ipof(); if (ip == "") next
+      t = ts(); k = cnt[ip]++ % min; r[ip, k] = t; next
+    }
+    /sshd[^:]*: Accepted / {
+      ip = ipof(); usr = ""
+      if (match($0, / for [^ ]+ from /)) usr = substr($0, RSTART+5, RLENGTH-11)
+      line = substr($0, 1, 200)
+      if (u != "" && usr == u) print line > (w "/auth_direct")
+      if (ip != "" && (ip in cnt) && cnt[ip] >= min) {
+        t = ts(); old = r[ip, cnt[ip] % min]   # 최근 min 개 실패 중 가장 오래된 것
+        if (t >= 0 && old >= 0 && old <= t && t - old <= 3600)
+          print line "  ← 직전 1시간 안에 이 IP 로그인 실패 " min "회 이상" > (w "/auth_brute")
+        else
+          print line "  ← 이 IP 로그인 실패 누적 " cnt[ip] "회" > (w "/auth_manyfail")
+      }
+    }
+    END { for (ip in cnt) print cnt[ip], ip > (w "/auth_fails") }
+  ' "$A"
+
+  if [ -s "$WORK/auth_brute" ]; then any=1
+    risk "로그인 실패가 몰린 직후 같은 IP 에서 로그인 성공 (비밀번호 맞히기 공격 성공 의심 → 해당 계정 비밀번호 변경·접속 기록 확인)"
+    tail -n 10 "$WORK/auth_brute" | show
+  fi
+  if [ -s "$WORK/auth_manyfail" ]; then any=1
+    warn "로그인 실패가 많았던 IP 에서 로그인 성공 (점프 서버처럼 여러 사람이 쓰는 IP 인지 확인)"
+    tail -n 10 "$WORK/auth_manyfail" | show
+  fi
+  if [ -n "$u" ] && [ "$u" != "root" ]; then
+    if [ -s "$WORK/auth_direct" ]; then any=1
+      warn "실행계정($u)으로 SSH 직접 로그인한 기록 (서비스 계정은 보통 직접 로그인하지 않음 → 누가 접속했는지 확인)"
+      tail -n 10 "$WORK/auth_direct" | show
+    fi
+    grep -E "sudo(\[[0-9]+\])?: +${u} : " "$A" | tail -n 10 > "$WORK/auth_sudo"
+    if [ -s "$WORK/auth_sudo" ]; then any=1
+      warn "실행계정($u)이 sudo 를 사용(시도)한 기록 (웹 실행 계정의 권한 상승 시도일 수 있음)"
+      cut -c1-220 "$WORK/auth_sudo" | show
+    fi
+    grep -E "su(-l)?(\[[0-9]+\])?: .*session opened for user ${u}[( ]" "$A" | tail -n 5 > "$WORK/auth_su"
+    if [ -s "$WORK/auth_su" ]; then
+      info "su 로 실행계정($u)에 전환한 기록 (최근 5건, 관리자 작업인지 확인)"
+      cut -c1-220 "$WORK/auth_su" | show
+    fi
+  fi
+  grep -E "(useradd|userdel|usermod|groupadd|chpasswd)(\[[0-9]+\])?: |password changed for " "$A" | tail -n 10 > "$WORK/auth_acct"
+  if [ -s "$WORK/auth_acct" ]; then any=1
+    warn "계정 생성·변경·비밀번호 변경 기록 (최근 10건, 관리자 작업인지 확인 — 침입자가 뒷문 계정을 만들기도 함)"
+    cut -c1-220 "$WORK/auth_acct" | show
+  fi
+  if [ -s "$WORK/auth_fails" ]; then
+    info "로그인 실패가 많은 IP 상위 5개 (전체 $(awk '{s+=$1} END {print s}' "$WORK/auth_fails")회, 형식: 횟수 IP)"
+    sort -rn "$WORK/auth_fails" | head -n 5 | show
+  fi
+  if [ "$any" -eq 0 ]; then ok "OS 로그인 기록에 로그인 공격 성공·실행계정 직접 로그인/sudo·계정 변경 흔적 없음"; fi
 }
 
 # Maven 식 버전 비교: vcmp a b → -1 / 0 / 1
@@ -928,10 +1026,24 @@ awk '/<subsystem xmlns="urn:jboss:domain:logging/{f=1} f && /<file /{print} f &&
   ls -d -- "$f" "$f".* 2>/dev/null
 done >> "$SLOGS_F"
 find "$LOG_DIR" -maxdepth 3 -type f -name 'server.log*' 2>/dev/null >> "$SLOGS_F"
+if [ -n "$SERVER_LOG_PATHS" ]; then
+  # -s 로 지정한 경로 (와일드카드 가능)
+  for p in $SERVER_LOG_PATHS; do
+    # shellcheck disable=SC2086
+    ls -d -- $p 2>/dev/null
+  done > "$WORK/slogs_s.txt"
+  if [ -s "$WORK/slogs_s.txt" ]; then
+    info "서버 로그 경로를 -s 옵션 값으로 추가: $SERVER_LOG_PATHS ($(wc -l < "$WORK/slogs_s.txt")개)"
+    cat "$WORK/slogs_s.txt" >> "$SLOGS_F"
+  else
+    warn "-s 옵션으로 지정한 서버 로그 경로에 파일이 없습니다: $SERVER_LOG_PATHS (경로·와일드카드 확인)"
+  fi
+fi
 SLOGS="$(sort -u "$SLOGS_F" | while read -r f; do [ -f "$f" ] && echo "$f"; done)"
 if [ -z "$SLOGS" ]; then
   warn "server.log 를 찾지 못했습니다. WildFly 로그 기반 공격 흔적 점검을 건너뜁니다. (찾아본 곳: $LOG_DIR 아래 3단계, 로깅 설정의 파일 경로)"
   detail "→ 로그 위치는 WildFly 시작 옵션 -Djboss.server.log.dir 과 standalone.xml 의 logging 설정(<file path=...>)을 확인하세요."
+  detail "→ 다른 곳에 있으면 -s 옵션(에이전트는 설정 파일의 WILDFLY_SERVER_LOG_PATHS)으로 지정하세요. 예: -s '/applog/wildfly/server.log*'"
 else
   info "점검 대상 WildFly 로그: $(printf '%s\n' "$SLOGS" | wc -l)개"
   printf '%s\n' "$SLOGS" | head -n 10 | show
@@ -969,6 +1081,9 @@ if [ -n "${PRECHECK_PID:-}" ] && command -v ss >/dev/null 2>&1; then
     printf '%s\n' "$CONN" | show
   fi
 fi
+
+# 4-5 OS 로그인 기록 (/var/log/secure 등): 로그인 공격 성공, 실행 계정의 직접 로그인·sudo, 계정 생성
+check_auth_log "$RUN_USER"
 
 # =====================================================================
 section "점검 요약"

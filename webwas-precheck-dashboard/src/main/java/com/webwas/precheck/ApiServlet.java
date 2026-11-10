@@ -108,7 +108,10 @@ public class ApiServlet extends HttpServlet {
                 sendPdf(resp, IntrusionPdf.single(r, Web.latest(getServletContext()), Web.user(req)),
                         "intrusion_" + ascii(r.host) + "_" + ascii(r.checkedAt) + ".pdf");
             } else if (p.length == 2) {
-                Web.json(req, resp, r.toDetail(Web.latest(getServletContext())), null);
+                Map<String, Object> d = r.toDetail(Web.latest(getServletContext()));
+                // 같은 서버의 바로 전 점검과 비교 (새로 생긴/해결된 항목, 미조치 CVE 변화)
+                d.put("diff", ReportDiff.diff(r, ReportDiff.previous(allReports(store), r)));
+                Web.json(req, resp, d, null);
             } else {
                 Web.json(resp, 404, Map.of("error", "없는 주소입니다."));
             }

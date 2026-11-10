@@ -584,6 +584,7 @@
     renderFindings(r);
     renderCves(r);
     renderHistory(r);
+    renderDiff(r);
     $('#d-rawtext').textContent = r.raw;
     selectTab('findings');
     if (!dlg.open) dlg.showModal();
@@ -711,6 +712,40 @@
           h('td', { class: 'num' }, String(x.counts.risk)), h('td', { class: 'num' }, String(x.counts.warn)),
           h('td', { class: 'num' }, String(x.counts.ok)), h('td', { class: 'num' }, String(cveTotal(x))),
           h('td', { class: 'mono' }, x.id))))));
+  }
+
+  /** 지난 점검 대비: 같은 서버의 바로 전 점검과 비교 (ReportDiff) */
+  function renderDiff(r) {
+    const panel = $('[data-panel="diff"]'), tab = $('#d-diff-tab');
+    const d = r.diff;
+    if (!d || !d.hasPrevious) {
+      tab.textContent = '지난 점검 대비';
+      panel.replaceChildren(h('p', { class: 'muted' }, '같은 서버(인스턴스)의 이전 점검 기록이 없어 비교할 수 없습니다. 다음 점검부터 변화가 표시됩니다.'));
+      return;
+    }
+    const plus = d.added.length + d.cveNew.length, minus = d.resolved.length + d.cveResolved.length;
+    tab.textContent = `지난 점검 대비 (+${plus} / −${minus})`;
+    const row = x => h('div', { class: 'finding' }, h('div', null, badge(x.level)),
+      h('div', null, h('span', { class: 'sub' }, (SECTION_TITLE[x.section] || x.section) + ' · '), x.text,
+        x.from ? h('span', { class: 'sub' }, ` (이전: ${STATUS[x.from] ? STATUS[x.from].label : x.from})`) : null));
+    const block = (title, items, empty, cls) => h('div', { class: 'sec diff-sec ' + (cls || '') },
+      h('h3', null, `${title} (${items.length})`),
+      ...(items.length ? items.map(row) : [h('p', { class: 'muted' }, empty)]));
+    const cves = (title, ids, cls) => h('div', { class: 'sec diff-sec ' + cls }, h('h3', null, `${title} (${ids.length})`),
+      ids.length ? h('p', { class: 'mono diff-cves' }, ids.join(', ')) : h('p', { class: 'muted' }, '없음'));
+    const pc = d.prevCounts || {};
+    panel.replaceChildren(
+      h('div', { class: 'diff-head' },
+        h('span', null, '비교 대상: ', h('b', null, d.prevCheckedAt || '?'), ' 점검',
+          d.prevVersion ? ` · 버전 ${d.prevVersion}${d.versionChanged ? ' → ' + r.version : ''}` : '',
+          ` · 위험 ${pc.risk ?? '?'}→${r.counts.risk} · 주의 ${pc.warn ?? '?'}→${r.counts.warn}`),
+        h('button', { class: 'btn small', type: 'button', onclick: () => openDetail(d.prevId) }, '이전 점검 열기')),
+      block('새로 생긴 위험·주의', d.added, '없음 — 이전 점검에 없던 위험·주의 항목이 없습니다.', 'diff-add'),
+      block('해결된 위험·주의', d.resolved, '없음', 'diff-gone'),
+      ...(d.levelChanged.length ? [block('등급이 바뀐 항목', d.levelChanged, '', 'diff-chg')] : []),
+      cves('새로 해당하는 미조치 CVE', d.cveNew, 'diff-add'),
+      cves('해결(또는 백포트)된 CVE', d.cveResolved, 'diff-gone'),
+      h('p', { class: 'muted small-note' }, '같은 항목인지 판단할 때 문구 안의 숫자(건수 등)는 무시합니다. 예: "경로 탐색 시도 3건" → "5건" 은 같은 항목으로 봅니다. 미조치 CVE = 해당하면서 패키지 백포트 기록이 없는 것.'));
   }
 
   function selectTab(name) {
@@ -1042,6 +1077,7 @@
     if (!rows.length) rows.push(h('tr', null, h('td', { colspan: '9', class: 'muted' },
       state.me.admin ? '등록된 에이전트가 없습니다. [에이전트 추가]로 점검할 서버(Apache·WildFly·Tomcat)에 에이전트를 설치하세요.' : '등록된 에이전트가 없습니다.')));
     $('#agents tbody').replaceChildren(...rows);
+    renderReinstall(data);
     const rsel = $('#r-agent');
     if (rsel) {
       const keep = rsel.value;
@@ -1085,6 +1121,34 @@
 
   function dashboardUrl() {
     return new URL('.', location.href).href.replace(/\/$/, '');
+  }
+
+  /** 서버에서 붙여 넣을 재설치 명령 (기존 설정 파일에서 주소·이름·토큰을 읽고, 빈 폴더에 install.sh 를 받아 실행) */
+  const REINSTALL_CMD = [
+    'F=/etc/webwas-precheck-agent.conf',
+    'U=$(sed -n "s/^DASHBOARD_URL=\'\\(.*\\)\'$/\\1/p" $F)',
+    'N=$(sed -n "s/^AGENT_NAME=\'\\(.*\\)\'$/\\1/p" $F)',
+    'T=$(sed -n "s/^AGENT_TOKEN=\'\\(.*\\)\'$/\\1/p" $F)',
+    'C=$(sed -n "s/^CA_CERT=\'\\(.*\\)\'$/\\1/p" $F)',
+    'D=$(mktemp -d)',
+    'echo "대시보드: $U / 에이전트: $N / 받는 폴더: $D"',
+    'curl -fsSo "$D/install.sh" ${C:+--cacert "$C"} "$U/agent-api/files/install.sh" && PRECHECK_AGENT_TOKEN="$T" bash "$D/install.sh" "$U" "$N" ${C:+--ca-cert "$C"}'
+  ].join('\n');
+
+  function renderReinstall(data) {
+    const card = $('#reinstall-card');
+    if (!card) return;
+    const need = data.agents.filter(a => a.scriptMatches === false || a.agentOutdated);
+    card.hidden = !need.length;
+    if (!need.length) return;
+    $('#reinstall-count').textContent = `${need.length}대 / 전체 ${data.agents.length}대`;
+    $('#reinstall-list').replaceChildren(...need.map(a => h('li', null, h('b', null, a.name), ' ',
+      h('span', { class: 'sub mono' }, [a.hostname, a.ip].filter(Boolean).join(' · ')), ' — ',
+      [a.scriptMatches === false ? '점검 스크립트가 대시보드와 다름' : null,
+        a.agentOutdated ? `에이전트 ${a.agentVersion} → ${data.expectedAgentVersion}` : null].filter(Boolean).join(', '),
+      a.state === 'offline' || a.state === 'never' ? h('span', { class: 'sub warn-ink' }, ' (지금 오프라인 — 서버 상태부터 확인)') : null)));
+    $('#reinstall-cmd').replaceChildren(codeBox(REINSTALL_CMD),
+      h('p', { class: 'muted small-note' }, '확인: 설치 출력에 "대시보드에서 받음" 과 "설치 완료" 가 보여야 합니다. 대시보드 주소가 예전 주소로 나오면 실행을 멈추고 /etc/webwas-precheck-agent.conf 의 DASHBOARD_URL 부터 고치세요.'));
   }
 
   function codeBox(text) {

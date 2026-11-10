@@ -246,6 +246,14 @@
 
       <!-- ===================== 에이전트 ===================== -->
       <section class="view" data-view="agents" aria-label="에이전트" hidden>
+        <article class="card admin-only reinstall-card" id="reinstall-card" aria-labelledby="reinstall-title" hidden>
+          <div class="card-head"><h2 id="reinstall-title">재설치가 필요한 에이전트</h2><span class="card-meta" id="reinstall-count"></span></div>
+          <p class="card-hint">대시보드의 점검 스크립트나 에이전트가 새 버전으로 바뀌었는데, 아래 서버에는 아직 예전 것이 설치되어 있습니다. 서버마다 <code>sudo -i</code> 로 root 가 된 뒤 아래 명령을 붙여 넣으세요.
+            기존 설정(주소·이름·토큰·로그 경로)을 그대로 읽으므로 토큰을 새로 발급할 필요가 없습니다. 끝나면 1~2분 안에 이 목록에서 빠집니다.</p>
+          <ul class="reinstall-list" id="reinstall-list"></ul>
+          <div id="reinstall-cmd"></div>
+        </article>
+
         <article class="card">
           <div class="card-head">
             <div><h2 id="agents-title">에이전트 관리</h2><div class="card-meta" id="agents-summary"></div></div>
@@ -369,11 +377,13 @@
       <div class="tabs" role="tablist">
         <button role="tab" class="tab" data-tab="findings" aria-selected="true" type="button">점검 결과</button>
         <button role="tab" class="tab" data-tab="cves" aria-selected="false" type="button">CVE 판정</button>
+        <button role="tab" class="tab" data-tab="diff" aria-selected="false" type="button" id="d-diff-tab">지난 점검 대비</button>
         <button role="tab" class="tab" data-tab="history" aria-selected="false" type="button">점검 이력</button>
         <button role="tab" class="tab" data-tab="raw" aria-selected="false" type="button">원본 리포트</button>
       </div>
       <div class="tabpanel" data-panel="findings"></div>
       <div class="tabpanel" data-panel="cves" hidden></div>
+      <div class="tabpanel" data-panel="diff" hidden></div>
       <div class="tabpanel" data-panel="history" hidden></div>
       <div class="tabpanel" data-panel="raw" hidden><pre class="raw" id="d-rawtext"></pre></div>
       <button class="btn small to-top" id="d-top" type="button" hidden>↑ 건수 요약으로</button>

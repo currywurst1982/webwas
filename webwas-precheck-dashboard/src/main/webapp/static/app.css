@@ -569,6 +569,17 @@ pre.raw { margin: 0; padding: 12px; background: var(--code-bg); border: 1px soli
 .steps { margin: 0; padding-left: 20px; display: grid; gap: 14px; }
 .steps li > p { margin: 0 0 6px; }
 .codebox { display: flex; gap: 8px; align-items: flex-start; }
+/* 지난 점검 대비 */
+.diff-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 12px; margin-bottom: 10px;
+  border: 1px solid var(--line-2); border-radius: 10px; background: rgba(56, 189, 248, .06); font-size: 13px; }
+.diff-sec h3 { display: flex; align-items: center; gap: 6px; }
+.diff-sec.diff-add h3::before { content: "+"; font-weight: 800; color: var(--s-critical-ink); }
+.diff-sec.diff-gone h3::before { content: "−"; font-weight: 800; color: var(--s-good-ink); }
+.diff-sec.diff-chg h3::before { content: "↕"; color: var(--s-warning-ink); }
+.diff-cves { margin: 0; overflow-wrap: anywhere; }
+/* 재설치 안내 */
+.reinstall-card { margin-bottom: 16px; border-color: rgba(250, 178, 25, .45); }
+.reinstall-list { margin: 0 0 10px; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; }
 .codebox pre { flex: 1; margin: 0; padding: 10px 12px; background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; white-space: pre; }
 
 /* ---------------------------------------------------------------- 반응형 */

@@ -109,7 +109,7 @@ public class ReportStore {
         String text = ReportParser.decode(bytes);
         if (!ReportParser.looksLikeReport(text)) {
             throw new IllegalArgumentException("점검 리포트 형식이 아닙니다 (첫 줄에 '"
-                    + ReportParser.HEADER_MARK + "' 없음). apache_precheck.sh / wildfly_precheck.sh / tomcat_precheck.sh 결과 파일을 올려 주세요.");
+                    + ReportParser.HEADER_MARK + "' 없음). apache_precheck.sh / wildfly_precheck.sh / tomcat_precheck.sh / nginx_precheck.sh 결과 파일을 올려 주세요.");
         }
         String base = originalName == null ? "" : originalName.replace('\\', '/');
         base = base.substring(base.lastIndexOf('/') + 1).replaceAll("[^A-Za-z0-9._-]", "_");
@@ -154,7 +154,7 @@ public class ReportStore {
 
     /** 에이전트 1대가 보관하는 최근 리포트 수 (이보다 오래된 것은 자동 삭제) */
     public static final int KEEP_PER_AGENT = 30;
-    private static final Pattern AGENT_REPORT = Pattern.compile("^(apache|wildfly|tomcat)_precheck_[A-Za-z0-9._-]{1,150}\\.txt$");
+    private static final Pattern AGENT_REPORT = Pattern.compile("^(apache|wildfly|tomcat|nginx)_precheck_[A-Za-z0-9._-]{1,150}\\.txt$");
 
     /**
      * 에이전트가 보낸 리포트 저장. 파일명은 agent-<에이전트>__<원래 파일명> 이 되어
@@ -163,7 +163,7 @@ public class ReportStore {
     public synchronized String saveAgentReport(String agent, String originalName, byte[] bytes) throws IOException {
         if (!AgentStore.validName(agent)) throw new IllegalArgumentException("잘못된 에이전트 이름");
         if (originalName == null || !AGENT_REPORT.matcher(originalName).matches()) {
-            throw new IllegalArgumentException("리포트 파일명은 {apache|wildfly|tomcat}_precheck_*.txt 형식이어야 합니다.");
+            throw new IllegalArgumentException("리포트 파일명은 {apache|wildfly|tomcat|nginx}_precheck_*.txt 형식이어야 합니다.");
         }
         String saved = save("agent-" + agent + "__" + originalName, bytes);
         prune("agent-" + agent + "__", KEEP_PER_AGENT);

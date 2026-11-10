@@ -134,7 +134,7 @@ public final class IntrusionPdf {
                 {"호스트", r.host},
                 {"서버 IP", ipText(r)},
                 {r.product.label + " 버전", ver},
-                {r.product == Product.APACHE ? "실행 파일" : "설치 폴더", nz(r.binary)},
+                {r.product.moduleStyle() ? "실행 파일" : "설치 폴더", nz(r.binary)},
                 {"점검 일시", nz(r.checkedAt)},
                 {"수집 경로", r.source != null ? "에이전트 " + r.source : "수동 업로드"},
                 {"원본 파일", r.id},
@@ -172,7 +172,7 @@ public final class IntrusionPdf {
         // 제품 + 인스턴스 구분(Apache -f 설정 파일 / WildFly·Tomcat 서버 폴더), 없으면 WAS 는 설치 폴더 이름으로 구분
         String inst = null;
         if (r.confArg != null) inst = shortPath(r.confArg);
-        else if (r.product != Product.APACHE && r.binary != null) inst = r.binary.substring(r.binary.lastIndexOf('/') + 1);
+        else if (!r.product.moduleStyle() && r.binary != null) inst = r.binary.substring(r.binary.lastIndexOf('/') + 1);
         return s + " [" + r.product.label + (inst == null ? "" : " " + inst) + "]";
     }
 

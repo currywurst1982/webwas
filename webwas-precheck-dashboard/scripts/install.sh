@@ -10,7 +10,7 @@
 #
 #  하는 일
 #   1) /opt/webwas-precheck-agent 에 webwas-precheck-agent.sh 와 점검 스크립트 3개
-#      (apache_precheck.sh, wildfly_precheck.sh, tomcat_precheck.sh) 설치
+#      (apache_precheck.sh, wildfly_precheck.sh, tomcat_precheck.sh, nginx_precheck.sh) 설치
 #      (install.sh 와 같은 폴더에 파일이 있으면 그것을, 없으면 대시보드에서 받음)
 #      어떤 제품을 점검할지는 에이전트가 점검할 때마다 실행 중인 프로세스로 자동 판단(PRODUCTS=auto)
 #   2) /etc/webwas-precheck-agent.conf 생성 (권한 600, 토큰 저장)
@@ -69,7 +69,7 @@ fi
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 HERE="$(cd "$(dirname "$0")" && pwd)"
-for f in webwas-precheck-agent.sh apache_precheck.sh wildfly_precheck.sh tomcat_precheck.sh; do
+for f in webwas-precheck-agent.sh apache_precheck.sh wildfly_precheck.sh tomcat_precheck.sh nginx_precheck.sh; do
   if [ -f "$HERE/$f" ]; then
     cp "$HERE/$f" "$TMP/$f"
     say "$f : 같은 폴더의 파일 사용"
@@ -85,10 +85,10 @@ done
 mkdir -p "$DEST"
 chmod 700 "$DEST"
 install -m 700 "$TMP/webwas-precheck-agent.sh" "$DEST/webwas-precheck-agent.sh"
-for f in apache_precheck.sh wildfly_precheck.sh tomcat_precheck.sh; do install -m 700 "$TMP/$f" "$DEST/$f"; done
+for f in apache_precheck.sh wildfly_precheck.sh tomcat_precheck.sh nginx_precheck.sh; do install -m 700 "$TMP/$f" "$DEST/$f"; done
 
 # 기존 설정의 선택 항목은 유지
-OLD_RECENT=""; OLD_TIMEOUT=""; OLD_PRODUCTS=""; OLD_A=""; OLD_W=""; OLD_T=""; OLD_WS=""; OLD_TS=""
+OLD_RECENT=""; OLD_TIMEOUT=""; OLD_PRODUCTS=""; OLD_A=""; OLD_W=""; OLD_T=""; OLD_N=""; OLD_WS=""; OLD_TS=""
 if [ -r "$CONF" ]; then
   OLD_RECENT="$(sed -n 's/^RECENT_DAYS=//p' "$CONF" | tail -n1)"
   OLD_TIMEOUT="$(sed -n 's/^RUN_TIMEOUT=//p' "$CONF" | tail -n1)"
@@ -96,6 +96,7 @@ if [ -r "$CONF" ]; then
   OLD_A="$(sed -n 's/^APACHE_LOG_PATHS=//p' "$CONF" | tail -n1)"
   OLD_W="$(sed -n 's/^WILDFLY_LOG_PATHS=//p' "$CONF" | tail -n1)"
   OLD_T="$(sed -n 's/^TOMCAT_LOG_PATHS=//p' "$CONF" | tail -n1)"
+  OLD_N="$(sed -n 's/^NGINX_LOG_PATHS=//p' "$CONF" | tail -n1)"
   OLD_WS="$(sed -n 's/^WILDFLY_SERVER_LOG_PATHS=//p' "$CONF" | tail -n1)"
   OLD_TS="$(sed -n 's/^TOMCAT_SERVER_LOG_PATHS=//p' "$CONF" | tail -n1)"
   cp -p "$CONF" "$CONF.bak"
@@ -110,7 +111,7 @@ AGENT_TOKEN=$(q "$TOKEN")
 CA_CERT=$(q "$CA_CERT")
 # 제품 하나 점검 최대 실행 시간(초)
 RUN_TIMEOUT=${OLD_TIMEOUT:-3600}
-# 점검할 제품: auto = 실행 중인 Apache/WildFly/Tomcat 자동 탐지 (꺼져 있는 제품도 점검하려면 "apache tomcat" 처럼 지정)
+# 점검할 제품: auto = 실행 중인 Apache/WildFly/Tomcat/Nginx 자동 탐지 (꺼져 있는 제품도 점검하려면 "apache tomcat" 처럼 지정)
 PRODUCTS=${OLD_PRODUCTS:-auto}
 # 점검 스크립트 -d (최근 변경 파일 점검 기간, 일)
 RECENT_DAYS=${OLD_RECENT:-30}
@@ -118,6 +119,7 @@ RECENT_DAYS=${OLD_RECENT:-30}
 APACHE_LOG_PATHS=${OLD_A:-}
 WILDFLY_LOG_PATHS=${OLD_W:-}
 TOMCAT_LOG_PATHS=${OLD_T:-}
+NGINX_LOG_PATHS=${OLD_N:-}
 # 서버 로그가 표준 위치가 아닐 때만 (제품별 -s 값, 자동 탐색에 더해서 읽음). 예: '/applog/wildfly/server.log*'
 WILDFLY_SERVER_LOG_PATHS=${OLD_WS:-}
 TOMCAT_SERVER_LOG_PATHS=${OLD_TS:-}
@@ -131,7 +133,7 @@ say "대시보드 연결 확인 중..."
 if has_systemd; then
   cat > "$UNIT_DIR/webwas-precheck-agent.service" <<EOF
 [Unit]
-Description=Web/WAS precheck agent (poll dashboard, run apache/wildfly/tomcat precheck scripts when requested)
+Description=Web/WAS precheck agent (poll dashboard, run apache/wildfly/tomcat/nginx precheck scripts when requested)
 After=network-online.target
 
 [Service]

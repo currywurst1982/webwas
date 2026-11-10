@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # =====================================================================
-#  webwas-precheck-agent.sh - Web/WAS(Apache·WildFly·Tomcat) 사전점검 대시보드 에이전트
+#  webwas-precheck-agent.sh - Web/WAS(Apache·WildFly·Tomcat·Nginx) 사전점검 대시보드 에이전트
 #
 #  서버에 설치되어 1분마다(systemd 타이머 또는 cron) 대시보드에 "점검할 차례인지" 묻고,
 #  차례이면 이 서버에서 실행 중인 제품을 찾아 같은 폴더의 점검 스크립트를 실행하고 결과 리포트를 대시보드로 보냅니다.
 #    Apache(httpd)  → apache_precheck.sh
 #    WildFly        → wildfly_precheck.sh
 #    Tomcat         → tomcat_precheck.sh
+#    Nginx          → nginx_precheck.sh
 #  점검 직전에 대시보드에서 제품별 최신 CVE 목록(/agent-api/cve/제품)을 받아 스크립트에 넘깁니다(PRECHECK_CVE_DB).
 #  받지 못하면(대시보드 장애 등) 지난번에 받은 목록 → 스크립트 내장 목록 순서로 씁니다.
 #
@@ -32,14 +33,15 @@
 #    APACHE_LOG_PATHS=   (apache_precheck.sh  -l 값, 접근 로그 경로를 직접 지정할 때)
 #    WILDFLY_LOG_PATHS=  (wildfly_precheck.sh -l 값. 예: 앞단 Apache 로그)
 #    TOMCAT_LOG_PATHS=   (tomcat_precheck.sh  -l 값)
+#    NGINX_LOG_PATHS=    (nginx_precheck.sh   -l 값)
 #    WILDFLY_SERVER_LOG_PATHS= (wildfly_precheck.sh -s 값, server.log 가 표준 위치가 아닐 때)
 #    TOMCAT_SERVER_LOG_PATHS=  (tomcat_precheck.sh  -s 값, catalina.out 등이 logs 폴더 밖에 있을 때)
 # =====================================================================
 
-AGENT_VERSION="2.2.0"   # 2.1.0: 점검 중에도 1분마다 heartbeat(busy=1) 전송 / 2.2.0: 서버 로그 경로(-s) 전달
+AGENT_VERSION="2.3.0"   # 2.1.0: 점검 중에도 1분마다 heartbeat(busy=1) 전송 / 2.2.0: 서버 로그 경로(-s) 전달 / 2.3.0: Nginx
 CONF="${WEBWAS_PRECHECK_AGENT_CONF:-/etc/webwas-precheck-agent.conf}"
 BASE_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-ALL_PRODUCTS="apache wildfly tomcat"   # 순서 고정 (스크립트 SHA-256 계산 순서와 같음)
+ALL_PRODUCTS="apache wildfly tomcat nginx"   # 순서 고정 (스크립트 SHA-256 계산 순서 = 대시보드 Product 순서와 같음)
 OUTBOX="$BASE_DIR/outbox"
 CVE_DIR="$BASE_DIR/cve"
 SENT="$BASE_DIR/sent"
@@ -96,6 +98,7 @@ detect_products() {
   printf '%s\n' "$ps_out" | grep -qE '^(httpd|apache2|httpd\.worker|httpd\.event)[[:space:]]' && out="$out apache"
   printf '%s\n' "$ps_out" | grep -q 'jboss-modules\.jar' && out="$out wildfly"
   printf '%s\n' "$ps_out" | grep -q 'org\.apache\.catalina\.startup\.Bootstrap' && out="$out tomcat"
+  printf '%s\n' "$ps_out" | grep -qE '^nginx[[:space:]]+nginx: master process' && out="$out nginx"
   echo "${out# }"
 }
 
@@ -166,7 +169,7 @@ do_run() {
   keepalive_start
   products="$(detect_products)"
   if [ -z "$products" ]; then
-    msg="점검할 제품을 찾지 못함 (실행 중인 Apache/WildFly/Tomcat 없음. 꺼져 있으면 설정 파일에 PRODUCTS=\"apache\" 처럼 지정)"
+    msg="점검할 제품을 찾지 못함 (실행 중인 Apache/WildFly/Tomcat/Nginx 없음. 꺼져 있으면 설정 파일에 PRODUCTS=\"apache\" 처럼 지정)"
     log "점검 종료: $msg"
     keepalive_stop
     api result -X POST --data-urlencode "exit=3" --data-urlencode "reports=0" --data-urlencode "message=$msg" >/dev/null
@@ -180,6 +183,7 @@ do_run() {
       apache) lp="${APACHE_LOG_PATHS:-${LOG_PATHS:-}}" ;;
       wildfly) lp="${WILDFLY_LOG_PATHS:-}" ;;
       tomcat) lp="${TOMCAT_LOG_PATHS:-}" ;;
+      nginx) lp="${NGINX_LOG_PATHS:-}" ;;
     esac
     [ -n "$lp" ] && args+=(-l "$lp")
     case "$p" in
@@ -202,7 +206,7 @@ do_run() {
   n_made=0
   while IFS= read -r f; do
     mv -f "$f" "$OUTBOX/" && n_made=$((n_made+1))
-  done < <(find /tmp -maxdepth 1 -type f \( -name 'apache_precheck_*.txt' -o -name 'wildfly_precheck_*.txt' -o -name 'tomcat_precheck_*.txt' \) -newer "$marker" 2>/dev/null)
+  done < <(find /tmp -maxdepth 1 -type f \( -name 'apache_precheck_*.txt' -o -name 'wildfly_precheck_*.txt' -o -name 'tomcat_precheck_*.txt' -o -name 'nginx_precheck_*.txt' \) -newer "$marker" 2>/dev/null)
   n_sent="$(flush_outbox)"
 
   if [ "$rc" -eq 124 ]; then msg="점검 시간 초과(${RUN_TIMEOUT}초)로 중단됨:${fail_list}"

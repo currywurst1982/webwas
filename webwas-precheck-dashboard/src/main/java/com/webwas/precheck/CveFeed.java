@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -42,7 +43,10 @@ import java.util.zip.ZipInputStream;
  *  - WildFly / Tomcat : OSV(https://osv.dev) Maven 전체 데이터
  *              https://osv-vulnerabilities.storage.googleapis.com/Maven/all.zip (약 10MB, 한 번 받아 두 제품에 사용)
  *              등급은 GitHub Advisory Database 기준.
- *  주소는 -Dwebwas.precheck.cve.apache.url / -Dwebwas.precheck.cve.osv.url 로 바꿀 수 있음
+ *  - Nginx  : nginx.org 보안 공지(security_advisories.html)의 원본 XML
+ *              https://raw.githubusercontent.com/nginx/nginx.org/main/xml/en/security_advisories.xml
+ *              필요 기능(HTTP/3·mp4·mail 등)은 공지 제목으로 정함 (nginxFeature, tools/gen_nginx_cve.py 와 같은 규칙)
+ *  주소는 -Dwebwas.precheck.cve.apache.url / -Dwebwas.precheck.cve.osv.url / -Dwebwas.precheck.cve.nginx.url 로 바꿀 수 있음
  *  (file:/경로 도 가능 → 인터넷이 막힌 대시보드는 관리자가 받아 둔 파일을 지정).
  *  -Dwebwas.precheck.cve.auto=false 면 자동 업데이트를 끄고 스크립트 내장 목록만 사용.
  *
@@ -61,9 +65,12 @@ public class CveFeed {
      */
     public static final String APACHE_FALLBACK = "https://api.github.com/repos/apache/httpd-site/contents/content/security/json?ref=main";
     public static final String OSV_URL = "https://osv-vulnerabilities.storage.googleapis.com/Maven/all.zip";
+    public static final String NGINX_URL = "https://raw.githubusercontent.com/nginx/nginx.org/main/xml/en/security_advisories.xml";
 
     /** 스크립트 CVE 표의 한 줄 형식 (에이전트에서도 같은 정규식으로 검사) */
     static final Pattern APACHE_ROW = Pattern.compile("^CVE-\\d{4}-\\d{4,7}\\|\\d+\\.\\d+\\.\\d+\\|\\d+\\.\\d+\\.\\d+\\|[a-z]+\\|[a-z0-9_&,]+\\|[^|]*$");
+    /** Nginx: CVE|등급(major/medium/minor/low)|필요 기능|영향 구간(;)|수정 버전(;)|제목 */
+    static final Pattern NGINX_ROW = Pattern.compile("^CVE-\\d{4}-\\d{4,7}\\|(major|medium|minor|low)\\|[a-z0-9_]+\\|[0-9.;-]+\\|[0-9.;+]*\\|[^|]*$");
     static final Pattern OSV_ROW = Pattern.compile("^CVE-\\d{4}-\\d{4,7}\\|[A-Za-z0-9-]*\\|[a-z]+\\|[A-Za-z0-9._-]+\\|[A-Za-z0-9._-]*\\|[A-Za-z0-9._-]*\\|[A-Za-z0-9._-]*\\|[A-Za-z0-9._-]*\\|[^|]*$");
 
     /** OSV Maven 패키지 → wildfly_precheck.sh 가 버전을 읽을 jar 이름 (tools/gen_cve_table.py 와 같은 목록) */
@@ -143,6 +150,7 @@ public class CveFeed {
     private final String apacheUrl;
     private final String apacheFallback;
     private final String osvUrl;
+    private final String nginxUrl;
     private final Map<Product, State> states = new EnumMap<>(Product.class);
 
     public CveFeed(Path dir, Map<Product, String> scripts) throws IOException {
@@ -152,6 +160,7 @@ public class CveFeed {
         this.apacheUrl = prop("webwas.precheck.cve.apache.url", APACHE_URL);
         this.apacheFallback = prop("webwas.precheck.cve.apache.fallback", APACHE_FALLBACK);
         this.osvUrl = prop("webwas.precheck.cve.osv.url", OSV_URL);
+        this.nginxUrl = prop("webwas.precheck.cve.nginx.url", NGINX_URL);
         for (Product p : Product.values()) {
             State s = new State();
             String script = scripts.get(p);
@@ -175,7 +184,7 @@ public class CveFeed {
         List<String> out = new ArrayList<>();
         int a = text.indexOf(START), b = text.indexOf(END, Math.max(a, 0));
         if (a < 0 || b < 0) return out;
-        Pattern row = p == Product.APACHE ? APACHE_ROW : OSV_ROW;
+        Pattern row = p == Product.APACHE ? APACHE_ROW : p == Product.NGINX ? NGINX_ROW : OSV_ROW;
         for (String line : text.substring(a, b).split("\\r?\\n")) {
             if (row.matcher(line).matches()) out.add(line);
         }
@@ -219,7 +228,8 @@ public class CveFeed {
             x.put("label", e.getKey().label);
             x.put("using", s.generatedRows != null ? "generated" : "embedded");
             x.put("generatedAt", s.generatedAt);
-            x.put("source", s.generatedRows != null ? s.source : (e.getKey() == Product.APACHE ? apacheUrl : osvUrl));
+            x.put("source", s.generatedRows != null ? s.source
+                    : e.getKey() == Product.APACHE ? apacheUrl : e.getKey() == Product.NGINX ? nginxUrl : osvUrl);
             x.put("cveCount", cveCount(s.generatedRows != null ? s.generatedRows : s.embeddedRows));
             x.put("embeddedCount", cveCount(s.embeddedRows));
             x.put("embeddedNote", s.embeddedNote);
@@ -232,12 +242,13 @@ public class CveFeed {
         return m;
     }
 
-    /** 세 제품 모두 갱신 (자동 업데이트가 꺼져 있으면 아무것도 안 함) */
+    /** 모든 제품 갱신 (자동 업데이트가 꺼져 있으면 아무것도 안 함) */
     public void refreshAll() {
         if (!auto || !running.compareAndSet(false, true)) return; // 이미 갱신 중이면 건너뜀
         try {
             refreshApache();
             refreshOsv();
+            refreshNginx();
         } finally {
             running.set(false);
         }
@@ -361,6 +372,95 @@ public class CveFeed {
         int cur = cveCount(s.generatedRows);
         if (prev >= 0 && prev != cur) LOG.warning("[webwas-precheck] " + p.label + " CVE 목록 변경: " + prev + "건 → " + cur + "건");
         else if (prev < 0) LOG.info("[webwas-precheck] " + p.label + " CVE 목록 생성: " + cur + "건 (스크립트 내장 목록 대비 추가 " + s.addedCves + "건)");
+    }
+
+    // ------------------------------------------------------------------ Nginx
+
+    public void refreshNginx() {
+        String err = null;
+        try {
+            List<String> feed = nginxRows(Fetch.text(nginxUrl));
+            if (feed.isEmpty()) throw new IOException("보안 공지에서 CVE 를 하나도 찾지 못함");
+            // 공지에서 빠진 CVE 가 있어도 스크립트 내장 목록의 것은 남김 (공지 형식이 바뀌어 일부만 읽힌 경우 대비)
+            Set<String> ids = new HashSet<>();
+            for (String r : feed) ids.add(r.substring(0, r.indexOf('|')));
+            List<String> rows = new ArrayList<>(feed);
+            for (String r : rowsOfText(states.get(Product.NGINX).embeddedRows)) {
+                if (!ids.contains(r.substring(0, r.indexOf('|')))) rows.add(r);
+            }
+            store(Product.NGINX, rows, nginxUrl);
+        } catch (IOException | IllegalArgumentException e) {
+            err = e.getClass().getSimpleName() + (e.getMessage() == null ? "" : ": " + e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            err = "중단됨";
+        }
+        fail(Product.NGINX, err);
+    }
+
+    /** 공지 제목 → 필요 기능 (위에서부터 처음 맞는 것. tools/gen_nginx_cve.py 의 RULES 와 같아야 함) */
+    private static final String[][] NGINX_RULES = {
+            {"Windows", "windows"},
+            {"HTTP/3|v3_module", "http3"},
+            {"SPDY", "spdy"},
+            {"proxy_v2|grpc", "grpc"},
+            {"ngx_http_proxy_module", "proxy"},
+            {"HTTP/2", "http2"},
+            {"mp4", "mp4"},
+            {"slice", "slice"},
+            {"ssi_module", "ssi"},
+            {"dav_module", "dav"},
+            {"charset", "charset"},
+            {"scgi|uwsgi", "scgi"},
+            {"mail|smtp|SMTP|CRAM-MD5|APOP|auth_http|XCLIENT|STARTTLS", "mail"},
+            {"OCSP.*stream|stream.*OCSP", "stream_ocsp"},
+            {"OCSP", "ocsp"},
+            {"resolver", "resolver"},
+            {"alias", "alias"},
+            {"map and regex", "map"},
+            {"rewrite", "rewrite"},
+            {"AIO|asynchronous file I/O", "aio"},
+            {"SSL upstream", "proxy_ssl"},
+            {"TLS session tickets|SSL session reuse", "ssl"},
+    };
+
+    static String nginxFeature(String name) {
+        for (String[] r : NGINX_RULES) {
+            if (Pattern.compile(r[0]).matcher(name).find()) return r[1];
+        }
+        return "core";
+    }
+
+    private static final Pattern NGINX_ITEM = Pattern.compile("<item\\b([^>]*)>", Pattern.DOTALL);
+    private static final Pattern XML_ATTR = Pattern.compile("(\\w+)=\"([^\"]*)\"");
+
+    /** security_advisories.xml → 스크립트 줄 (tools/gen_nginx_cve.py 와 같은 결과) */
+    static List<String> nginxRows(String xml) {
+        List<String> out = new ArrayList<>();
+        Matcher it = NGINX_ITEM.matcher(xml == null ? "" : xml);
+        while (it.find()) {
+            Map<String, String> a = new HashMap<>();
+            Matcher m = XML_ATTR.matcher(it.group(1));
+            while (m.find()) a.put(m.group(1), m.group(2));
+            if (!a.containsKey("cve") || !a.containsKey("vulnerable")) continue;
+            String cve = "CVE-" + a.get("cve").trim();
+            String sev = a.getOrDefault("severity", "medium").trim().toLowerCase(Locale.ROOT);
+            String vuln = join(a.get("vulnerable").replace("nginx/Windows", "").trim());
+            String good = join(a.getOrDefault("good", ""));
+            String name = a.getOrDefault("name", "").replaceAll("\\s+", " ").replace('|', '/').trim();
+            if (!cve.matches("CVE-\\d{4}-\\d{4,7}") || !vuln.matches("[0-9.;-]+")) continue;
+            if (!good.matches("[0-9.;+]*")) good = "";
+            String row = cve + "|" + sev + "|" + nginxFeature(name) + "|" + vuln + "|" + good + "|" + name;
+            if (NGINX_ROW.matcher(row).matches()) out.add(row);
+        }
+        return out;
+    }
+
+    /** "1.31.7+, 1.30.6+" → "1.31.7+;1.30.6+" */
+    private static String join(String list) {
+        List<String> parts = new ArrayList<>();
+        for (String x : list.split(",")) if (!x.isBlank()) parts.add(x.trim());
+        return String.join(";", parts);
     }
 
     // ------------------------------------------------------------------ Apache

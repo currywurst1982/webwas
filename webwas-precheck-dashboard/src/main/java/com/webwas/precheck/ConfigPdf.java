@@ -34,7 +34,7 @@ public final class ConfigPdf {
             w.text(w.regular, 9.5f, INK2, "점검 서버 " + serverCount + "대 중 " + affected + "대에서 설정 취약 항목 " + items.size() + "종 발견 (인스턴스별 최신 점검 기준)");
             w.wrapped(w.regular, 9, INK2, "최신 버전 기준: " + latest, 0);
             w.gap(6);
-            w.wrapped(w.regular, 9, MUTED, "근거: 점검 스크립트(apache_precheck.sh / wildfly_precheck.sh / tomcat_precheck.sh) 리포트의 "
+            w.wrapped(w.regular, 9, MUTED, "근거: 점검 스크립트(apache/wildfly/tomcat/nginx_precheck.sh) 리포트의 "
                     + "[3] 위험 설정 점검에서 [위험]/[주의]로 나온 항목. 항목 이름 앞의 [Apache]/[WildFly]/[Tomcat] 은 제품이며, "
                     + "항목 문구와 권장 조치는 점검 스크립트의 원문, 서버별 '근거'는 리포트에 기록된 설정 줄·파일 경로·명령줄 옵션입니다. "
                     + "Apache 는 httpd 가 실제로 읽는(Include 된) 설정 파일, WildFly 는 메인 설정 파일(standalone.xml 등), "

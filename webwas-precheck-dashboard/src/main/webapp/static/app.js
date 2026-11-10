@@ -19,12 +19,14 @@
   const EOL_HINT = {
     apache: 'Apache 2.2 이하 — 공식 지원 종료(EOL), 보안 패치 없음. 교체가 근본 대책',
     wildfly: 'Java EE 8(javax) 계열(WildFly 26 이하) — 최신으로 올릴 때 앱의 javax → jakarta 변경 필요',
-    tomcat: '지원 종료(EOL) 브랜치 — 보안 패치 없음. 지원 브랜치(11.0 / 10.1 / 9.0)로 교체 필요'
+    tomcat: '지원 종료(EOL) 브랜치 — 보안 패치 없음. 지원 브랜치(11.0 / 10.1 / 9.0)로 교체 필요',
+    nginx: '지원 종료(EOL) 브랜치 — nginx.org 보안 수정 없음. 지원 브랜치(mainline / stable)로 교체 필요 (배포판 패키지는 배포판 백포트 확인)'
   };
   const CVE_NOTE = {
     apache: '판정은 업스트림 버전 기준(Apache 보안팀 공지의 영향 버전 + 필요 모듈이 켜져 있는지)입니다. 패키지 설치본의 "백포트 추정"은 changelog 에 CVE 번호가 있다는 뜻일 뿐이므로 배포판 보안 공지로 최종 확인하세요.',
     wildfly: '판정은 이 서버 설치 폴더(modules)의 실제 구성요소(jar) 버전을 OSV 취약점 DB 의 영향 구간과 비교한 결과입니다. 설명은 OSV 원문(영문)입니다. 해당 기능(AJP·OIDC·HTTP/2 등)을 쓰지 않으면 실제 악용 가능성은 낮을 수 있습니다.',
-    tomcat: '판정은 Tomcat 버전을 OSV 취약점 DB 의 영향 구간과 비교한 결과입니다(선택 구성요소는 lib 에 jar 가 있을 때만). 설명은 OSV 원문(영문)입니다. 해당 기능(AJP·HTTP/2·WebDAV·CGI 등)을 쓰지 않으면 실제 악용 가능성은 낮을 수 있습니다.'
+    tomcat: '판정은 Tomcat 버전을 OSV 취약점 DB 의 영향 구간과 비교한 결과입니다(선택 구성요소는 lib 에 jar 가 있을 때만). 설명은 OSV 원문(영문)입니다. 해당 기능(AJP·HTTP/2·WebDAV·CGI 등)을 쓰지 않으면 실제 악용 가능성은 낮을 수 있습니다.',
+    nginx: '판정은 nginx.org 보안 공지의 영향 버전·수정 버전과, 설정에서 그 기능(HTTP/3·mp4·mail·resolver 등)을 쓰는지를 함께 본 결과입니다. 필요 기능은 공지 제목으로 정한 추정이며, 설명은 공지 원문(영문)입니다. 패키지 설치본의 "백포트 추정"은 changelog 에 CVE 번호가 있다는 뜻이므로 배포판 보안 공지로 최종 확인하세요.'
   };
   const SECTION_TITLE = {
     '1': '[1] 버전 및 설치 방식',
@@ -33,7 +35,10 @@
     '4': '[4] 침해 흔적'
   };
 
-  const PRODUCTS = { apache: 'Apache', wildfly: 'WildFly', tomcat: 'Tomcat' };
+  const PRODUCTS = { apache: 'Apache', wildfly: 'WildFly', tomcat: 'Tomcat', nginx: 'Nginx' };
+  /** CVE 를 "버전 + 필요 모듈(기능)"으로 판정하고 changelog 로 백포트를 추정하는 제품 (Product.moduleStyle 과 같음) */
+  const MODSTYLE = p => p === 'apache' || p === 'nginx';
+  const COND_LABEL = p => p === 'nginx' ? '필요 기능' : '필요 모듈';
   const state = { me: null, reports: [], sort: { key: 'status', asc: true }, product: loadProduct() };
   function loadProduct() { try { const v = localStorage.getItem('precheck.product') || ''; return PRODUCTS[v] ? v : ''; } catch (e) { return ''; } }
   /** "Tomcat 9.0.80" */
@@ -96,7 +101,7 @@
     // 제품 + 인스턴스 구분(Apache -f 설정 파일 / WildFly·Tomcat 서버 폴더), 없으면 WAS 는 설치 폴더 이름 (IntrusionPdf.hostLabel 과 같은 규칙)
     let inst = null;
     if (r.confArg) inst = r.confArg.length <= 40 ? r.confArg : '…' + r.confArg.slice(-39);
-    else if (r.product !== 'apache' && r.binary) inst = r.binary.slice(r.binary.lastIndexOf('/') + 1);
+    else if (!MODSTYLE(r.product) && r.binary) inst = r.binary.slice(r.binary.lastIndexOf('/') + 1);
     return `${s} [${PRODUCTS[r.product] || r.product}${inst ? ' ' + inst : ''}]`;
   }
 
@@ -323,7 +328,7 @@
       statCard({ ico: 'alert', tone: 'serious', label: '위험', value: count('risk'), unit: '대', hint: '침해 흔적 외 [위험] 항목 보유', onclick: () => setStatusFilter('risk') }),
       statCard({ ico: 'up', tone: 'warning', label: state.product ? `최신(${latestVer(state.product)}) 미만` : '최신 버전 미만', value: below, unit: '대',
         hint: eol ? `이 중 교체 필요(EOL·지원 종료·javax) ${eol}대` : (n ? `${n - below}대 최신 버전` : '업그레이드 대상') }),
-      statCard({ ico: 'bug', tone: 'serious', label: '미조치 CVE 보유', value: unpatched, unit: '대', hint: '해당 CVE 중 백포트 기록 없음 (Apache 는 모듈 조건 포함)' }),
+      statCard({ ico: 'bug', tone: 'serious', label: '미조치 CVE 보유', value: unpatched, unit: '대', hint: '해당 CVE 중 백포트 기록 없음 (Apache·Nginx 는 모듈·기능 조건 포함)' }),
       statCard({ ico: 'data', tone: 'warning', label: '데이터 경고', value: dq, unit: '대', hint: dq ? '점검 불완전 — 수동 확인 필요' : '이상 없음', hintTone: dq ? '' : 'good',
         onclick: dq ? () => { $('#f-dq').checked = true; render(); showView('servers'); } : null })
     );
@@ -436,9 +441,9 @@
       { cls: SEVERITY[a.sev].color, value: a.open, label: '미조치 추정 서버' },
       { cls: 'c-backport', value: a.bp, label: '백포트 추정 서버' }
     ], max, `${PRODUCTS[a.product] || ''} ${a.id} [${a.sev}] ${a.desc || ''}`, () => openCveItem(a), () => [
-      { head: true, text: a.product === 'apache' ? '대상 서버 (필요 모듈 조건 충족)' : '대상 서버 (설치된 구성요소)' },
+      { head: true, text: MODSTYLE(a.product) ? `대상 서버 (${COND_LABEL(a.product)} 조건 충족)` : '대상 서버 (설치된 구성요소)' },
       ...a.servers.slice(0, LIMIT).map(s => s.backported ? { level: 'bp', label: '백포트', text: serverLabel(s.r) }
-        : { level: a.sev === 'critical' || a.sev === 'high' ? 'risk' : 'warn', text: serverLabel(s.r) + (a.product === 'apache' ? '' : ` · ${(s.condition || '').replace(/ 설치됨$/, '')}`) }),
+        : { level: a.sev === 'critical' || a.sev === 'high' ? 'risk' : 'warn', text: serverLabel(s.r) + (MODSTYLE(a.product) ? '' : ` · ${(s.condition || '').replace(/ 설치됨$/, '')}`) }),
       ...(a.servers.length > LIMIT ? [`외 ${a.servers.length - LIMIT}대 — 눌러서 전체 보기`] : [])
     ], `${a.open + a.bp}/${list.length}대`)));
   }
@@ -449,16 +454,16 @@
     $('#cfg-sub').textContent = `대상 서버 ${a.servers.length}대` + (a.bp ? ` (미조치 추정 ${a.open} · 백포트 추정 ${a.bp})` : '');
     $('#cfg-body').replaceChildren(
       h('p', null, a.desc || ''),
-      h('p', { class: 'muted' }, `영향 구간(첫 대상 서버 기준): ${a.affected || '-'}` + (a.product === 'apache' ? ` · 필요 모듈 조건: ${a.servers[0].condition || '-'}` : '') + ' · ',
+      h('p', { class: 'muted' }, `영향 구간(첫 대상 서버 기준): ${a.affected || '-'}` + (MODSTYLE(a.product) ? ` · ${COND_LABEL(a.product)} 조건: ${a.servers[0].condition || '-'}` : '') + ' · ',
         h('a', { href: 'https://www.cve.org/CVERecord?id=' + encodeURIComponent(a.id), target: '_blank', rel: 'noopener noreferrer' }, 'cve.org 상세'),
         a.advisory ? ' · ' : null,
         a.advisory ? h('a', { href: 'https://osv.dev/vulnerability/' + encodeURIComponent(a.advisory), target: '_blank', rel: 'noopener noreferrer' }, 'OSV 권고') : null),
       h('table', { class: 'servers' },
-        h('thead', null, h('tr', null, ...['판정', '서버', a.product === 'apache' ? '설치' : '설치된 구성요소', '점검 일시', '수집'].map(t => h('th', null, t)))),
+        h('thead', null, h('tr', null, ...['판정', '서버', MODSTYLE(a.product) ? '설치' : '설치된 구성요소', '점검 일시', '수집'].map(t => h('th', null, t)))),
         h('tbody', null, ...a.servers.map(s => h('tr', { class: 'row', tabindex: '0', onclick: () => { $('#cfg-dlg').close(); openDetail(s.r.id); } },
           h('td', null, s.backported ? h('span', { class: 'badge b-backport' }, '백포트 추정') : h('span', { class: 'badge b-' + a.sev }, a.sev)),
           h('td', null, h('div', null, hostLabel(s.r)), h('div', { class: 'sub' }, prodVer(s.r))),
-          h('td', { class: 'mono' }, a.product === 'apache' ? (s.r.installType || '-') : (s.condition || '-').replace(/ 설치됨$/, '')),
+          h('td', { class: 'mono' }, MODSTYLE(a.product) ? (s.r.installType || '-') : (s.condition || '-').replace(/ 설치됨$/, '')),
           h('td', { class: 'nowrap' }, s.r.checkedAt || '-'),
           h('td', null, s.r.source ? `에이전트 ${s.r.source}` : '수동 업로드'))))),
       h('p', { class: 'dialog-actions' },
@@ -477,7 +482,7 @@
       const seen = new Set();
       r.configIssues.forEach(ci => {
         // ConfigIssues.key() 와 같은 규칙: Apache 는 " → " / " (" 앞, WildFly·Tomcat 은 ": " 앞까지. 제품이 다르면 다른 항목
-        const name = ci.text.split(r.product === 'apache' ? / → | \(/ : / → | \(|: /)[0].trim();
+        const name = ci.text.split(MODSTYLE(r.product) ? / → | \(/ : / → | \(|: /)[0].trim();
         const key = r.product + '|' + name;
         if (seen.has(key)) return;
         seen.add(key);
@@ -561,11 +566,11 @@
     const dlg = $('#detail');
     $('#d-title').replaceChildren(badge(r.status), prodBadge(r.product), r.host, h('span', { class: 'muted' }, prodVer(r)));
     $('#d-sub').textContent = [r.checkedAt, r.ips.length ? 'IP ' + r.ips.join(', ') + (r.ipFromAgent ? '(접속 IP)' : '') : null, r.binary,
-      r.confArg ? (r.product === 'apache' ? '-f ' + r.confArg : r.confArg) : null,
+      r.confArg ? (r.product === 'apache' ? '-f ' + r.confArg : r.product === 'nginx' ? '-c ' + r.confArg : r.confArg) : null,
       r.installType ? r.installType + ' 설치' : null, r.runMode, r.runUser ? '실행계정 ' + r.runUser : null,
       r.javaVersion ? 'Java ' + r.javaVersion.replace(/^openjdk version |"/g, '') : null,
-      r.moduleCount !== null ? (r.product === 'apache' ? `모듈 ${r.moduleCount}개` : `구성요소 ${r.moduleCount}개`) : null,
-      r.product === 'apache' ? `설정 파일 ${r.confFileCount}개(${r.confMethodShort})` : `설정 ${r.confMethodShort}`,
+      r.moduleCount !== null ? (r.product === 'apache' ? `모듈 ${r.moduleCount}개` : r.product === 'nginx' ? `빌드 옵션 ${r.moduleCount}개` : `구성요소 ${r.moduleCount}개`) : null,
+      MODSTYLE(r.product) ? `설정 파일 ${r.confFileCount}개(${r.confMethodShort})` : `설정 ${r.confMethodShort}`,
       r.cveDbInfo ? 'CVE 목록: ' + r.cveDbInfo : 'CVE 목록: 스크립트 내장본(이전 스크립트)', r.id].filter(Boolean).join(' · ');
     $('#d-raw').href = 'api/reports/' + encodeURIComponent(r.id) + '/raw';
     $('#d-pdf').href = 'api/reports/' + encodeURIComponent(r.id) + '/intrusion.pdf';
@@ -613,8 +618,8 @@
       card(r.counts.risk, 'findings', 'risk', kpi('', r.counts.risk, '건', null, 'risk')),
       card(r.counts.warn, 'findings', 'warn', kpi('', r.counts.warn, '건', null, 'warn')),
       card(r.counts.ok, 'findings', 'ok', kpi('', r.counts.ok, '건', null, 'ok')),
-      card(ap, 'cves', '1', kpi('해당 CVE', ap, '건', r.product === 'apache' ? `미조치 추정 ${un} / 백포트 추정 ${ap - un}` : `critical ${r.cveApplicable.critical || 0} · high ${r.cveApplicable.high || 0}`)),
-      card(r.cves.length - ap, 'cves', '0', kpi('미해당 CVE', r.cves.length - ap, '건', r.product === 'apache' ? '필요 모듈 미사용' : '구성요소 없음/다른 프로젝트'))
+      card(ap, 'cves', '1', kpi('해당 CVE', ap, '건', MODSTYLE(r.product) ? `미조치 추정 ${un} / 백포트 추정 ${ap - un}` : `critical ${r.cveApplicable.critical || 0} · high ${r.cveApplicable.high || 0}`)),
+      card(r.cves.length - ap, 'cves', '0', kpi('미해당 CVE', r.cves.length - ap, '건', MODSTYLE(r.product) ? `${COND_LABEL(r.product)} 미사용` : '구성요소 없음/다른 프로젝트'))
     );
   }
 
@@ -676,7 +681,7 @@
       ...(want ? [filterBar(r, rows.length)] : []),
       h('p', { class: 'muted' }, CVE_NOTE[r.product] + (r.cveDbInfo ? ` (CVE 목록: ${r.cveDbInfo})` : '')),
       h('div', { class: 'table-scroll' }, h('table', { class: 'servers' },
-        h('thead', null, h('tr', null, ...['판정', 'CVE', '등급', '설명', '영향 구간', r.product === 'apache' ? '필요 모듈' : '설치된 구성요소'].map(t => h('th', null, t)))),
+        h('thead', null, h('tr', null, ...['판정', 'CVE', '등급', '설명', '영향 구간', MODSTYLE(r.product) ? COND_LABEL(r.product) : '설치된 구성요소'].map(t => h('th', null, t)))),
         h('tbody', null, ...rows.map(c => h('tr', null,
           h('td', null, !c.applicable ? h('span', { class: 'badge b-skip' }, '미해당')
             : c.backported ? h('span', { class: 'badge b-backport' }, '백포트 추정') : badge(c.severity === 'critical' || c.severity === 'high' ? 'risk' : 'warn', '해당')),
@@ -778,7 +783,7 @@
   /** 인스턴스 구분 이름 (hostLabel 과 같은 규칙: Apache -f 설정 파일 / WAS 는 서버 폴더 또는 설치 폴더 이름) */
   function instName(r) {
     if (r.confArg) return r.confArg.length <= 40 ? r.confArg : '…' + r.confArg.slice(-39);
-    if (r.product !== 'apache' && r.binary) return r.binary.slice(r.binary.lastIndexOf('/') + 1);
+    if (!MODSTYLE(r.product) && r.binary) return r.binary.slice(r.binary.lastIndexOf('/') + 1);
     return null;
   }
 
@@ -1108,7 +1113,7 @@
         h('li', null, h('p', null, '에이전트 토큰'), codeBox(token)),
         h('li', null, h('p', null, '"설치 완료"가 나오면 1~2분 안에 이 화면의 상태가 "온라인"이 되고, 첫 점검이 자동으로 시작됩니다.'))),
       h('p', { class: 'muted' }, `※ 점검할 서버에서 ${url} 로 접속할 수 있어야 합니다(방화벽 확인). 서버에서 보이는 주소가 다르면 명령의 주소를 바꿔서 실행하세요. `
-        + '대시보드에 연결할 수 없는 서버는 install.sh, webwas-precheck-agent.sh, apache_precheck.sh, wildfly_precheck.sh, tomcat_precheck.sh 다섯 파일을 같은 폴더에 복사한 뒤 그 폴더에서 install.sh 를 실행하면 됩니다.'));
+        + '대시보드에 연결할 수 없는 서버는 install.sh, webwas-precheck-agent.sh, apache_precheck.sh, wildfly_precheck.sh, tomcat_precheck.sh, nginx_precheck.sh 여섯 파일을 같은 폴더에 복사한 뒤 그 폴더에서 install.sh 를 실행하면 됩니다.'));
     box.hidden = false;
   }
 
@@ -1668,7 +1673,7 @@
         h('li', null, h('i', { class: 'dot c-accent' }), state.product ? `최신(${latestVer(state.product)}) 이상` : '최신 이상', h('b', null, `${up}대`)),
         h('li', null, h('i', { class: 'dot c-warning' }), '최신 미만', h('b', null, `${below}대`)),
         h('li', { title: Object.values(EOL_HINT).join('\n') }, h('i', { class: 'dot c-critical' }),
-          state.product === 'apache' ? 'EOL (2.2 이하)' : state.product === 'wildfly' ? 'javax 계열 (26 이하)' : state.product === 'tomcat' ? '지원 종료 브랜치' : '교체 필요 (EOL 등)', h('b', null, `${eol}대`)),
+          state.product === 'apache' ? 'EOL (2.2 이하)' : state.product === 'wildfly' ? 'javax 계열 (26 이하)' : state.product === 'tomcat' || state.product === 'nginx' ? '지원 종료 브랜치' : '교체 필요 (EOL 등)', h('b', null, `${eol}대`)),
         list.length - known.length ? h('li', null, h('i', { class: 'dot c-info' }), '버전 미확인', h('b', null, `${list.length - known.length}대`)) : null));
   }
 
@@ -1728,7 +1733,7 @@
     };
     el.replaceChildren(
       tile('agent', `${online}/${n}`, '온라인', online / n, online < n, '최근 3분 안에 접속한 에이전트'),
-      tile('code', known.length ? `${same}/${known.length}` : '-', '스크립트 최신', known.length ? same / known.length : 0, same < known.length, `점검 스크립트 3개(apache/wildfly/tomcat)가 대시보드와 같고 에이전트 본체도 ${state.agents.expectedAgentVersion || '최신'} 이상인 에이전트 (아니면 재설치)`),
+      tile('code', known.length ? `${same}/${known.length}` : '-', '스크립트 최신', known.length ? same / known.length : 0, same < known.length, `점검 스크립트 4개(apache/wildfly/tomcat/nginx)가 대시보드와 같고 에이전트 본체도 ${state.agents.expectedAgentVersion || '최신'} 이상인 에이전트 (아니면 재설치)`),
       tile('clock', `${recent}/${n}`, '24시간 내 점검', recent / n, false, '최근 24시간 안에 리포트를 보낸 에이전트'));
   }
 

@@ -5,7 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** apache_precheck.sh / wildfly_precheck.sh / tomcat_precheck.sh 리포트 1개를 해석한 결과. */
+/** apache / wildfly / tomcat / nginx _precheck.sh 리포트 1개를 해석한 결과. */
 public class Report {
 
     /** 점검 결과 한 줄: [위험]/[주의]/[양호]/[정보] + 아래 들여쓰기 상세줄. */
@@ -175,7 +175,7 @@ public class Report {
             String t = f.text;
             if (t.contains("접근 로그") && t.contains("찾지 못했")) add(g, "accessLog");
             if (t.contains("server.log 를 찾지 못했") || t.contains("catalina 로그를 찾지 못했")) add(g, "serverLog");
-            if (t.contains("DocumentRoot 를 찾지 못했") || t.contains("배포 폴더를 찾지 못했")) add(g, "webFiles");
+            if (t.contains("DocumentRoot 를 찾지 못했") || t.contains("배포 폴더를 찾지 못했") || t.contains("웹 루트(root·alias) 폴더를 찾지 못했")) add(g, "webFiles");
             if (t.contains("OS 로그인 기록")) {
                 auth = true;
                 if (t.contains("읽지 못해")) add(g, "authLog");
@@ -205,7 +205,7 @@ public class Report {
         return switch (product) {
             case APACHE -> "EOL";
             case WILDFLY -> "javax 계열";
-            case TOMCAT -> "지원 종료";
+            case TOMCAT, NGINX -> "지원 종료";
         };
     }
 
@@ -271,6 +271,10 @@ public class Report {
             if (confMethod.startsWith("httpd -t -D DUMP_INCLUDES")) return "httpd 가 읽는 파일(DUMP_INCLUDES)";
             if (confMethod.startsWith("메인 설정")) return "httpd.conf Include 추적";
             return confMethod;
+        }
+        if (product == Product.NGINX) {
+            if (confMethod == null) return "확인 안 됨";
+            return confMethod.startsWith("nginx -T") ? "nginx -T(실제로 읽는 설정)" : "include 직접 추적";
         }
         return mainConfig == null ? "확인 안 됨" : mainConfig.substring(mainConfig.lastIndexOf('/') + 1);
     }

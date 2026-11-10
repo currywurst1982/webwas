@@ -59,6 +59,7 @@
           <include>apache_precheck.sh</include>
           <include>wildfly_precheck.sh</include>
           <include>tomcat_precheck.sh</include>
+          <include>nginx_precheck.sh</include>
         </includes>
       </resource>
     </resources>

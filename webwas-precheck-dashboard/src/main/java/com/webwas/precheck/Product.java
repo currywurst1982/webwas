@@ -7,11 +7,14 @@ import java.util.Locale;
  *  - Apache httpd  : apache_precheck.sh  → apache_precheck_<호스트>_<시각>.txt
  *  - WildFly       : wildfly_precheck.sh → wildfly_precheck_<호스트>_<시각>.txt
  *  - Apache Tomcat : tomcat_precheck.sh  → tomcat_precheck_<호스트>_<시각>.txt
+ *  - Nginx         : nginx_precheck.sh   → nginx_precheck_<호스트>_<시각>.txt
+ * 순서가 점검 스크립트 SHA-256 계산 순서(에이전트 ALL_PRODUCTS)와 같아야 함.
  */
 public enum Product {
     APACHE("apache", "Apache", "apache_precheck.sh", "Apache 패치 전 보안 사전 점검"),
     WILDFLY("wildfly", "WildFly", "wildfly_precheck.sh", "WildFly 패치 전 보안 사전 점검"),
-    TOMCAT("tomcat", "Tomcat", "tomcat_precheck.sh", "Tomcat 패치 전 보안 사전 점검");
+    TOMCAT("tomcat", "Tomcat", "tomcat_precheck.sh", "Tomcat 패치 전 보안 사전 점검"),
+    NGINX("nginx", "Nginx", "nginx_precheck.sh", "Nginx 패치 전 보안 사전 점검");
 
     public final String id;
     public final String label;
@@ -23,6 +26,21 @@ public enum Product {
         this.label = label;
         this.script = script;
         this.headerMark = headerMark;
+    }
+
+    /** 지원 브랜치마다 최신 버전을 따로 두는 제품 (Tomcat 11.0/10.1/9.0, Nginx mainline/stable). 목록에 없는 브랜치 = 지원 종료 */
+    public boolean branched() {
+        return this == TOMCAT || this == NGINX;
+    }
+
+    /** CVE 를 "버전 + 필요 모듈(기능) 조건"으로 판정하고 패키지 changelog 로 백포트를 추정하는 제품 (Apache, Nginx) */
+    public boolean moduleStyle() {
+        return this == APACHE || this == NGINX;
+    }
+
+    /** 조건 칸 이름: Apache "필요 모듈", Nginx "필요 기능" */
+    public String conditionLabel() {
+        return this == NGINX ? "필요 기능" : "필요 모듈";
     }
 
     /** 리포트 파일명 접두어 (예: "tomcat_precheck_") */

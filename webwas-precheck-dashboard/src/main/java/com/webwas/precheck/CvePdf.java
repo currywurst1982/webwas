@@ -71,7 +71,7 @@ public final class CvePdf {
                 w.gap(2);
                 w.wrapped(w.regular, 9.5f, INK2, "설명: " + nz(it.description), 30);
                 w.wrapped(w.regular, 9.5f, INK2, "영향 구간: " + nz(it.affected)
-                        + (it.product == Product.APACHE ? "   ·   필요 모듈 조건: " + nz(it.condition) : ""), 30);
+                        + (it.product.moduleStyle() ? "   ·   " + it.product.conditionLabel() + " 조건: " + nz(it.condition) : ""), 30);
                 w.wrapped(w.regular, 8.5f, MUTED, "상세: https://www.cve.org/CVERecord?id=" + it.id
                         + (it.advisory != null ? "   ·   https://osv.dev/vulnerability/" + it.advisory : ""), 30);
                 w.gap(6);
@@ -81,7 +81,7 @@ public final class CvePdf {
                     w.gap(3);
                     String installed = r.cves.stream().filter(c -> c.applicable && it.id.equals(c.id)).map(c -> c.condition)
                             .findFirst().orElse("");
-                    String state = t.backported() ? "백포트 추정 (changelog 에 수정 기록)" : r.product == Product.APACHE ? "미조치 추정" : installed;
+                    String state = t.backported() ? "백포트 추정 (changelog 에 수정 기록)" : r.product.moduleStyle() ? "미조치 추정" : installed;
                     w.wrapped(w.bold, 9.5f, t.backported() ? INK2 : INK, "■ " + IntrusionPdf.hostLabel(r)
                             + "  ·  " + r.product.label + " " + nz(r.version) + (state.isEmpty() ? "" : "  ·  " + state), 12);
                     w.wrapped(w.regular, 8.5f, MUTED, "설치 " + nz(r.installType) + " · 점검 " + nz(r.checkedAt) + " · "

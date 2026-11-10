@@ -48,7 +48,7 @@
       <header class="top">
         <div class="title">
           <h1>Web·WAS 보안 점검 현황</h1>
-          <p id="brand-sub">Apache · WildFly · Tomcat 사전점검 결과</p>
+          <p id="brand-sub">Apache · WildFly · Tomcat · Nginx 사전점검 결과</p>
         </div>
         <div class="top-right">
           <button class="pill latest-pill" type="button" data-goto="settings" title="최신 버전 설정 보기">
@@ -82,7 +82,7 @@
         <ol>
           <li>아래 <b>에이전트</b> 메뉴에서 <b>에이전트 추가</b>를 누르고, 안내되는 명령으로 점검할 서버(Apache·WildFly·Tomcat)에 에이전트를 설치합니다.</li>
           <li>설치되면 에이전트가 서버에서 실행 중인 제품을 찾아 점검 스크립트를 실행하고 결과를 자동으로 보내며, 이 화면에 표시됩니다. (<b>지금 점검</b>으로 바로 실행 가능)</li>
-          <li>에이전트를 설치할 수 없는 서버는 <code>sudo bash apache_precheck.sh</code> / <code>wildfly_precheck.sh</code> / <code>tomcat_precheck.sh</code> 결과 파일을 <b>리포트 업로드</b>로 올려도 됩니다.
+          <li>에이전트를 설치할 수 없는 서버는 <code>sudo bash apache_precheck.sh</code> / <code>wildfly_precheck.sh</code> / <code>tomcat_precheck.sh</code> / <code>nginx_precheck.sh</code> 결과 파일을 <b>리포트 업로드</b>로 올려도 됩니다.
             <span class="muted admin-only" id="report-dir"></span></li>
         </ol>
       </section>
@@ -309,10 +309,10 @@
               <button class="btn admin-only" type="button" data-click="btn-users"><svg><use href="#i-users"/></svg>사용자 관리</button>
               <button class="btn admin-only" type="button" data-click="btn-upload"><svg><use href="#i-upload"/></svg>리포트 업로드</button>
             </div>
-            <p class="muted small-note">에이전트를 설치할 수 없는 서버는 <code>sudo bash apache_precheck.sh</code> / <code>wildfly_precheck.sh</code> / <code>tomcat_precheck.sh</code> 결과 파일을 리포트 업로드로 올릴 수 있습니다.</p>
+            <p class="muted small-note">에이전트를 설치할 수 없는 서버는 <code>sudo bash apache_precheck.sh</code> / <code>wildfly_precheck.sh</code> / <code>tomcat_precheck.sh</code> / <code>nginx_precheck.sh</code> 결과 파일을 리포트 업로드로 올릴 수 있습니다.</p>
           </article>
         </div>
-        <p class="footnote">※ 이 대시보드는 점검 스크립트(apache_precheck.sh · wildfly_precheck.sh · tomcat_precheck.sh) 결과를 그대로 모아 보여 줄 뿐이며, 스크립트와 마찬가지로 '알려진 패턴' 기준입니다. 안전을 보증하지 않습니다.
+        <p class="footnote">※ 이 대시보드는 점검 스크립트(apache_precheck.sh · wildfly_precheck.sh · tomcat_precheck.sh · nginx_precheck.sh) 결과를 그대로 모아 보여 줄 뿐이며, 스크립트와 마찬가지로 '알려진 패턴' 기준입니다. 안전을 보증하지 않습니다.
           침해 의심 서버는 설정 보완보다 침해사고 대응이 우선입니다. 근본 대책은 최신 버전(또는 보안수정이 반영된 배포판 패키지)으로의 업그레이드입니다.</p>
       </section>
 

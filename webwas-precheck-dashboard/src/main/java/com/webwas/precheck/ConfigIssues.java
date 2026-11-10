@@ -45,7 +45,7 @@ public final class ConfigIssues {
      * ("관리 계정에 추측하기 쉬운 비밀번호 사용: admin → ..." 처럼 계정명이 붙는 항목도 서버 간에 한 항목으로 묶음).
      */
     public static String key(Product p, String text) {
-        String re = p == Product.APACHE ? " → | \\(" : " → | \\(|: ";
+        String re = p.moduleStyle() ? " → | \\(" : " → | \\(|: ";
         return text.split(re, 2)[0].trim();
     }
 

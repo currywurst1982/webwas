@@ -13,11 +13,11 @@ import java.util.logging.Logger;
 
 /**
  * 서버(웹서버·WAS)에 설치된 에이전트(webwas-precheck-agent.sh)가 호출하는 API. 로그인 세션 대신 에이전트 토큰으로 인증.
- *  GET  /agent-api/files/{install.sh|webwas-precheck-agent.sh|apache_precheck.sh|wildfly_precheck.sh|tomcat_precheck.sh}
+ *  GET  /agent-api/files/{install.sh|webwas-precheck-agent.sh|apache_precheck.sh|wildfly_precheck.sh|tomcat_precheck.sh|nginx_precheck.sh}
  *       설치 파일 받기 (비밀 정보 없음, 인증 없음)
- *  GET  /agent-api/cve/{apache|wildfly|tomcat}   최신 CVE 목록 (스크립트 형식, 공개 정보라 인증 없음)
+ *  GET  /agent-api/cve/{apache|wildfly|tomcat|nginx}   최신 CVE 목록 (스크립트 형식, 공개 정보라 인증 없음)
  *  POST /agent-api/heartbeat   1분마다 상태 보고 → {"run":true|false}
- *  POST /agent-api/report?name={apache|wildfly|tomcat}_precheck_....txt   리포트 원문 업로드 (본문 = 텍스트)
+ *  POST /agent-api/report?name={apache|wildfly|tomcat|nginx}_precheck_....txt   리포트 원문 업로드 (본문 = 텍스트)
  *  POST /agent-api/result      점검 1회 종료 보고 (exit, reports, message)
  * 인증 헤더:  X-Precheck-Agent: <에이전트 이름>  /  Authorization: Bearer <토큰>
  */
@@ -25,7 +25,7 @@ import java.util.logging.Logger;
 public class AgentApiServlet extends HttpServlet {
     private static final Logger LOG = Logger.getLogger(AgentApiServlet.class.getName());
     public static final Set<String> FILES = Set.of("install.sh", "webwas-precheck-agent.sh",
-            "apache_precheck.sh", "wildfly_precheck.sh", "tomcat_precheck.sh");
+            "apache_precheck.sh", "wildfly_precheck.sh", "tomcat_precheck.sh", "nginx_precheck.sh");
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {

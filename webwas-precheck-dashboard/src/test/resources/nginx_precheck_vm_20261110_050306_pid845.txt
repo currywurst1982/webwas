@@ -1,0 +1,115 @@
+Nginx 패치 전 보안 사전 점검  |  호스트: vm  |  일시: 2026-11-10 05:09:11
+
+==================================================================
+ [1] 버전 및 설치 방식 확인
+==================================================================
+[정보] 실행 중인 Nginx 프로세스 자동 탐지: 마스터 PID 845
+[정보] 서버 IP: 192.0.2.2
+[정보] 실행파일: /usr/sbin/nginx
+[정보] 버전 정보: nginx version: nginx/1.24.0 (Ubuntu)
+[정보] 메인 설정 파일: /etc/nginx/nginx.conf
+[정보] 설치 방식: DEB 패키지 (nginx)
+[주의] 패키지 설치본은 버전 숫자가 낮아도 배포판이 보안수정을 백포트했을 수 있습니다. [2]에서 changelog 반영 여부를 함께 표시합니다.
+[주의] 지원 종료(EOL) 브랜치 Nginx 1.24.x 입니다. nginx.org 는 지원 브랜치(1.31.8 / 1.30.6)에만 보안 수정을 냅니다. 배포판 패키지는 배포판이 보안 수정을 따로 백포트할 수 있으니 [2]의 changelog 표시와 배포판 보안 공지를 확인하세요.
+[정보] 빌드 옵션(--with-*): 32개
+        cc ld compat debug pcre http_ssl_module http_stub_status_module http_realip_module http_auth_request_module http_v2_module http_dav_module http_slice_module threads http_addition_module http_flv_module http_gunzip_module http_gzip_static_module http_mp4_module http_random_index_module http_secure_link_module http_sub_module mail_ssl_module stream_ssl_module stream_ssl_preread_module stream_realip_module http_geoip_module=dynamic http_image_filter_module=dynamic http_perl_module=dynamic http_xslt_module=dynamic mail=dynamic stream=dynamic stream_geoip_module=dynamic 
+[정보] 점검한 설정 파일: 5개 (확인 방법: nginx -T)
+        /etc/nginx/nginx.conf
+        /etc/nginx/mime.types
+        /etc/nginx/sites-enabled/default
+        /etc/nginx/sites-enabled/test.conf
+        /etc/nginx/fastcgi_params
+[정보] 실행 계정: www-data (워커 프로세스)
+
+==================================================================
+ [2] 버전별 해당 CVE 판정 (nginx.org 보안 공지 기준)
+==================================================================
+[정보] CVE 목록 출처: 스크립트 내장본 (2026-11-10 기준, 66건)
+[미해당] CVE-2026-15176 (moderate) - 필요 모듈(alias와 rewrite 사용) 미사용
+[정보] CVE-2026-97629 [moderate] Session forgery when using TLS session tickets (영향: 1.23.2~1.31.6, 조건: SSL/TLS 사용) → 패키지 changelog에 수정 기록 있음(백포트 반영 추정)
+[미해당] CVE-2026-97205 (moderate) - 필요 모듈(aio 사용) 미사용
+[미해당] CVE-2026-42533 (high) - 필요 모듈(map 사용) 미사용
+[미해당] CVE-2026-60005 (moderate) - 필요 모듈(slice 모듈 사용) 미사용
+[미해당] CVE-2026-56434 (moderate) - 필요 모듈(SSI 사용) 미사용
+[미해당] CVE-2026-42055 (moderate) - 필요 모듈(gRPC·HTTP2 백엔드 프록시) 미사용
+[미해당] CVE-2026-48142 (low) - 필요 모듈(charset 사용) 미사용
+[미해당] CVE-2026-9256 (moderate) - 필요 모듈(rewrite·return·if 사용) 미사용
+[미해당] CVE-2026-42945 (moderate) - 필요 모듈(rewrite·return·if 사용) 미사용
+[미해당] CVE-2026-42946 (moderate) - 필요 모듈(scgi·uwsgi 사용) 미사용
+[미해당] CVE-2026-42934 (low) - 필요 모듈(charset 사용) 미사용
+[미해당] CVE-2026-40701 (moderate) - 필요 모듈(OCSP 사용) 미사용
+[미해당] CVE-2026-27654 (moderate) - 필요 모듈(WebDAV 사용) 미사용
+[정보] CVE-2026-27784 [moderate] Buffer overflow in the ngx_http_mp4_module (영향: 1.1.19~1.29.6, 조건: mp4 모듈 사용) → 패키지 changelog에 수정 기록 있음(백포트 반영 추정)
+[정보] CVE-2026-32647 [moderate] Buffer overflow in the ngx_http_mp4_module (영향: 1.1.19~1.29.6, 조건: mp4 모듈 사용) → 패키지 changelog에 수정 기록 있음(백포트 반영 추정)
+[미해당] CVE-2026-27651 (low) - 필요 모듈(mail 프록시 사용) 미사용
+[미해당] CVE-2026-28753 (moderate) - 필요 모듈(mail 프록시 사용) 미사용
+[미해당] CVE-2026-1642 (moderate) - 필요 모듈(HTTPS 백엔드 프록시) 미사용
+[미해당] CVE-2025-53859 (low) - 필요 모듈(mail 프록시 사용) 미사용
+[정보] CVE-2025-23419 [moderate] SSL session reuse vulnerability (영향: 1.11.4~1.27.3, 조건: SSL/TLS 사용) → 패키지 changelog에 수정 기록 있음(백포트 반영 추정)
+[정보] CVE-2024-7347 [low] Buffer overread in the ngx_http_mp4_module (영향: 1.5.13~1.27.0, 조건: mp4 모듈 사용) → 패키지 changelog에 수정 기록 있음(백포트 반영 추정)
+
+  → 해당 CVE: 5건 (그중 패키지 백포트 추정 5건) / 기능 미사용으로 미해당: 17건 (미해당 목록은 리포트 파일에 기록)
+
+==================================================================
+ [3] 위험 설정 점검 (nginx 가 실제로 읽는 설정 전체)
+==================================================================
+[주의] server_tokens 가 off 가 아님 (기본값 on) → 응답 헤더(Server)·오류 페이지에 Nginx 버전 노출. http 블록에 server_tokens off; 권장
+[주의] autoindex on → 디렉터리 파일 목록이 웹에 노출됨. 필요한 위치가 아니면 제거
+        /etc/nginx/sites-enabled/test.conf:13:        autoindex on;
+[주의] ssl_protocols 에 TLSv1.0/1.1 포함 → 더 이상 안전하지 않은 프로토콜. TLSv1.2 TLSv1.3 만 사용 권장
+        /etc/nginx/sites-enabled/test.conf:6:    ssl_protocols TLSv1 TLSv1.2;
+[위험] alias 경로 탐색 위험: location 끝에 / 가 없는데 alias 끝에 / 가 있음 → /경로../ 요청으로 상위 폴더 파일 읽기 가능 (location 과 alias 끝의 / 를 맞출 것)
+        /etc/nginx/sites-enabled/test.conf:8 location /static { alias /srv/static/; }
+[주의] stub_status(서버 상태 페이지)에 접근 제한(allow/deny)이 없음 → 상위 server 블록에서 제한하지 않았다면 외부에 연결 수 등 노출
+        /etc/nginx/sites-enabled/test.conf:15 location /nginx_status
+[주의] PHP location 에 try_files ... =404 / fastcgi_split_path_info 가 없음 → 업로드한 이미지 등이 PHP 로 실행될 수 있음 (php.ini cgi.fix_pathinfo=0 이면 위험 낮음)
+        /etc/nginx/sites-enabled/test.conf:18 location ~ \.php$
+[양호] 워커 프로세스 실행 계정: www-data
+[양호] 설정 파일 권한 이상 없음 (누구나 수정 가능·웹 실행계정 소유 파일 없음)
+[주의] 인증서 개인키 파일을 누구나 읽을 수 있음 → 키 유출 시 HTTPS 통신 가로채기 가능. 600(또는 640) 권장
+        /etc/nginx/test.key (644)
+[정보] 이 Nginx 가 열어 둔 포트
+        0.0.0.0:80
+        0.0.0.0:8443
+
+==================================================================
+ [4] 침해 흔적 점검 (이미 해킹당했는지)
+==================================================================
+[정보] 점검 대상 접근 로그: 3개 (회전된 .gz 포함)
+        /var/log/nginx/access.log
+        /var/log/nginx/access.log.1
+        /var/log/nginx/access.log.2.gz
+[위험] 경로 탐색 시도 중 200(성공) 응답 3건 → 침해 가능성. 즉시 상세 분석 필요
+        203.0.113.9 - - [10/Nov/2026:03:00:00 +0900] "GET /static../etc/passwd HTTP/1.1" 200 1234 "-" "curl/8"
+        203.0.113.9 - - [10/Nov/2026:03:00:00 +0900] "GET /static../etc/passwd HTTP/1.1" 200 1234 "-" "curl/8"
+        203.0.113.9 - - [10/Nov/2026:03:00:00 +0900] "GET /static../etc/passwd HTTP/1.1" 200 1234 "-" "curl/8"
+[위험] 명령실행/웹쉘/JNDI 주입 의심 요청 중 200 응답 6건
+        203.0.113.9 - - [10/Nov/2026:03:00:00 +0900] "GET /static../etc/passwd HTTP/1.1" 200 1234 "-" "curl/8"
+        203.0.113.9 - - [10/Nov/2026:03:00:05 +0900] "GET /up/x.php?c=whoami HTTP/1.1" 200 9 "-" "curl/8"
+        203.0.113.9 - - [10/Nov/2026:03:00:00 +0900] "GET /static../etc/passwd HTTP/1.1" 200 1234 "-" "curl/8"
+        203.0.113.9 - - [10/Nov/2026:03:00:05 +0900] "GET /up/x.php?c=whoami HTTP/1.1" 200 9 "-" "curl/8"
+        203.0.113.9 - - [10/Nov/2026:03:00:00 +0900] "GET /static../etc/passwd HTTP/1.1" 200 1234 "-" "curl/8"
+[정보] 의심 요청 상위 IP (차단 검토용)
+              9 203.0.113.9
+[정보] 점검 대상 웹 루트: /srv/files /srv/static /usr/share/nginx/html /var/www/html 
+[위험] 웹쉘 의심 코드 패턴 포함 파일 1개 (오탐 가능, 내용 확인 필수)
+        /var/www/html/up/x.php
+[주의] 최근 30일 내 변경된 스크립트 파일 1개 → 배포 이력과 대조 필요
+        -rw-r--r-- 1 root root 38 2026-11-10_05:02:08 /var/www/html/up/x.php
+[양호] 웹 루트 내 웹 실행계정 소유 파일 없음
+[양호] 웹 실행계정(www-data) 의 비정상 프로세스 없음
+[양호] 웹 실행계정 크론 작업 없음
+[양호] 임시 디렉터리에 웹 실행계정 소유 파일 없음
+[정보] OS 로그인 기록(/var/log/secure, /var/log/auth.log, journal)을 읽지 못해 로그인 기록 점검을 건너뜁니다. (root 권한 필요)
+
+==================================================================
+ 점검 요약
+==================================================================
+  [위험] 4건   [주의] 9건   [양호] 6건   [정보] 20건
+
+  ※ 이 결과는 '알려진 패턴' 기준이며 안전을 보증하지 않습니다.
+    - [위험] 중 침해 흔적(로그 200 응답, 웹쉘, 비정상 프로세스)이 있으면 설정 보완보다 침해사고 대응이 우선입니다.
+    - CVE 판정은 nginx.org 보안 공지의 버전 기준이며, 패키지 설치본은 배포판 보안 공지로 최종 확인하세요.
+    - 근본 대책은 지원 브랜치 최신(1.31.8 / 1.30.6) 이상(또는 보안수정이 반영된 배포판 패키지)으로의 업그레이드입니다.
+
+  리포트 파일: /tmp/nginx_precheck_vm_20261110_050911_pid845.txt

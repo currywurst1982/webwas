@@ -47,7 +47,8 @@ public class AppInit implements ServletContextListener {
     private static final Map<Product, Pattern> SCRIPT_BASELINE = Map.of(
             Product.APACHE, Pattern.compile("^LATEST_VER=\"(2\\.4\\.\\d+)\"", Pattern.MULTILINE),
             Product.WILDFLY, Pattern.compile("^LATEST_FINAL=\"([0-9A-Za-z.]+)\"", Pattern.MULTILINE),
-            Product.TOMCAT, Pattern.compile("^LATEST_BRANCHES=\"([0-9. ]+)\"", Pattern.MULTILINE));
+            Product.TOMCAT, Pattern.compile("^LATEST_BRANCHES=\"([0-9. ]+)\"", Pattern.MULTILINE),
+            Product.NGINX, Pattern.compile("^LATEST_BRANCHES=\"([0-9. ]+)\"", Pattern.MULTILINE));
     private static final long REFRESH_HOURS = 12;
     private ScheduledExecutorService scheduler;
     /**

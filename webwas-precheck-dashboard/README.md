@@ -1,7 +1,7 @@
 # Web·WAS 사전점검 통합 대시보드 (webwas-precheck-dashboard)
 
 기존 **Apache 사전점검 대시보드(precheck-dashboard)** 와 **WildFly 사전점검 대시보드(wildfly-precheck-dashboard)** 를
-하나로 합치고, **Tomcat 점검**을 새로 넣은 대시보드입니다. WildFly(자바 WAS)에 배포하는 `.war` 파일 하나로 만들어집니다.
+하나로 합치고, **Tomcat·Nginx 점검**을 새로 넣은 대시보드입니다. WildFly(자바 WAS)에 배포하는 `.war` 파일 하나로 만들어집니다.
 
 ```
  [서버 A: Apache]          에이전트 ─┐  1분마다 "점검할 차례인가요?"  (서버 → 대시보드 방향 연결만 사용)
@@ -9,14 +9,14 @@
  [서버 C: WildFly]         에이전트 ─┘  차례면: 최신 CVE 목록 받기 →        │
                                         실행 중인 제품의 점검 스크립트 실행 → 리포트 전송
                                                                             │ 12시간마다
-                                                     Apache 보안팀 공식 CVE JSON · OSV 취약점 DB · 공식 배포 목록
+                                                     Apache 보안팀 CVE JSON · OSV 취약점 DB · nginx.org 보안 공지 · 공식 배포 목록
 ```
 
 ## 무엇이 바뀌었나 (기존 두 대시보드 대비)
 
 | 항목 | 내용 |
 |---|---|
-| 하나의 화면 | Apache · WildFly · Tomcat 결과를 한 화면에서 봅니다. 화면 위 **제품 탭(전체/Apache/WildFly/Tomcat)** 으로 거를 수 있고, 표·차트·PDF 에 제품이 표시됩니다 |
+| 하나의 화면 | Apache · WildFly · Tomcat · Nginx 결과를 한 화면에서 봅니다. 화면 위 **제품 탭(전체/Apache/WildFly/Tomcat/Nginx)** 으로 거를 수 있고, 표·차트·PDF 에 제품이 표시됩니다 |
 | 에이전트 하나 | 서버마다 에이전트를 **하나만** 설치합니다. 점검할 때마다 실행 중인 제품을 자동으로 찾아(`PRODUCTS=auto`) 해당 스크립트만 실행합니다 |
 | Tomcat 점검 추가 | 새 스크립트 `tomcat_precheck.sh` (아래 "Tomcat 점검 항목") |
 | **CVE 목록 자동 업데이트** | 대시보드가 12시간마다 공개 취약점 DB 에서 세 제품의 CVE 목록을 새로 만들고, 에이전트가 점검 직전에 받아 스크립트에 넘깁니다. 스크립트를 다시 배포하지 않아도 새 CVE 가 판정에 들어갑니다 |
@@ -105,6 +105,23 @@
 **한계 (꼭 읽어 주세요)**
 - 자동 목록의 설명은 원문(영문)입니다. Apache 새 CVE 의 "필요 모듈"은 추정이라 틀릴 수 있습니다(틀리면 대개 "해당"으로 더 많이 잡힘).
 - OSV/Apache 데이터에 아직 올라오지 않은 취약점은 판정되지 않습니다. 버전 비교 기준이므로 **패키지(RPM/DEB) 설치본의 배포판 백포트**는 Apache 만 changelog 로 추정하고, Tomcat·WildFly 패키지는 배포판 보안 공지로 확인해야 합니다.
+
+## Nginx 점검 항목 (nginx_precheck.sh, 2026-11-10 추가)
+
+| 구분 | 내용 |
+|---|---|
+| [1] 버전 | `nginx -v`(OpenResty 등은 앞 세 자리), 설치 방식(RPM·DEB·소스), **브랜치 판정**: nginx.org 는 mainline·stable 두 브랜치만 보안 수정을 내므로 그 밖의 브랜치(예: 1.24·1.26·1.28)는 "지원 종료(EOL)" — 소스 설치는 [위험], 배포판 패키지는 [주의](배포판 백포트 가능) |
+| [2] CVE | nginx.org 보안 공지의 영향 버전·수정 버전으로 판정하고, 설정에서 그 기능(HTTP/3·HTTP/2·mp4·mail·resolver·SSI 등)을 쓰지 않으면 [미해당]. 패키지 설치본은 changelog 에 CVE 번호가 있으면 "백포트 추정" |
+| [3] 설정 | `nginx -T`(실제로 읽는 설정 전체, 실패 시 include 직접 추적) 기준: server_tokens(버전 노출), autoindex, SSLv3·TLSv1.0/1.1, 약한 암호, **alias 경로 탐색(off-by-slash)**, 접근 제한 없는 stub_status, PHP location 의 try_files 누락, WebDAV 쓰기 메서드, proxy_pass 에 $host 등 요청 값(SSRF), 워커 root 실행, 설정 파일·개인키 권한 |
+| [4] 침해 흔적 | access_log(이 인스턴스가 연 파일·회전 파일 포함)의 경로 탐색·명령 실행·JNDI 요청, root·alias 폴더의 웹쉘 의심 파일·최근 변경 파일, 웹 실행계정의 의심 프로세스·크론·임시 파일·외부 연결, OS 로그인 기록 |
+
+옵션: `-b nginx경로` `-c 설정파일` `-d 일수` `-l '접근로그경로'` `-C CVE목록파일`. 옵션 없이 실행하면 실행 중인 nginx 마스터를 찾고, 여러 개(-c 가 다른 인스턴스)면 각각 점검합니다.
+에이전트 설정: `NGINX_LOG_PATHS`(-l). 에이전트는 `nginx: master process` 가 실행 중이면 자동으로 Nginx 를 점검합니다(에이전트 2.3.0 이상).
+
+- **CVE 출처**: https://nginx.org/en/security_advisories.html 의 원본 XML(`raw.githubusercontent.com/nginx/nginx.org/main/xml/en/security_advisories.xml`). 대시보드가 12시간마다 받아 `/agent-api/cve/nginx` 로 내려 주며, 주소는 `-Dwebwas.precheck.cve.nginx.url` 로 바꿀 수 있습니다. `<item>` 68개 중 CVE 번호가 없는 Windows 전용 1건과 등급 none(취약점 아님) 1건을 뺀 66건(2026-11-10).
+- **최신 버전 출처**: nginx.org 다운로드 페이지의 원본 XML(`xml/versions.xml`)에서 mainline·stable 첫 항목(2026-11-10: 1.31.8 / 1.30.6). `-Dwebwas.precheck.latest.nginx.url` 로 변경 가능.
+- **필요 기능은 공지 제목으로 정한 추정**입니다(`tools/gen_nginx_cve.py` 와 `CveFeed.nginxFeature` 가 같은 규칙, 테스트로 일치 확인). 예: 제목에 HTTP/3 → `listen ... quic` 또는 `http3 on` 을 쓸 때만 해당.
+- 시험: Ubuntu 24.04 nginx 1.24.0(DEB)에 위험 설정·웹쉘·공격 로그를 넣어 실행 → alias 경로 탐색 [위험], 웹쉘·공격 성공 로그 [위험](침해 의심), 해당 CVE 5건 모두 Ubuntu changelog 기준 백포트 추정, 두 인스턴스 각각 점검 확인.
 
 ## Tomcat 점검 항목 (tomcat_precheck.sh)
 
@@ -321,11 +338,11 @@ scripts/webwas-precheck-agent.sh, install.sh   → 빌드 시 WAR 의 WEB-INF/cl
 tools/gen_cve_table.py     (참고) WildFly CVE 표 생성기. 같은 규칙이 CveFeed.java 에 들어 있음
 src/main/java/com/webwas/precheck/
   Product.java        제품 구분 (리포트 머리글·파일명)
-  ReportParser.java   세 스크립트 리포트 해석 (CVE 등급 important → high 로 통일)
+  ReportParser.java   네 스크립트 리포트 해석 (CVE 등급 important → high 로 통일)
   LatestVersion(s).java 제품별 최신 버전 (Tomcat 브랜치별)
   CveFeed.java        CVE 목록 자동 생성·보관 (/agent-api/cve/{제품})
   JsonParser.java, Fetch.java  외부 라이브러리 없는 JSON 읽기 / http·file 받기
 API (화면용): GET /api/reports(인스턴스별 최신, ETag·gzip) · ?scope=all(전체 이력) · ?instance=키(한 인스턴스 이력)
               GET /api/daily?days=14 (일자·제품·에이전트별 점검/침해 의심 건수)
-src/test/resources/  실제 Apache·WildFly·Tomcat 점검 리포트, Apache CVE JSON 샘플
+src/test/resources/  실제 Apache·WildFly·Tomcat·Nginx 점검 리포트, Apache CVE JSON 샘플
 ```

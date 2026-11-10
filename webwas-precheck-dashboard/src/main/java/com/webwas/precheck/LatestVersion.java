@@ -43,6 +43,8 @@ public class LatestVersion {
     private static final Pattern TOMCAT_RELEASE = Pattern.compile("href=\"v(\\d{1,2}\\.\\d{1,2}\\.\\d{1,3})/\"");
     private static final Pattern TOMCAT_META = Pattern.compile("<version>\\s*(\\d{1,2}\\.\\d{1,2}\\.\\d{1,3})\\s*</version>");
     private static final Pattern TOMCAT_ONE = Pattern.compile("^\\d{1,2}\\.\\d{1,2}\\.\\d{1,3}$");
+    /** nginx.org xml/versions.xml: <download tag="mainline" ...> 다음의 첫 <item ver="1.31.8" /> */
+    private static final Pattern NGINX_BRANCH = Pattern.compile("<download\\s+tag=\"(mainline|stable)\"[^>]*>\\s*<item\\s+ver=\"(\\d{1,2}\\.\\d{1,3}\\.\\d{1,3})\"");
 
     public final Product product;
     private final Path file;
@@ -69,15 +71,18 @@ public class LatestVersion {
             case APACHE -> "https://downloads.apache.org/httpd/";
             case WILDFLY -> "https://repo1.maven.org/maven2/org/wildfly/wildfly-dist/maven-metadata.xml";
             case TOMCAT -> "https://downloads.apache.org/tomcat/";
+            // nginx.org 다운로드 페이지의 원본 XML (GitHub nginx/nginx.org 저장소)
+            case NGINX -> "https://raw.githubusercontent.com/nginx/nginx.org/main/xml/versions.xml";
         };
     }
 
-    /** 스크립트 기준값도 못 읽었을 때 쓰는 값 (2026-11-03 공식 배포 목록 기준) */
+    /** 스크립트 기준값도 못 읽었을 때 쓰는 값 (2026-11-03 공식 배포 목록 기준, Nginx 는 2026-11-10) */
     public static String fallback(Product p) {
         return switch (p) {
             case APACHE -> "2.4.69";
             case WILDFLY -> "41.0.1.Final";
             case TOMCAT -> "11.0.27,10.1.61,9.0.123";
+            case NGINX -> "1.31.8,1.30.6";
         };
     }
 
@@ -86,13 +91,14 @@ public class LatestVersion {
             case APACHE -> "2.4.69";
             case WILDFLY -> "41.0.1.Final";
             case TOMCAT -> "11.0.27, 10.1.61, 9.0.123";
+            case NGINX -> "1.31.8, 1.30.6";
         };
     }
 
     /** Tomcat "11.0.27 10.1.61, 9.0.123" → "11.0.27,10.1.61,9.0.123" (브랜치별 최고 버전, 높은 브랜치 먼저). 다른 제품은 공백 제거만 */
     static String normalize(Product p, String v) {
         if (v == null) return null;
-        if (p != Product.TOMCAT) return v.trim();
+        if (!p.branched()) return v.trim();
         Map<String, String> best = new TreeMap<>((a, b) -> ReportParser.compareVersions(b, a));
         for (String one : v.trim().split("[,\\s/]+")) {
             if (!TOMCAT_ONE.matcher(one).matches()) return null;
@@ -107,7 +113,7 @@ public class LatestVersion {
         return switch (p) {
             case APACHE -> APACHE_VERSION.matcher(v.trim()).matches();
             case WILDFLY -> WILDFLY_VERSION.matcher(v.trim()).matches();
-            case TOMCAT -> normalize(p, v) != null;
+            case TOMCAT, NGINX -> normalize(p, v) != null;
         };
     }
 
@@ -152,7 +158,7 @@ public class LatestVersion {
         if ("manual".equals(mode) && manualVersion != null) return manualVersion;
         if (autoVersion != null) {
             if (scriptBaseline == null) return autoVersion;
-            if (product == Product.TOMCAT) {
+            if (product.branched()) {
                 // 자동 확인한 브랜치 목록을 기준으로, 브랜치마다 스크립트 기준값과 높은 쪽
                 List<String> out = new ArrayList<>();
                 for (String v : autoVersion.split(",")) {
@@ -187,7 +193,7 @@ public class LatestVersion {
     public String latestFor(String version) {
         if (version == null) return null;
         String cur = current();
-        if (product != Product.TOMCAT) return cur;
+        if (!product.branched()) return cur;
         String br = branch(version);
         for (String v : cur.split(",")) {
             if (branch(v).equals(br)) return v;
@@ -197,14 +203,14 @@ public class LatestVersion {
 
     /** Tomcat 지원 브랜치가 아닌가 (다른 제품은 항상 false) */
     public boolean unsupportedBranch(String version) {
-        return product == Product.TOMCAT && version != null && latestFor(version) == null;
+        return product.branched() && version != null && latestFor(version) == null;
     }
 
     /** 최신 미만인가 (버전을 모르면 false). Tomcat 지원 종료 브랜치는 항상 true */
     public boolean below(String version) {
         if (version == null) return false;
         String l = latestFor(version);
-        if (l == null) return product == Product.TOMCAT;
+        if (l == null) return product.branched();
         return ReportParser.compareVersions(version, l) < 0;
     }
 
@@ -239,7 +245,7 @@ public class LatestVersion {
         boolean newer = false;
         if (scriptBaseline != null) {
             for (String v : current().split(",")) {
-                String b = product == Product.TOMCAT ? baselineFor(v) : scriptBaseline;
+                String b = product.branched() ? baselineFor(v) : scriptBaseline;
                 if (b == null || ReportParser.compareVersions(v, b) > 0) newer = true;
             }
         }
@@ -255,6 +261,9 @@ public class LatestVersion {
             if (product == Product.TOMCAT) {
                 found = fetchTomcat();
                 if (found == null) error = "목록에서 Tomcat 버전을 찾지 못함";
+            } else if (product == Product.NGINX) {
+                found = parseNginxVersions(Fetch.text(url));
+                if (found == null) error = "versions.xml 에서 mainline/stable 버전을 찾지 못함";
             } else {
                 found = parseListing(product, Fetch.text(url));
                 if (found == null) error = product == Product.APACHE ? "목록에서 httpd-2.4.x 파일을 찾지 못함" : "목록에서 N.N.N.Final 버전을 찾지 못함";
@@ -281,6 +290,14 @@ public class LatestVersion {
             }
             saveQuietly();
         }
+    }
+
+    /** Nginx versions.xml → "1.31.8,1.30.6" (mainline·stable 각 브랜치의 최신). 없으면 null */
+    static String parseNginxVersions(String body) {
+        Matcher m = NGINX_BRANCH.matcher(body == null ? "" : body);
+        List<String> out = new ArrayList<>();
+        while (m.find()) if (!out.contains(m.group(2))) out.add(m.group(2));
+        return out.isEmpty() ? null : normalize(Product.NGINX, String.join(",", out));
     }
 
     /** Tomcat: 배포 서버 폴더 목록(기본) 또는 Maven maven-metadata.xml(주소가 .xml 로 끝날 때) */

@@ -283,6 +283,12 @@ else
   }
   cat_conf "$NGINX_CONF_EFF" 0 > "$ALLCONF"
 fi
+# 한 줄에 여러 지시어를 적은 설정(예: server { listen 80; location / { proxy_pass ...; } })도 읽도록
+# ; { } 뒤에서 나눠 지시어마다 한 줄로 (파일:줄번호는 그대로 유지)
+awk '{ if (match($0, /^[^:]*:[0-9]+:/)) { pre = substr($0, 1, RLENGTH); c = substr($0, RLENGTH + 1)
+         gsub(/[;{}]/, "&\n", c); n = split(c, a, "\n")
+         for (i = 1; i <= n; i++) { t = a[i]; sub(/^[ \t]+/, "", t); if (t != "") print pre t } } }' "$ALLCONF" > "$WORK/allconf2.txt"
+mv "$WORK/allconf2.txt" "$ALLCONF"
 sed 's/^[^:]*:[0-9]*://' "$ALLCONF" > "$BODY"
 CONF_FILES="$(cut -d: -f1 "$ALLCONF" | awk '!s[$0]++')"
 if [ -s "$ALLCONF" ]; then
@@ -837,14 +843,29 @@ fi
 
 # 4-2 웹 루트(root·alias) 수집 → 웹쉘 의심 파일
 ROOTS="$WORK/roots.txt"
-{ sed -n 's/^[ \t]*\(root\|alias\)[ \t]\+\([^;]*\);.*/\2/p' "$BODY" | tr -d "\"'" | sed 's/[ \t]*$//'
-  [ -d /usr/share/nginx/html ] && echo /usr/share/nginx/html; } | while read -r d; do
+# 설정의 root·alias 값 (따옴표·끝 공백 제거)
+sed -n 's/^[ \t]*\(root\|alias\)[ \t]\+\([^;]*\);.*/\2/p' "$BODY" | tr -d "\"'" | sed 's/[ \t]*$//' > "$WORK/rootdirs.txt"
+N_ROOTDIR=$(grep -c . "$WORK/rootdirs.txt")
+N_VARROOT=$(grep -c '\$' "$WORK/rootdirs.txt")
+{ cat "$WORK/rootdirs.txt"
+  # root 를 한 번도 지정하지 않으면 nginx 기본값 "root html;" (설치 폴더 기준) 을 씀
+  grep -qE '^[ \t]*root[ \t]' "$BODY" || echo "html"; } | while read -r d; do
   case "$d" in *'$'*) continue ;; esac
   [[ "$d" != /* ]] && d="${NGINX_PREFIX_EFF%/}/$d"
   [ -d "$d" ] && echo "${d%/}"
 done | sort -u > "$ROOTS"
-if [ ! -s "$ROOTS" ]; then
+# 요청을 뒤쪽 서버로 넘기기만 하는 설정인가 (root·alias 없이 proxy_pass 등만 있음)
+PROXY_ONLY=0
+if [ "$N_ROOTDIR" -eq 0 ] && has '^[ \t]*(proxy_pass|fastcgi_pass|uwsgi_pass|scgi_pass|grpc_pass)[ \t]'; then PROXY_ONLY=1; fi
+if [ ! -s "$ROOTS" ] && [ "$PROXY_ONLY" -eq 1 ]; then
+  info "프록시 전용 서버 — root·alias 설정 없이 요청을 뒤쪽 서버로 넘기기만 하므로 이 서버에는 웹 파일 점검 대상이 없습니다. (웹쉘 점검은 뒤쪽 WAS 서버 결과에서 확인)"
+  cfg ':[ \t]*(proxy_pass|fastcgi_pass|uwsgi_pass|scgi_pass|grpc_pass)[ \t]' | head -n 5 | show
+elif [ ! -s "$ROOTS" ] && [ "$N_ROOTDIR" -gt 0 ] && [ "$N_VARROOT" -eq "$N_ROOTDIR" ]; then
+  warn "웹 루트(root·alias) 폴더를 찾지 못했습니다. 파일 기반 점검을 건너뜁니다. (경로가 모두 \$변수라 실제 폴더를 알 수 없음)"
+  head -n 5 "$WORK/rootdirs.txt" | show
+elif [ ! -s "$ROOTS" ]; then
   warn "웹 루트(root·alias) 폴더를 찾지 못했습니다. 파일 기반 점검을 건너뜁니다."
+  [ -s "$WORK/rootdirs.txt" ] && { detail "→ 설정에는 있으나 실제로 없는(또는 읽을 수 없는) 폴더:"; head -n 5 "$WORK/rootdirs.txt" | show; }
 else
   info "점검 대상 웹 루트: $(tr '\n' ' ' < "$ROOTS")"
   : > "$WORK/ws.txt"

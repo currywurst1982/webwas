@@ -80,6 +80,22 @@ class NginxTest {
         assertFalse(LatestVersion.validVersion(Product.NGINX, "nginx"));
     }
 
+    /** 프록시 전용 서버: [정보] 로 나오고 점검 사각지대(웹 파일 위치 못 찾음)로 세지 않음. 폴더를 못 찾은 경우는 그대로 사각지대 */
+    @Test
+    void proxyOnlyIsNotAGap() throws Exception {
+        String text = res("nginx_precheck_vm_20261110_050306_pid845.txt");
+        int i = text.indexOf("[정보] 점검 대상 웹 루트:");
+        int j = text.indexOf("\n[", text.indexOf("\n", i) + 1);
+        String proxy = text.substring(0, i)
+                + "[정보] 프록시 전용 서버 — root·alias 설정 없이 요청을 뒤쪽 서버로 넘기기만 하므로 이 서버에는 웹 파일 점검 대상이 없습니다. (웹쉘 점검은 뒤쪽 WAS 서버 결과에서 확인)\n"
+                + "        /etc/nginx/conf.d/app.conf:5:proxy_pass http://127.0.0.1:8080;\n" + text.substring(j + 1);
+        Report p = ReportParser.parse("nginx_precheck_vm_20261110_050306_pid845.txt", proxy);
+        assertEquals("info", find(p, "4", "프록시 전용 서버").level);
+        assertFalse(p.gaps().contains("webFiles"), p.gaps().toString());
+        String missing = text.substring(0, i) + "[주의] 웹 루트(root·alias) 폴더를 찾지 못했습니다. 파일 기반 점검을 건너뜁니다.\n" + text.substring(j + 1);
+        assertTrue(ReportParser.parse("nginx_precheck_vm_20261110_050306_pid845.txt", missing).gaps().contains("webFiles"));
+    }
+
     /** 에이전트의 스크립트 순서(SHA-256 계산 순서) = 대시보드 Product 순서 */
     @Test
     void agentProductOrderMatchesDashboard() throws Exception {

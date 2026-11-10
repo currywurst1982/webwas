@@ -141,11 +141,13 @@ show()    { while IFS= read -r line; do detail "$line"; done; }
 # 실행 계정의 다른 프로세스를 "누가 띄웠는지"로 나눔 (부모 프로세스를 거슬러 올라가며 확인)
 #   srv   : 서버 프로세스(PRECHECK_PID 또는 서버 프로그램)가 띄운 것 → 웹쉘·리버스쉘의 전형적인 모습
 #   login : sshd/su/sudo/login 에서 시작해 터미널이 붙어 있는 것 → 사람이 그 계정으로 로그인한 세션
+#   known : 같은 계정으로 도는 알려진 웹·WAS 서버(Tomcat·WildFly·Apache·Nginx) → 정보 (그 제품 리포트에서 따로 점검)
+#           이름만 흉내 낸 프로세스를 거르려고 실제 실행 파일(java·httpd·nginx)까지 확인
 #   other : 그 밖 (부모가 이미 끝나 init 에 붙은 백그라운드 프로세스 등) → 출처 확인 필요
 # 사용: split_user_procs 계정 '제외할 명령줄 정규식' '서버 프로그램 이름 정규식(ps comm)'
-# 결과: $WORK/ps_srv, $WORK/ps_login, $WORK/ps_other (한 줄: PID PPID 터미널 실행시간 명령줄 ← 시작한 곳)
+# 결과: $WORK/ps_srv, $WORK/ps_known, $WORK/ps_login, $WORK/ps_other (한 줄: PID PPID 터미널 실행시간 명령줄 ← 시작한 곳)
 split_user_procs() {
-  : > "$WORK/ps_srv"; : > "$WORK/ps_login"; : > "$WORK/ps_other"
+  : > "$WORK/ps_srv"; : > "$WORK/ps_known"; : > "$WORK/ps_login"; : > "$WORK/ps_other"
   ps -u "$1" -o pid=,ppid=,tty=,etime=,args= 2>/dev/null | grep -vE "$2" | while read -r pid ppid tty etime args; do
     [ "$pid" = "$$" ] && continue
     case "$args" in *"ps -u"*|grep\ *|*"<defunct>"*) continue ;; esac   # 점검 명령 자신, 이미 끝난 좀비 프로세스는 제외
@@ -158,7 +160,23 @@ split_user_procs() {
     done
     # 로그인에서 시작했어도 터미널이 없으면(백그라운드로 떼어 둔 것) 확인 필요로 분류
     [ "$kind" = login ] && [ "$tty" = "?" ] && kind=other
-    printf '%s %s %s %s %s  <- %s\n' "$pid" "$ppid" "$tty" "$etime" "$args" "${via:-시작한 곳 확인 불가(부모 종료)}" >> "$WORK/ps_$kind"
+    # 점검 중인 서버가 띄운 게 아니고, 같은 계정의 알려진 다른 웹·WAS 서버면 따로 분류
+    if [ "$kind" != srv ]; then
+      exe="$(readlink /proc/"$pid"/exe 2>/dev/null)"; exe="${exe% (deleted)}"; eb="${exe##*/}"
+      other_srv=""
+      case "$eb:$args" in
+        java:*org.apache.catalina.startup.Bootstrap*) other_srv="Tomcat $(printf '%s' "$args" | grep -oE -- '-Dcatalina\.(base|home)=[^ ]+' | head -n1 | cut -d= -f2-)" ;;
+        java:*jboss-modules.jar*) other_srv="WildFly $(printf '%s' "$args" | grep -oE -- '-Djboss\.home\.dir=[^ ]+' | head -n1 | cut -d= -f2-)" ;;
+        httpd:*|apache2:*) other_srv="Apache $exe" ;;
+        nginx:"nginx: master process"*|nginx:"nginx: worker process"*|nginx:"nginx: cache"*) other_srv="Nginx $exe" ;;
+      esac
+      if [ -n "$other_srv" ]; then kind=known; via="다른 서버: ${other_srv% }"; fi
+    fi
+    if [ "$kind" = known ]; then   # 명령줄이 길어 잘려도 어떤 서버인지 보이도록 앞에 표시
+      printf '[%s] %s %s %s %s %s\n' "${via#다른 서버: }" "$pid" "$ppid" "$tty" "$etime" "$args" >> "$WORK/ps_known"
+    else
+      printf '%s %s %s %s %s  <- %s\n' "$pid" "$ppid" "$tty" "$etime" "$args" "${via:-시작한 곳 확인 불가(부모 종료)}" >> "$WORK/ps_$kind"
+    fi
   done
 }
 # 위 결과를 리포트에 기록. $1 = 계정 설명(예: "WildFly 실행계정(was)"), $2 = 서버 이름(예: "WildFly")
@@ -169,6 +187,11 @@ report_user_procs() {
   fi
   if [ -s "$WORK/ps_other" ]; then any=1
     warn "$1 으로 실행 중인 다른 프로세스 (백그라운드 실행 — 채굴기 등 출처 확인 필요)"; cut -c1-220 "$WORK/ps_other" | show
+  fi
+  if [ -s "$WORK/ps_known" ]; then
+    info "$1 으로 실행 중인 다른 웹·WAS 서버 (같은 계정 — 해당 제품의 리포트에서 따로 점검됩니다)"
+    cut -c1-220 "$WORK/ps_known" | show
+    detail "→ 같은 계정이면 한 서버가 뚫렸을 때 다른 서버의 파일·프로세스도 건드릴 수 있습니다. 가능하면 서버마다 실행 계정을 나누는 것이 안전합니다."
   fi
   if [ -s "$WORK/ps_login" ]; then any=1
     info "$1 으로 로그인한 터미널 세션 (관리자 작업인지 확인: last ${RUN_USER} / /var/log/secure)"; cut -c1-220 "$WORK/ps_login" | show

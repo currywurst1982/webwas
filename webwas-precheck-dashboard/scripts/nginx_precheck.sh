@@ -311,7 +311,10 @@ if [ -z "$RUN_USER" ]; then
   RUN_USER="$(sed -n 's/^[ \t]*user[ \t]\+\([^ \t;]*\).*/\1/p' "$BODY" | head -n1)"
   [ -z "$RUN_USER" ] && id nobody >/dev/null 2>&1 && RUN_USER="nobody"
 fi
-info "실행 계정: ${RUN_USER:-확인 불가} (워커 프로세스)"
+# 마스터 프로세스 계정: 보통 root(포트를 연 뒤 워커만 user 계정으로 낮춤). web 처럼 일반 계정으로 직접 기동하기도 함
+MASTER_USER=""
+[ -n "${PRECHECK_PID:-}" ] && MASTER_USER="$(ps -o user= -p "$PRECHECK_PID" 2>/dev/null | tr -d ' ')"
+info "실행 계정: ${RUN_USER:-확인 불가} (워커 프로세스)${MASTER_USER:+ · 마스터 프로세스: $MASTER_USER}"
 
 # 설정에서 쓰는 기능 (CVE 해당 판정용). 이름은 CVE 목록의 "필요 기능" 칸과 같음
 has_feat() {
@@ -736,19 +739,28 @@ elif [ -n "$RUN_USER" ]; then
 fi
 
 # 3-8 설정·인증서 키 파일 권한
-BADP=""
+# 마스터가 root 인데 설정이 워커 계정 소유 → 워커 탈취 시 설정을 바꿔 root 마스터가 읽게 함(권한 상승 통로) = 위험
+# 마스터·워커가 모두 같은 일반 계정(web 등)으로 기동 → 그 계정 소유는 이 구성에서 일반적, 권한 상승 통로 아님 = 정보
+BADP=""; SAMEP=""
 while read -r f; do
   [ -f "$f" ] || continue
   m="$(stat -c '%a %U' "$f" 2>/dev/null)"; perm="${m%% *}"; own="${m#* }"
   if [ $(( 8#$perm & 8#002 )) -ne 0 ]; then BADP="$BADP$f ($perm $own, 누구나 수정 가능)"$'\n'
-  elif [ "$own" != "root" ] && [ -n "$RUN_USER" ] && [ "$own" = "$RUN_USER" ]; then BADP="$BADP$f ($perm $own, 웹 실행계정 소유)"$'\n'; fi
+  elif [ "$own" != "root" ] && [ -n "$RUN_USER" ] && [ "$own" = "$RUN_USER" ]; then
+    if [ -n "$MASTER_USER" ] && [ "$MASTER_USER" = "$RUN_USER" ]; then SAMEP="$SAMEP$f ($perm $own)"$'\n'
+    else BADP="$BADP$f ($perm $own, 웹 실행계정 소유${MASTER_USER:+ — 마스터는 $MASTER_USER})"$'\n'; fi
+  fi
 done <<< "$CONF_FILES"
 if [ -n "$BADP" ]; then
-  risk "설정 파일을 웹 실행계정이나 다른 사용자가 수정할 수 있음 → 설정 변조로 웹쉘·프록시 악용 가능. root 소유 + 644 권장"
+  risk "설정 파일을 웹 실행계정이나 다른 사용자가 수정할 수 있음 → 설정 변조로 웹쉘·프록시 악용 가능(마스터가 root 면 권한 상승 통로). root 소유 + 644 권장"
   printf '%s' "$BADP" | show
-else
-  ok "설정 파일 권한 이상 없음 (누구나 수정 가능·웹 실행계정 소유 파일 없음)"
+  [ -z "$MASTER_USER" ] && detail "→ nginx 가 실행 중이 아니라 마스터 프로세스 계정을 확인하지 못했습니다. 일반 계정으로 직접 기동하는 구성이면 위험이 낮을 수 있습니다."
 fi
+if [ -n "$SAMEP" ]; then
+  info "nginx 를 실행 계정($RUN_USER)으로 직접 기동하는 구성(마스터·워커 모두 $RUN_USER) — 설정 파일이 같은 계정 소유인 것은 이 구성에서 일반적이며 권한 상승 통로가 아닙니다. 다만 $RUN_USER 계정이 탈취되면 설정을 바꿔 트래픽 가로채기·프록시 악용이 가능하므로, 더 강화하려면 root 소유 644(읽기만 허용) + 설정 변경은 sudo 로"
+  printf '%s' "$SAMEP" | show
+fi
+[ -z "$BADP" ] && [ -z "$SAMEP" ] && ok "설정 파일 권한 이상 없음 (누구나 수정 가능·웹 실행계정 소유 파일 없음)"
 KEYS="$(sed -n 's/^[ \t]*ssl_certificate_key[ \t]\+\([^; \t]*\).*/\1/p' "$BODY" | tr -d "\"'" | sort -u)"
 BADK=""
 while read -r k; do

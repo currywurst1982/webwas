@@ -26,6 +26,9 @@ import java.util.logging.Logger;
  *  GET    /api/reports/{파일명}/raw   원본 텍스트
  *  POST   /api/reports               리포트 업로드 (관리자, multipart "files")
  *  DELETE /api/reports/{파일명}       리포트 삭제 (관리자, 휴지통으로 이동)
+ *  GET    /api/exceptions            예외(위험 수용) 목록
+ *  POST   /api/exceptions            (관리자) 예외 등록: report, section, text, scope=instance|product, reason, days=30|90|180|365
+ *  DELETE /api/exceptions/{id}       (관리자) 예외 해제
  *  POST   /api/reset                 점검 기록 초기화 (관리자) scope=instance|agent|product|old|all, value, dryRun=true(미리보기),
  *                                    confirm=초기화(실행 시 필수), agentState=true(scope=agent 일 때 에이전트 상태도 초기화)
  *  GET    /api/users                 사용자 목록 (관리자)
@@ -95,6 +98,7 @@ public class ApiServlet extends HttpServlet {
         } else if ((p.length == 2 || p.length == 3) && p[0].equals("reports")) {
             Report light = p[1] == null ? null : allReports(store).stream().filter(x -> x.id.equals(p[1])).findFirst().orElse(null);
             Report r = light == null ? null : store.full(light.id);
+            if (r != null && Web.exceptions(getServletContext()) != null) Web.exceptions(getServletContext()).apply(r, System.currentTimeMillis());
             if (r != null) r.fallbackIp = light.fallbackIp;
             if (r == null) {
                 Web.json(resp, 404, Map.of("error", "리포트를 찾을 수 없습니다."));
@@ -196,6 +200,10 @@ public class ApiServlet extends HttpServlet {
                 return m;
             }).toList());
             Web.json(resp, 200, out);
+        } else if (p.length == 1 && p[0].equals("exceptions")) {
+            long now = System.currentTimeMillis();
+            Web.json(resp, 200, Map.of("now", now, "items",
+                    Web.exceptions(getServletContext()).list().stream().map(e -> e.toMap(now)).toList()));
         } else if (p.length == 1 && p[0].equals("users")) {
             if (!requireAdmin(req, resp)) return;
             List<Map<String, Object>> out = new ArrayList<>();
@@ -251,6 +259,8 @@ public class ApiServlet extends HttpServlet {
             upload(req, resp);
         } else if (p.length == 1 && p[0].equals("reset")) {
             reset(req, resp);
+        } else if (p.length == 1 && p[0].equals("exceptions")) {
+            addException(req, resp);
         } else if (p.length == 1 && p[0].equals("users")) {
             String name = trim(req.getParameter("name"));
             String role = req.getParameter("role");
@@ -290,6 +300,10 @@ public class ApiServlet extends HttpServlet {
         if (p.length == 2 && p[0].equals("reports")) {
             boolean ok = Web.reports(getServletContext()).delete(p[1]);
             if (ok) LOG.info("[webwas-precheck] 리포트 삭제: " + p[1] + " by " + Web.user(req));
+            Web.json(resp, ok ? 200 : 404, Map.of("deleted", ok));
+        } else if (p.length == 2 && p[0].equals("exceptions")) {
+            boolean ok = Web.exceptions(getServletContext()).remove(p[1]);
+            if (ok) LOG.warning("[webwas-precheck] 예외(위험 수용) 해제: " + p[1] + " by " + Web.user(req));
             Web.json(resp, ok ? 200 : 404, Map.of("deleted", ok));
         } else if (p.length == 2 && p[0].equals("agents")) {
             boolean ok = Web.agents(getServletContext()).remove(p[1]);
@@ -395,6 +409,9 @@ public class ApiServlet extends HttpServlet {
         StringBuilder sb = new StringBuilder();
         sb.append(store.version()).append('|').append(scope).append('|').append(Web.latest(getServletContext()).summary());
         for (AgentStore.Agent a : Web.agents(getServletContext()).list()) sb.append('|').append(a.name).append('=').append(a.ip);
+        // 예외를 등록·해제하거나 만료되면 판정이 바뀌므로 응답도 새로
+        ExceptionStore ex = Web.exceptions(getServletContext());
+        if (ex != null) sb.append('|').append(ex.signature(System.currentTimeMillis()));
         return "\"" + Integer.toHexString(sb.toString().hashCode()) + Long.toHexString(store.version()) + "\"";
     }
 
@@ -433,8 +450,11 @@ public class ApiServlet extends HttpServlet {
             if (a.ip != null) agentIps.put(a.name, a.ip);
         }
         List<Report> all = store.all();
+        ExceptionStore ex = Web.exceptions(getServletContext());
+        long now = System.currentTimeMillis();
         for (Report r : all) {
             r.fallbackIp = r.source == null ? null : agentIps.get(r.source);
+            if (ex != null) ex.apply(r, now);
         }
         return all;
     }
@@ -460,6 +480,34 @@ public class ApiServlet extends HttpServlet {
 
     private static String ascii(String s) {
         return s == null ? "unknown" : s.replaceAll("[^A-Za-z0-9.-]+", "_");
+    }
+
+    /** 예외(위험 수용) 등록: 리포트의 항목(섹션 + 문구)을 찾아 그 항목을 예외로 */
+    private void addException(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        ReportStore store = Web.reports(getServletContext());
+        String id = req.getParameter("report"), section = req.getParameter("section"), text = req.getParameter("text");
+        Report r = id == null ? null : store.full(id);
+        Report.Finding f = r == null ? null : r.findings.stream()
+                .filter(x -> x.section.equals(section) && x.text.equals(text)).findFirst().orElse(null);
+        if (f == null) {
+            Web.json(resp, 404, Map.of("error", "리포트나 항목을 찾지 못했습니다. 화면을 새로 고친 뒤 다시 시도하세요."));
+            return;
+        }
+        int days;
+        try {
+            days = Integer.parseInt(req.getParameter("days"));
+        } catch (RuntimeException e) {
+            days = 0;
+        }
+        try {
+            ExceptionStore.Entry e = Web.exceptions(getServletContext()).add(r, f, req.getParameter("scope"), req.getParameter("reason"),
+                    days, Web.user(req), System.currentTimeMillis());
+            LOG.warning("[webwas-precheck] 예외(위험 수용) 등록: [" + f.level + "] " + f.text + " / 범위 " + e.scope + "=" + e.target
+                    + " / " + days + "일 / 사유: " + e.reason + " by " + Web.user(req));
+            Web.json(resp, 200, e.toMap(System.currentTimeMillis()));
+        } catch (IllegalArgumentException e) {
+            Web.json(resp, 400, Map.of("error", e.getMessage()));
+        }
     }
 
     /** 점검 기록 초기화. 미리보기(dryRun) → 확인 문구(confirm=초기화)를 넣어 실행. 지운 리포트는 휴지통으로 */

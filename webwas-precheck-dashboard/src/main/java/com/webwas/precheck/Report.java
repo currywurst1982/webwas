@@ -21,12 +21,18 @@ public class Report {
             this.text = text;
         }
 
+        /** 이 항목에 해당하는 유효한 예외(위험 수용). 요청마다 ExceptionStore.apply 로 다시 붙임. 없으면 null */
+        public volatile ExceptionStore.Entry exempt;
+
         Map<String, Object> toMap() {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("level", level);
             m.put("section", section);
             m.put("text", text);
             m.put("details", details);
+            ExceptionStore.Entry e = exempt;
+            m.put("exempt", e == null ? null : e.toMap(System.currentTimeMillis()));
+            m.put("exemptRefuse", ExceptionStore.refuseReason(this));
             return m;
         }
     }
@@ -41,6 +47,7 @@ public class Report {
         public String advisory;      // OSV 권고 ID (GHSA-..., WildFly·Tomcat)
         public boolean applicable;   // true=해당, false=모듈/구성요소가 없어 미해당
         public boolean backported;   // Apache 패키지 changelog 에 수정 기록 있음 (WildFly·Tomcat 은 항상 false)
+        public volatile ExceptionStore.Entry exempt;   // 이 CVE 항목을 예외 처리했으면 그 예외
 
         Map<String, Object> toMap() {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -52,6 +59,8 @@ public class Report {
             m.put("advisory", advisory);
             m.put("applicable", applicable);
             m.put("backported", backported);
+            ExceptionStore.Entry e = exempt;
+            m.put("exempt", e == null ? null : Map.of("reason", e.reason, "expiresAt", e.expiresAt, "by", e.by == null ? "" : e.by));
             return m;
         }
     }
@@ -117,11 +126,27 @@ public class Report {
         return findings.stream().anyMatch(f -> "4".equals(f.section) && "risk".equals(f.level));
     }
 
-    /** 전체 판정: compromise > risk > warn > ok */
+    /** 예외 처리된 항목 수 (level = risk | warn) */
+    public int exemptCount(String level) {
+        int n = 0;
+        for (Finding f : findings) if (f.exempt != null && level.equals(f.level)) n++;
+        return n;
+    }
+
+    /** 예외 처리된 항목을 뺀 위험·주의 건수 */
+    public int effectiveRisk() {
+        return Math.max(0, risk - exemptCount("risk"));
+    }
+
+    public int effectiveWarn() {
+        return Math.max(0, warn - exemptCount("warn"));
+    }
+
+    /** 전체 판정: compromise > risk > warn > ok (예외 처리된 항목은 빼고. [4] 의 [위험]은 예외 처리 불가) */
     public String status() {
         if (compromiseSuspected()) return "compromise";
-        if (risk > 0) return "risk";
-        if (warn > 0) return "warn";
+        if (effectiveRisk() > 0) return "risk";
+        if (effectiveWarn() > 0) return "warn";
         return "ok";
     }
 
@@ -129,7 +154,7 @@ public class Report {
         Map<String, Integer> m = new LinkedHashMap<>();
         for (String s : new String[] {"critical", "high", "moderate", "low"}) m.put(s, 0);
         for (Cve c : cves) {
-            if (!c.applicable) continue;
+            if (!c.applicable || c.exempt != null) continue;
             if (onlyUnpatched && c.backported) continue;
             m.merge(c.severity, 1, Integer::sum);
         }
@@ -153,7 +178,7 @@ public class Report {
             if (!"4".equals(f.section) || coverageGap(f)) continue;
             any = true;
             if ("risk".equals(f.level)) return "compromise";
-            if ("warn".equals(f.level)) warnFound = true;
+            if ("warn".equals(f.level) && f.exempt == null) warnFound = true;
         }
         return warnFound ? "check" : any ? "clean" : "none";
     }
@@ -242,17 +267,22 @@ public class Report {
         m.put("latestForVersion", latest == null ? null : latest.latestFor(product, version));
         m.put("intrusion", intrusionStatus());
         m.put("intrusionFindings", findings.stream()
-                .filter(f -> "4".equals(f.section) && !coverageGap(f) && ("risk".equals(f.level) || "warn".equals(f.level)))
+                .filter(f -> "4".equals(f.section) && !coverageGap(f) && f.exempt == null && ("risk".equals(f.level) || "warn".equals(f.level)))
                 .map(f -> Map.of("level", f.level, "text", f.text)).toList());
         m.put("eol", eol);
         m.put("eolLabel", eolLabel());
         m.put("cveDbInfo", cveDbInfo);
-        m.put("counts", Map.of("risk", risk, "warn", warn, "ok", ok, "info", info));
+        // 화면 건수는 예외 처리된 항목을 뺀 값. 원래 값은 rawCounts, 예외 건수는 exempt
+        m.put("counts", Map.of("risk", effectiveRisk(), "warn", effectiveWarn(), "ok", ok, "info", info));
+        m.put("rawCounts", Map.of("risk", risk, "warn", warn));
+        m.put("exempt", Map.of("risk", exemptCount("risk"), "warn", exemptCount("warn")));
         m.put("cveApplicable", cveCounts(false));
         m.put("cveUnpatched", cveCounts(true));
-        m.put("cveList", cves.stream().filter(c -> c.applicable).map(Cve::toMap).toList());
+        m.put("cveList", cves.stream().filter(c -> c.applicable && c.exempt == null).map(Cve::toMap).toList());
+        // 예외 처리한 CVE 번호 (검색에서는 계속 찾히도록)
+        m.put("cveExemptIds", cves.stream().filter(c -> c.applicable && c.exempt != null).map(c -> c.id).toList());
         m.put("configIssues", findings.stream()
-                .filter(f -> "3".equals(f.section) && ("risk".equals(f.level) || "warn".equals(f.level)))
+                .filter(f -> "3".equals(f.section) && f.exempt == null && ("risk".equals(f.level) || "warn".equals(f.level)))
                 .map(f -> Map.of("level", f.level, "text", f.text)).toList());
         m.put("dataQuality", dataQuality);
         m.put("gaps", gaps());

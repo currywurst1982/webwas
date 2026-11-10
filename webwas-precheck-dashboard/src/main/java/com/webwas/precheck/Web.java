@@ -28,6 +28,10 @@ final class Web {
         return (ReportStore) c.getAttribute(AppInit.ATTR_REPORTS);
     }
 
+    static ExceptionStore exceptions(ServletContext c) {
+        return (ExceptionStore) c.getAttribute(AppInit.ATTR_EXCEPTIONS);
+    }
+
     static AgentStore agents(ServletContext c) {
         return (AgentStore) c.getAttribute(AppInit.ATTR_AGENTS);
     }

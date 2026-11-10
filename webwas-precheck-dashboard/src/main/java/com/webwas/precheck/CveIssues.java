@@ -50,7 +50,7 @@ public final class CveIssues {
         Map<String, Item> items = new LinkedHashMap<>();
         for (Report r : reports) {
             for (Report.Cve c : r.cves) {
-                if (!c.applicable) continue;
+                if (!c.applicable || c.exempt != null) continue;
                 Item it = items.computeIfAbsent(c.id, Item::new);
                 if (it.severity == null) it.severity = c.severity;
                 if (it.description == null) it.description = c.description;

@@ -213,6 +213,7 @@
           <span class="chip" id="f-gap" hidden></span>
           <label class="check"><input id="f-dq" type="checkbox"> 데이터 경고 있는 것만</label>
           <button class="btn" id="btn-refresh" type="button"><svg><use href="#i-refresh"/></svg>새로고침</button>
+          <button class="btn" id="btn-csv" type="button" title="지금 걸러진 목록(검색·판정·제품·필터 그대로)을 엑셀에서 열 수 있는 CSV 로 저장">CSV 내보내기</button>
           <span class="muted" id="f-count"></span>
         </div>
 
@@ -310,6 +311,17 @@
             <p class="muted small-note">선택은 이 브라우저에만 저장됩니다. '시스템 설정'은 PC·휴대폰의 다크 모드 설정을 따라갑니다. 머리글의 해/달 버튼으로도 바로 바꿀 수 있습니다.</p>
           </article>
 
+          <article class="card exc-card" aria-labelledby="exc-list-title">
+            <div class="card-head"><h2 id="exc-list-title">예외(위험 수용) 목록</h2><span class="card-meta" id="exc-count"></span></div>
+            <div class="table-scroll">
+              <table class="servers compact">
+                <thead><tr><th>상태</th><th>항목</th><th>범위</th><th>사유</th><th>등록</th><th>만료</th><th class="admin-only"></th></tr></thead>
+                <tbody id="exc-rows"></tbody>
+              </table>
+            </div>
+            <p class="muted small-note">서버 상세 창 → 점검 결과의 [위험]·[주의] 항목에서 [예외 처리]로 등록합니다(관리자). [4] 침해 흔적의 [위험]은 예외 처리할 수 없습니다. 만료된 예외는 효력이 없으며 [해제]로 정리할 수 있습니다.</p>
+          </article>
+
           <article class="card admin-only" aria-labelledby="reset-title">
             <div class="card-head"><h2 id="reset-title">점검 기록 초기화</h2></div>
             <div class="reset-form">
@@ -394,7 +406,7 @@
     <div class="dialog-head"><h2 id="u-title">리포트 업로드</h2>
       <button class="btn" data-close type="button">닫기</button></div>
     <div class="dialog-body">
-      <p>점검 스크립트가 만든 <code>apache_precheck_*.txt</code> · <code>wildfly_precheck_*.txt</code> · <code>tomcat_precheck_*.txt</code> 파일을 선택하세요. 여러 개를 한 번에 올릴 수 있습니다. (파일당 5MB 이하)</p>
+      <p>점검 스크립트가 만든 <code>apache_precheck_*.txt</code> · <code>wildfly_precheck_*.txt</code> · <code>tomcat_precheck_*.txt</code> · <code>nginx_precheck_*.txt</code> 파일을 선택하세요. 여러 개를 한 번에 올릴 수 있습니다. (파일당 5MB 이하)</p>
       <label class="drop" id="drop">
         <input type="file" id="u-files" accept=".txt,text/plain" multiple>
         <span>여기로 파일을 끌어다 놓거나 눌러서 선택</span>
@@ -405,6 +417,30 @@
 
 
 
+
+  <dialog id="exc-dlg" class="dialog" aria-labelledby="exc-title">
+    <div class="dialog-head"><h2 id="exc-title">예외 처리 (위험 수용)</h2>
+      <button class="btn" data-close type="button">닫기</button></div>
+    <div class="dialog-body">
+      <div class="exc-item" id="exc-item"></div>
+      <form id="exc-form" class="exc-form">
+        <fieldset>
+          <legend>범위</legend>
+          <label class="chk"><input type="radio" name="exc-scope" value="instance" checked> 이 서버만 <span class="sub" id="exc-host"></span></label>
+          <label class="chk"><input type="radio" name="exc-scope" value="product"> 같은 제품 전체 <span class="sub" id="exc-prod"></span></label>
+        </fieldset>
+        <label>기간
+          <select id="exc-days"><option value="30">30일</option><option value="90" selected>90일</option><option value="180">180일</option><option value="365">365일</option></select>
+        </label>
+        <label>사유 (필수, 4자 이상)
+          <textarea id="exc-reason" rows="3" maxlength="300" placeholder="예: 방화벽으로 외부 접속 차단 확인(2026-11-10). 다음 정기 점검 때 재검토"></textarea>
+        </label>
+        <div class="row-actions"><button class="btn btn-primary" type="submit">예외 등록</button><button class="btn" type="button" data-close>취소</button></div>
+      </form>
+      <p class="muted small-note">예외 처리된 항목은 서버 판정·위험/주의 건수·설정 취약 항목·CVE 집계에서 빠지고, 점검 결과에는 '예외'로 계속 보입니다.
+        다음 점검에서 같은 항목이 다시 나와도 예외로 인식하며(문구 속 숫자는 무시), 기간이 지나면 자동으로 다시 경고합니다. 누가 언제 왜 예외 처리했는지 기록됩니다.</p>
+    </div>
+  </dialog>
 
   <dialog id="agent-dlg" class="dialog wide" aria-labelledby="ag-title">
     <div class="dialog-head"><h2 id="ag-title">에이전트 추가</h2>

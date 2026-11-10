@@ -70,7 +70,7 @@ public final class ConfigIssues {
         for (Report r : reports) {
             Set<String> seenInReport = new HashSet<>();
             for (Report.Finding f : r.findings) {
-                if (!"3".equals(f.section) || !("risk".equals(f.level) || "warn".equals(f.level))) continue;
+                if (!"3".equals(f.section) || !("risk".equals(f.level) || "warn".equals(f.level)) || f.exempt != null) continue;
                 String k = groupKey(r, f.text);
                 if (!seenInReport.add(k)) continue;
                 Item it = items.computeIfAbsent(k, x -> new Item(key(r.product, f.text)));

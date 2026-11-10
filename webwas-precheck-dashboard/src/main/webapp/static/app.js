@@ -168,7 +168,7 @@
       if (src && r.source !== src) return false;
       if (state.gapFilter && !(r.gaps || []).includes(state.gapFilter)) return false;
       if (!q) return true;
-      const hay = [r.host, ...(r.ips || []), r.productLabel, r.version, r.versionLine, r.binary, r.id, r.cveList.map(c => c.id).join(' ')].join(' ').toLowerCase();
+      const hay = [r.host, ...(r.ips || []), r.productLabel, r.version, r.versionLine, r.binary, r.id, r.cveList.map(c => c.id).join(' '), (r.cveExemptIds || []).join(' ')].join(' ').toLowerCase();
       return hay.includes(q);
     });
   }
@@ -191,6 +191,42 @@
       const c = x < y ? -1 : x > y ? 1 : 0;
       return asc ? c : -c;
     });
+  }
+
+  // ---------------------------------------------------------------- CSV 내보내기
+  /** 지금 걸러진 서버 목록을 CSV 로 저장. 엑셀이 한글을 바로 읽도록 UTF-8 BOM, 수식 주입 방지(=,+,-,@ 로 시작하면 ' 붙임) */
+  function exportCsv() {
+    const list = sortList(filtered());
+    if (!list.length) { alert('내보낼 결과가 없습니다. 검색·판정 조건을 확인하세요.'); return; }
+    const cell = v => {
+      let s = v == null ? '' : String(v);
+      if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+      return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    const head = ['판정', '제품', '호스트', 'IP', '바이너리', '설정', '버전', '버전 상태', '설치 방식', '점검 시각',
+      '위험', '주의', '양호', '예외(위험)', '예외(주의)', 'CVE critical', 'CVE high', 'CVE moderate', 'CVE low',
+      '점검 사각지대', '데이터 경고', '수집', '리포트'];
+    const rows = list.map(r => {
+      const cu = r.cveUnpatched || {};
+      const ex = r.exempt || {};
+      return [
+        (STATUS[r.status] || {}).label || r.status, r.productLabel || r.product, r.host, (r.ips || []).join(' ') || r.ip || '',
+        r.binary || '', r.confArg || '', r.version || '확인 불가',
+        r.eol ? r.eolLabel : r.belowLatest ? (r.latestForVersion ? `최신 ${r.latestForVersion} 미만` : '지원 종료 브랜치') : r.version ? '최신' : '',
+        r.installType || '', r.checkedAt || '', r.counts.risk, r.counts.warn, r.counts.ok, ex.risk || 0, ex.warn || 0,
+        cu.critical || 0, cu.high || 0, cu.moderate || 0, cu.low || 0,
+        (r.gaps || []).map(g => (GAPS[g] || [g])[0]).join(' / '), (r.dataQuality || []).join(' / '),
+        r.source ? `에이전트 ${r.source}` : '수동 업로드', r.id].map(cell).join(',');
+    });
+    const csv = '﻿' + [head.map(cell).join(','), ...rows].join('\r\n') + '\r\n';
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    const name = `webwas-precheck_servers_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.csv`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = h('a', { href: url, download: name });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   // ---------------------------------------------------------------- 렌더링
@@ -616,8 +652,8 @@
       return el;
     };
     $('#d-kpis').replaceChildren(
-      card(r.counts.risk, 'findings', 'risk', kpi('', r.counts.risk, '건', null, 'risk')),
-      card(r.counts.warn, 'findings', 'warn', kpi('', r.counts.warn, '건', null, 'warn')),
+      card(r.counts.risk, 'findings', 'risk', kpi('', r.counts.risk, '건', r.exempt && r.exempt.risk ? `예외 ${r.exempt.risk}건 제외` : null, 'risk')),
+      card(r.counts.warn, 'findings', 'warn', kpi('', r.counts.warn, '건', r.exempt && r.exempt.warn ? `예외 ${r.exempt.warn}건 제외` : null, 'warn')),
       card(r.counts.ok, 'findings', 'ok', kpi('', r.counts.ok, '건', null, 'ok')),
       card(ap, 'cves', '1', kpi('해당 CVE', ap, '건', MODSTYLE(r.product) ? `미조치 추정 ${un} / 백포트 추정 ${ap - un}` : `critical ${r.cveApplicable.critical || 0} · high ${r.cveApplicable.high || 0}`)),
       card(r.cves.length - ap, 'cves', '0', kpi('미해당 CVE', r.cves.length - ap, '건', MODSTYLE(r.product) ? `${COND_LABEL(r.product)} 미사용` : '구성요소 없음/다른 프로젝트'))
@@ -653,15 +689,21 @@
     const lv = dFilter.tab === 'findings' ? dFilter.value : null;
     let shown = 0;
     ['4', '3', '1', '2'].forEach(sec => { // 침해 흔적을 가장 먼저
-      const items = r.findings.filter(f => f.section === sec && (!lv || f.level === lv))
+      const items = r.findings.filter(f => f.section === sec && (!lv || (f.level === lv && !f.exempt)))
         .sort((a, b) => STATUS[a.level].rank - STATUS[b.level].rank);
       shown += items.length;
       if (!items.length) return;
       out.push(h('div', { class: 'sec' }, h('h3', null, SECTION_TITLE[sec] || sec),
-        ...items.map(f => h('div', { class: 'finding' },
-          h('div', null, badge(f.level)),
+        ...items.map(f => h('div', { class: 'finding' + (f.exempt ? ' exempt' : '') },
+          h('div', null, badge(f.level), f.exempt ? h('span', { class: 'badge b-exempt', title: '예외(위험 수용) — 판정·건수에서 제외' }, '예외') : null),
           h('div', null, f.text,
-            f.details.length ? h('details', { open: f.level === 'risk' || null },
+            f.exempt ? h('div', { class: 'exc-note' },
+              `예외: ${f.exempt.reason} · ${f.exempt.scope === 'product' ? (PRODUCTS[f.exempt.product] || f.exempt.product) + ' 전체' : '이 서버'} · ${abs(f.exempt.expiresAt)}까지 · ${f.exempt.by || '?'}`,
+              state.me && state.me.admin ? h('button', { class: 'btn-link', type: 'button', onclick: () => removeExc(f.exempt.id) }, '예외 해제') : null)
+              : (state.me && state.me.admin && (f.level === 'risk' || f.level === 'warn')
+                ? (f.exemptRefuse ? null : h('div', null, h('button', { class: 'btn-link exc-btn', type: 'button', onclick: () => openExc(r, f) }, '예외 처리')))
+                : null),
+            f.details.length ? h('details', { open: (f.level === 'risk' && !f.exempt) || null },
               h('summary', null, `상세 ${f.details.length}줄`), h('pre', { class: 'details' }, f.details.join('\n'))) : null)))));
     });
     if (lv) out.unshift(filterBar(r, shown));
@@ -685,6 +727,7 @@
         h('thead', null, h('tr', null, ...['판정', 'CVE', '등급', '설명', '영향 구간', MODSTYLE(r.product) ? COND_LABEL(r.product) : '설치된 구성요소'].map(t => h('th', null, t)))),
         h('tbody', null, ...rows.map(c => h('tr', null,
           h('td', null, !c.applicable ? h('span', { class: 'badge b-skip' }, '미해당')
+            : c.exempt ? h('span', { class: 'badge b-exempt', title: `예외: ${c.exempt.reason} (${abs(c.exempt.expiresAt)}까지)` }, '예외')
             : c.backported ? h('span', { class: 'badge b-backport' }, '백포트 추정') : badge(c.severity === 'critical' || c.severity === 'high' ? 'risk' : 'warn', '해당')),
           h('td', { class: 'mono nowrap' }, h('a', { href: 'https://www.cve.org/CVERecord?id=' + encodeURIComponent(c.id), target: '_blank', rel: 'noopener noreferrer' }, c.id),
             c.advisory ? h('div', { class: 'sub' }, h('a', { href: 'https://osv.dev/vulnerability/' + encodeURIComponent(c.advisory), target: '_blank', rel: 'noopener noreferrer' }, c.advisory)) : null),
@@ -746,6 +789,60 @@
       cves('새로 해당하는 미조치 CVE', d.cveNew, 'diff-add'),
       cves('해결(또는 백포트)된 CVE', d.cveResolved, 'diff-gone'),
       h('p', { class: 'muted small-note' }, '같은 항목인지 판단할 때 문구 안의 숫자(건수 등)는 무시합니다. 예: "경로 탐색 시도 3건" → "5건" 은 같은 항목으로 봅니다. 미조치 CVE = 해당하면서 패키지 백포트 기록이 없는 것.'));
+  }
+
+  // ---------------------------------------------------------------- 예외(위험 수용)
+  let excTarget = null;
+  function openExc(r, f) {
+    excTarget = { report: r.id, section: f.section, text: f.text };
+    $('#exc-item').replaceChildren(badge(f.level), ' ', h('span', { class: 'sub' }, (SECTION_TITLE[f.section] || f.section) + ' · '), f.text);
+    $('#exc-host').textContent = `(${r.host}${r.binary ? ' · ' + r.binary : ''})`;
+    $('#exc-prod').textContent = `(모든 ${PRODUCTS[r.product] || r.product} 서버의 같은 항목)`;
+    $('#exc-reason').value = '';
+    $('#exc-form').querySelector('input[value="instance"]').checked = true;
+    $('#exc-dlg').showModal();
+    $('#exc-reason').focus();
+  }
+
+  async function submitExc(ev) {
+    ev.preventDefault();
+    if (!excTarget) return;
+    const scope = $('#exc-form').querySelector('input[name="exc-scope"]:checked').value;
+    try {
+      await api('exceptions', { method: 'POST', body: new URLSearchParams(Object.assign({}, excTarget,
+        { scope, days: $('#exc-days').value, reason: $('#exc-reason').value })) });
+      $('#exc-dlg').close();
+      await afterExcChange();
+    } catch (e) { alert(e.message); }
+  }
+
+  async function removeExc(id) {
+    if (!confirm('이 예외를 해제할까요? 해제하면 다음 화면부터 다시 위험·주의로 집계됩니다.')) return;
+    try { await api('exceptions/' + encodeURIComponent(id), { method: 'DELETE' }); await afterExcChange(); }
+    catch (e) { alert(e.message); }
+  }
+
+  async function afterExcChange() {
+    if ($('#detail').open && current) await openDetail(current.id);
+    await load();
+    await loadExceptions();
+  }
+
+  async function loadExceptions() {
+    let data;
+    try { data = await api('exceptions'); } catch (e) { return; }
+    const items = data.items || [];
+    const active = items.filter(x => x.active).length;
+    $('#exc-count').textContent = items.length ? `유효 ${active}건 / 만료 ${items.length - active}건` : '';
+    $('#exc-rows').replaceChildren(...(items.length ? items.map(x => h('tr', { class: x.active ? null : 'muted' },
+      h('td', null, x.active ? h('span', { class: 'badge b-exempt' }, '유효') : h('span', { class: 'badge b-skip' }, '만료')),
+      h('td', null, badge(x.level), ' ', prodBadge(x.product), ' ', h('span', null, x.text)),
+      h('td', null, x.scope === 'product' ? `${PRODUCTS[x.product] || x.product} 전체` : `서버 ${x.host || '?'}`),
+      h('td', null, x.reason),
+      h('td', { class: 'nowrap' }, h('div', null, x.by || '?'), h('div', { class: 'sub' }, abs(x.createdAt))),
+      h('td', { class: 'nowrap', title: abs(x.expiresAt) }, abs(x.expiresAt).split(' ').slice(0, 3).join(' ')),
+      h('td', { class: 'admin-only' }, h('button', { class: 'btn small', type: 'button', onclick: () => removeExc(x.id) }, '해제'))))
+      : [h('tr', null, h('td', { colspan: '7', class: 'muted' }, '등록된 예외가 없습니다.'))]));
   }
 
   function selectTab(name) {
@@ -1255,6 +1352,7 @@
     $('#tooltip').hidden = true;
     if (!fromHash && location.hash.slice(1) !== name) history.replaceState(null, '', '#' + name);
     if (!fromHash) window.scrollTo({ top: 0 });
+    if (name === 'settings') loadExceptions();
   }
 
   function tickClock() {
@@ -1894,6 +1992,7 @@
       await load();
     });
     $('#btn-refresh').addEventListener('click', refreshAll);
+    $('#btn-csv').addEventListener('click', exportCsv);
     $$('#servers th[data-sort]').forEach(th => th.addEventListener('click', () => {
       const k = th.dataset.sort;
       state.sort = { key: k, asc: state.sort.key === k ? !state.sort.asc : k === 'status' || k === 'host' };
@@ -1915,6 +2014,7 @@
       catch (e) { alert(e.message); }
     });
 
+    $('#exc-form').addEventListener('submit', submitExc);
     $('#d-reset-instance').addEventListener('click', async () => {
       if (!current) return;
       const label = `${PRODUCTS[current.product] || current.product} ${current.host}` + (current.binary ? ` (${current.binary})` : '');

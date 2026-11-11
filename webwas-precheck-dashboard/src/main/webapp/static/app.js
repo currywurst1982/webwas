@@ -1433,9 +1433,15 @@
 
   // ---------------------------------------------------------------- 화면 전환 · 시계
   const VIEWS = ['overview', 'security', 'vuln', 'trends', 'servers', 'agents', 'settings'];
+  // 개요(요약)와 그 하위 보기: 모두 overview 섹션을 쓰되, 하위 보기는 해당 분류 카드만 (요약은 전부)
+  const OVERVIEW_FILTER = { overview: '', security: 'security', vuln: 'vuln', trends: 'trends' };
   function showView(name, fromHash) {
     if (!VIEWS.includes(name)) name = 'overview';
-    $$('section.view').forEach(v => { v.hidden = v.dataset.view !== name; });
+    const isOv = Object.prototype.hasOwnProperty.call(OVERVIEW_FILTER, name);
+    const section = isOv ? 'overview' : name;
+    $$('section.view').forEach(v => { v.hidden = v.dataset.view !== section; });
+    const ovSec = $('section.view[data-view="overview"]');
+    if (ovSec) { const flt = OVERVIEW_FILTER[name]; if (flt) ovSec.dataset.filter = flt; else delete ovSec.dataset.filter; }
     $$('.rail-btn, .tab-btn').forEach(b => {
       if (b.dataset.view === name) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });

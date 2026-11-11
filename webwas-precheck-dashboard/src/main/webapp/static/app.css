@@ -287,10 +287,14 @@ select option { background: var(--bg2); }
     "appt emerg cve"
     "gaps gaps gaps";
 }
-/* 개요를 주제별 하위 화면으로 나눈 뒤의 카드 배치 (자동 흐름) */
-.dash-sub { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: start; margin-top: 14px; }
-.dash-sub .card { grid-area: auto; }             /* 개요 grid-area 이름(hero/trend/…) 무시하고 자동 흐름 */
-.dash-sub .card.hero { grid-column: 1 / -1; }    /* 서버 현황판은 가로 전체 */
+/* 요약의 하위 보기(침해·취약점·현황): 해당 분류 카드만, 자동 흐름으로 보기 좋게. 요약(필터 없음)은 위 원래 배치 그대로 */
+section[data-view="overview"][data-filter] #kpis { display: none; }
+section[data-view="overview"][data-filter] .dash { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); grid-template-areas: none; align-items: start; }
+section[data-view="overview"][data-filter] .dash > .card { grid-area: auto; }
+section[data-view="overview"][data-filter] .dash > .card.hero { grid-column: 1 / -1; }
+section[data-view="overview"][data-filter="security"] .dash > .card:not([data-cat="security"]),
+section[data-view="overview"][data-filter="vuln"] .dash > .card:not([data-cat="vuln"]),
+section[data-view="overview"][data-filter="trends"] .dash > .card:not([data-cat="trends"]) { display: none; }
 .hero { grid-area: hero; }
 .trend { grid-area: trend; }
 .donut-card { grid-area: donut; }

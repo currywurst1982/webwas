@@ -1491,6 +1491,50 @@
   function loadPref(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
   function savePref(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 저장 불가 환경 */ } }
 
+  // ---- 왼쪽 바 메뉴 순서(드래그로 변경, 저장) ----
+  function applyNavOrder() {
+    let order;
+    try { order = JSON.parse(localStorage.getItem('precheck.railOrder') || 'null'); } catch (e) { order = null; }
+    if (!Array.isArray(order)) return;
+    ['.rail', '.tabbar'].forEach(sel => {
+      const nav = $(sel);
+      if (!nav) return;
+      const byView = {};
+      $$('[data-view]', nav).forEach(b => { byView[b.dataset.view] = b; });
+      order.forEach(v => { if (byView[v]) nav.appendChild(byView[v]); }); // 저장된 순서대로 재배치(로고는 data-view 가 없어 그대로)
+    });
+  }
+  function saveNavOrder() {
+    const order = $$('.rail .rail-btn').map(b => b.dataset.view);
+    savePref('precheck.railOrder', JSON.stringify(order));
+    const tb = $('.tabbar');
+    if (tb) { const byView = {}; $$('[data-view]', tb).forEach(b => { byView[b.dataset.view] = b; }); order.forEach(v => { if (byView[v]) tb.appendChild(byView[v]); }); }
+  }
+  function initRailDrag() {
+    const rail = $('.rail');
+    if (!rail) return;
+    let dragged = null;
+    $$('.rail-btn', rail).forEach(btn => {
+      btn.draggable = true;
+      btn.addEventListener('dragstart', e => {
+        dragged = btn; btn.classList.add('rail-dragging'); rail.classList.add('rail-reordering');
+        if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', btn.dataset.view); } catch (_) { /* 무시 */ } }
+      });
+      btn.addEventListener('dragend', () => { btn.classList.remove('rail-dragging'); rail.classList.remove('rail-reordering'); dragged = null; saveNavOrder(); });
+    });
+    rail.addEventListener('dragover', e => {
+      if (!dragged) return;
+      e.preventDefault();
+      const target = $$('.rail-btn:not(.rail-dragging)', rail).find(b => {
+        const r = b.getBoundingClientRect();
+        return e.clientY <= r.top + r.height / 2;
+      });
+      if (target) { if (target !== dragged.nextSibling) rail.insertBefore(dragged, target); }
+      else if (rail.lastElementChild !== dragged) rail.appendChild(dragged);
+    });
+    rail.addEventListener('drop', e => e.preventDefault());
+  }
+
   /** 같은 서버(호스트 + IP)의 인스턴스를 하나로 묶음. 가장 나쁜 판정 = 서버 판정 */
   function groupServers(list) {
     const byServer = new Map();
@@ -2163,7 +2207,9 @@
     });
 
     $('#btn-agents').addEventListener('click', () => { showView('agents'); loadAgents(); });
+    applyNavOrder();   // 저장된 메뉴 순서 적용 (클릭 바인딩 전에)
     $$('[data-view]').forEach(b => { if (b.tagName === 'BUTTON') b.addEventListener('click', () => showView(b.dataset.view)); });
+    initRailDrag();    // 왼쪽 바 드래그로 순서 변경
     $$('[data-goto]').forEach(b => b.addEventListener('click', () => showView(b.dataset.goto)));
     $$('[data-click]').forEach(b => b.addEventListener('click', () => $('#' + b.dataset.click).click()));
     $('#btn-bell').addEventListener('click', () => {

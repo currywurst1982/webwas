@@ -84,8 +84,12 @@ public class ExceptionStore {
     /** 예외 처리 가능한 항목인가 (사유는 화면에 그대로 보여 줌) */
     public static String refuseReason(Report.Finding f) {
         if (!"risk".equals(f.level) && !"warn".equals(f.level)) return "[위험]·[주의] 항목만 예외 처리할 수 있습니다.";
-        if ("4".equals(f.section) && "risk".equals(f.level)) return "[4] 침해 흔적의 [위험]은 예외 처리할 수 없습니다. 침해사고 대응이 우선입니다.";
         return null;
+    }
+
+    /** [4] 침해 흔적의 [위험]을 예외 처리하는 경우인가 (화면에서 강한 경고를 띄우기 위함) */
+    public static boolean isIntrusionRisk(Report.Finding f) {
+        return "4".equals(f.section) && "risk".equals(f.level);
     }
 
     public synchronized Entry add(Report r, Report.Finding f, String scope, String reason, int days, String by, long now) throws IOException {

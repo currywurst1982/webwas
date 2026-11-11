@@ -813,6 +813,7 @@
     $('#exc-item').replaceChildren(badge(f.level), ' ', h('span', { class: 'sub' }, (SECTION_TITLE[f.section] || f.section) + ' · '), f.text);
     $('#exc-host').textContent = `(${r.host}${r.binary ? ' · ' + r.binary : ''})`;
     $('#exc-prod').textContent = `(모든 ${PRODUCTS[r.product] || r.product} 서버의 같은 항목)`;
+    $('#exc-warn').hidden = !(f.section === '4' && f.level === 'risk'); // 침해 흔적 [위험]이면 강한 경고
     $('#exc-reason').value = '';
     $('#exc-form').querySelector('input[value="instance"]').checked = true;
     $('#exc-dlg').showModal();

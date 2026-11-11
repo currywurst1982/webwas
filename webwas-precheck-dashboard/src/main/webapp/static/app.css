@@ -624,6 +624,8 @@ pre.raw { margin: 0; padding: 12px; background: var(--code-bg); border: 1px soli
 .exc-note { margin-top: 4px; font-size: 12px; color: var(--ink-2); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .exc-btn { font-size: 12px; margin-top: 2px; }
 .exc-item { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--code-bg); margin-bottom: 12px; font-size: 13px; }
+.exc-warn { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font-size: 12.5px; line-height: 1.5;
+  color: var(--s-critical-ink); background: var(--s-critical-bg); border: 1px solid rgba(229, 72, 77, .4); }
 .exc-form { display: grid; gap: 12px; }
 .exc-form fieldset { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; display: grid; gap: 6px; }
 .exc-form label { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }

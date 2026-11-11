@@ -1,6 +1,7 @@
 package com.webwas.precheck;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -76,17 +77,13 @@ class ExceptionStoreTest {
         Report r = parse(NGINX, NGINX);
         long now = 1_800_000_000_000L;
 
-        Report.Finding risk4 = find(r, "4", "경로 탐색 시도 중 200");
-        assertNotNull(ExceptionStore.refuseReason(risk4));
-        assertThrows(IllegalArgumentException.class, () -> ex.add(r, risk4, "instance", "오탐으로 판단함", 90, "admin", now));
-
         Report.Finding alias = find(r, "3", "alias 경로 탐색 위험");
         assertThrows(IllegalArgumentException.class, () -> ex.add(r, alias, "instance", "짧", 90, "admin", now), "사유 4자 미만");
         assertThrows(IllegalArgumentException.class, () -> ex.add(r, alias, "instance", "충분한 사유", 7, "admin", now), "허용 기간 아님");
         assertThrows(IllegalArgumentException.class, () -> ex.add(r, alias, "all", "충분한 사유", 30, "admin", now), "범위 오류");
         ex.add(r, alias, "instance", "내부 전용 경로, 외부 차단", 30, "admin", now);
         ex.apply(r, now);
-        assertEquals("compromise", r.status(), "[4] 위험은 예외와 상관없이 침해 의심");
+        assertEquals("compromise", r.status(), "[4] 침해 흔적 [위험]이 아직 남아 있어 침해 의심");
 
         // 다음 점검: 문구 속 숫자만 바뀐 항목도 같은 예외로 인식, 판정 반영
         String next = ReportParserTest.resource(NGINX).replace("[주의] 지원 종료(EOL) 브랜치 Nginx 1.24.x", "[주의] 지원 종료(EOL) 브랜치 Nginx 1.26.x");
@@ -105,6 +102,36 @@ class ExceptionStoreTest {
         assertNotEquals(sig, again.signature(now));
         assertEquals(1, new ExceptionStore(tmp.resolve("exceptions.properties")).list().size());
         assertTrue(Files.readString(tmp.resolve("exceptions.properties")).contains(".reason="));
+    }
+
+    @Test
+    void intrusionRiskCanBeExemptedAndClearsCompromise() throws Exception {
+        ExceptionStore ex = new ExceptionStore(tmp.resolve("exceptions.properties"));
+        Report r = parse(NGINX, NGINX);
+        long now = 1_800_000_000_000L;
+        ex.apply(r, now);
+        assertEquals("compromise", r.status(), "[4] 침해 흔적 [위험]이 있어 처음엔 침해 의심");
+
+        // [4] 침해 흔적 [위험]도 이제 예외 처리 가능 (입력 검증은 그대로)
+        Report.Finding risk4 = find(r, "4", "경로 탐색 시도 중 200");
+        assertNull(ExceptionStore.refuseReason(risk4));
+        assertTrue(ExceptionStore.isIntrusionRisk(risk4));
+        assertThrows(IllegalArgumentException.class, () -> ex.add(r, risk4, "instance", "짧", 90, "admin", now), "사유 4자 미만");
+        assertThrows(IllegalArgumentException.class, () -> ex.add(r, risk4, "all", "충분한 사유", 30, "admin", now), "범위 오류");
+
+        // [4] 위험을 전부 예외 처리하면 침해 의심에서 빠짐 (항목은 '예외'로 계속 보임)
+        for (Report.Finding f : new java.util.ArrayList<>(r.findings)) {
+            if (ExceptionStore.isIntrusionRisk(f)) ex.add(r, f, "instance", "오탐 확인(격리망·내부 점검 로그 대조)", 90, "admin", now);
+        }
+        ex.apply(r, now);
+        assertFalse(r.compromiseSuspected(), "모두 예외 처리하면 침해 의심 아님");
+        assertNotEquals("compromise", r.intrusionStatus());
+        assertNotEquals("compromise", r.status());
+        assertNotNull(find(r, "4", "경로 탐색 시도 중 200").exempt, "예외 항목은 그대로 남아 표시됨");
+
+        // 만료되면 다시 침해 의심
+        ex.apply(r, now + 91L * DAY);
+        assertTrue(r.compromiseSuspected(), "예외 기간이 지나면 다시 침해 의심");
     }
 
     @Test

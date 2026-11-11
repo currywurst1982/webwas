@@ -124,7 +124,8 @@ public class Report {
     }
 
     public boolean compromiseSuspected() {
-        return findings.stream().anyMatch(f -> "4".equals(f.section) && "risk".equals(f.level));
+        // 예외 처리(위험 수용)된 [4] 위험은 침해 판정에서 제외 (항목은 '예외'로 계속 보임)
+        return findings.stream().anyMatch(f -> "4".equals(f.section) && "risk".equals(f.level) && f.exempt == null);
     }
 
     /** 예외 처리된 항목 수 (level = risk | warn) */
@@ -143,7 +144,7 @@ public class Report {
         return Math.max(0, warn - exemptCount("warn"));
     }
 
-    /** 전체 판정: compromise > risk > warn > ok (예외 처리된 항목은 빼고. [4] 의 [위험]은 예외 처리 불가) */
+    /** 전체 판정: compromise > risk > warn > ok (예외 처리된 항목은 모두 빼고. [4] 침해 흔적의 [위험]도 예외 처리하면 제외) */
     public String status() {
         if (compromiseSuspected()) return "compromise";
         if (effectiveRisk() > 0) return "risk";
@@ -178,7 +179,7 @@ public class Report {
         for (Finding f : findings) {
             if (!"4".equals(f.section) || coverageGap(f)) continue;
             any = true;
-            if ("risk".equals(f.level)) return "compromise";
+            if ("risk".equals(f.level) && f.exempt == null) return "compromise";
             if ("warn".equals(f.level) && f.exempt == null) warnFound = true;
         }
         return warnFound ? "check" : any ? "clean" : "none";

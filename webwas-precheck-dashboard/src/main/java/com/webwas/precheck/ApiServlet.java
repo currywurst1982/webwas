@@ -176,8 +176,14 @@ public class ApiServlet extends HttpServlet {
             out.put("agentUrl", Web.settings(getServletContext()).agentUrl());
             LatestVersions lv = Web.latest(getServletContext());
             List<Report> latestReports = ConfigIssues.latestPerInstance(allReports(Web.reports(getServletContext())));
+            IpGroupRules ipg = Web.ipGroups(getServletContext());
+            out.put("ipGroups", ipg == null ? List.of() : ipg.list().stream().map(IpGroupRules.Rule::toMap).toList());
             out.put("agents", Web.agents(getServletContext()).list().stream().map(a -> {
                 Map<String, Object> m = a.toMap(now, expected);
+                // 실제 적용되는 그룹: 수동 라벨 우선, 없으면 IP 규칙(접속 IP 기준)
+                String eff = a.group != null && !a.group.isEmpty() ? a.group : (ipg == null ? null : ipg.match(a.ip));
+                m.put("effectiveGroup", eff);
+                m.put("groupFromRule", (a.group == null || a.group.isEmpty()) && eff != null);
                 // 마지막 점검의 제품·인스턴스 전체 (같은 제품이 여러 개여도, 버전을 못 읽었어도 모두)
                 List<Map<String, Object>> insts = new ArrayList<>();
                 for (Report r : AgentStore.lastRunInstances(latestReports, a.name)) {
@@ -206,6 +212,9 @@ public class ApiServlet extends HttpServlet {
             long now = System.currentTimeMillis();
             Web.json(resp, 200, Map.of("now", now, "items",
                     Web.exceptions(getServletContext()).list().stream().map(e -> e.toMap(now)).toList()));
+        } else if (p.length == 1 && p[0].equals("ip-groups")) {
+            Web.json(resp, 200, Map.of("rules",
+                    Web.ipGroups(getServletContext()).list().stream().map(IpGroupRules.Rule::toMap).toList()));
         } else if (p.length == 1 && p[0].equals("users")) {
             if (!requireAdmin(req, resp)) return;
             List<Map<String, Object>> out = new ArrayList<>();
@@ -271,6 +280,14 @@ public class ApiServlet extends HttpServlet {
             }
         } else if (p.length == 1 && p[0].equals("exceptions")) {
             addException(req, resp);
+        } else if (p.length == 1 && p[0].equals("ip-groups")) {
+            try {
+                IpGroupRules.Rule r = Web.ipGroups(getServletContext()).add(req.getParameter("pattern"), req.getParameter("group"));
+                LOG.info("[webwas-precheck] IP 자동 그룹 규칙 추가: " + r.pattern + " → " + r.group + " by " + Web.user(req));
+                Web.json(resp, 200, r.toMap());
+            } catch (IllegalArgumentException e) {
+                Web.json(resp, 400, Map.of("error", e.getMessage()));
+            }
         } else if (p.length == 1 && p[0].equals("users")) {
             String name = trim(req.getParameter("name"));
             String role = req.getParameter("role");
@@ -318,6 +335,12 @@ public class ApiServlet extends HttpServlet {
         } else if (p.length == 2 && p[0].equals("agents")) {
             boolean ok = Web.agents(getServletContext()).remove(p[1]);
             if (ok) LOG.info("[webwas-precheck] 에이전트 삭제: " + p[1] + " by " + Web.user(req));
+            Web.json(resp, ok ? 200 : 404, Map.of("deleted", ok));
+        } else if (p.length == 2 && p[0].equals("ip-groups")) {
+            int idx;
+            try { idx = Integer.parseInt(p[1]); } catch (NumberFormatException e) { idx = -1; }
+            boolean ok = idx >= 0 && Web.ipGroups(getServletContext()).remove(idx);
+            if (ok) LOG.info("[webwas-precheck] IP 자동 그룹 규칙 삭제 #" + idx + " by " + Web.user(req));
             Web.json(resp, ok ? 200 : 404, Map.of("deleted", ok));
         } else if (p.length == 2 && p[0].equals("users")) {
             UserStore users = Web.users(getServletContext());
@@ -423,6 +446,8 @@ public class ApiServlet extends HttpServlet {
         StringBuilder sb = new StringBuilder();
         sb.append(store.version()).append('|').append(scope).append('|').append(Web.latest(getServletContext()).summary());
         for (AgentStore.Agent a : Web.agents(getServletContext()).list()) sb.append('|').append(a.name).append('=').append(a.ip).append('#').append(a.group);
+        IpGroupRules ipg = Web.ipGroups(getServletContext());
+        if (ipg != null) sb.append('|').append(ipg.signature());
         // 예외를 등록·해제하거나 만료되면 판정이 바뀌므로 응답도 새로
         ExceptionStore ex = Web.exceptions(getServletContext());
         if (ex != null) sb.append('|').append(ex.signature(System.currentTimeMillis()));
@@ -467,10 +492,21 @@ public class ApiServlet extends HttpServlet {
         }
         List<Report> all = store.all();
         ExceptionStore ex = Web.exceptions(getServletContext());
+        IpGroupRules ipg = Web.ipGroups(getServletContext());
         long now = System.currentTimeMillis();
         for (Report r : all) {
             r.fallbackIp = r.source == null ? null : agentIps.get(r.source);
-            r.group = r.source == null ? null : agentGroups.get(r.source);
+            // 그룹: 에이전트에 직접 지정한 라벨이 우선, 없으면 IP 자동 규칙(리포트 IP·접속 IP 로 판정)
+            String manual = r.source == null ? null : agentGroups.get(r.source);
+            if (manual != null && !manual.isEmpty()) {
+                r.group = manual;
+            } else if (ipg != null) {
+                List<String> cand = new ArrayList<>(r.ips);
+                if (r.fallbackIp != null) cand.add(r.fallbackIp);
+                r.group = ipg.matchAny(cand);
+            } else {
+                r.group = null;
+            }
             if (ex != null) ex.apply(r, now);
         }
         return all;

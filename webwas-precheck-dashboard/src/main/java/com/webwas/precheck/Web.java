@@ -28,6 +28,10 @@ final class Web {
         return (ReportStore) c.getAttribute(AppInit.ATTR_REPORTS);
     }
 
+    static IpGroupRules ipGroups(ServletContext c) {
+        return (IpGroupRules) c.getAttribute(AppInit.ATTR_IPGROUPS);
+    }
+
     static SiteSettings settings(ServletContext c) {
         return (SiteSettings) c.getAttribute(AppInit.ATTR_SETTINGS);
     }

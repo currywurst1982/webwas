@@ -35,6 +35,7 @@ public class AppInit implements ServletContextListener {
     public static final String ATTR_AGENTS = "precheck.agents";
     public static final String ATTR_EXCEPTIONS = "precheck.exceptions";
     public static final String ATTR_SETTINGS = "precheck.settings";
+    public static final String ATTR_IPGROUPS = "precheck.ipgroups";
     /**
      * WAR 에 들어 있는 점검 스크립트 전체(Product 순서: apache → wildfly → tomcat → nginx 로 이어 붙인 내용)의 SHA-256.
      * 에이전트도 같은 순서로 계산해 보내므로 "에이전트 쪽 스크립트가 대시보드와 같은지" 비교에 씀.
@@ -103,6 +104,7 @@ public class AppInit implements ServletContextListener {
             ctx.setAttribute(ATTR_AGENTS, new AgentStore(data.resolve("agents.properties")));
             ctx.setAttribute(ATTR_EXCEPTIONS, new ExceptionStore(data.resolve("exceptions.properties")));
             ctx.setAttribute(ATTR_SETTINGS, new SiteSettings(data.resolve("settings.properties")));
+            ctx.setAttribute(ATTR_IPGROUPS, new IpGroupRules(data.resolve("ipgroups.properties")));
             Map<Product, String> scripts = new EnumMap<>(Product.class);
             Map<Product, String> baselines = new EnumMap<>(Product.class);
             MessageDigest sha = MessageDigest.getInstance("SHA-256");

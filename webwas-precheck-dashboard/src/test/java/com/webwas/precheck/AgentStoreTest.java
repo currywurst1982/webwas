@@ -40,7 +40,9 @@ class AgentStoreTest {
     @Test
     void rejectsBadNames() throws Exception {
         AgentStore s = new AgentStore(dir.resolve("a.properties"));
-        assertThrows(IllegalArgumentException.class, () -> s.create("web_01", 24)); // 밑줄은 파일명 구분자라 금지
+        s.create("web_01", 24);                                                     // 밑줄 1개는 허용
+        assertThrows(IllegalArgumentException.class, () -> s.create("web__01", 24)); // 연속 밑줄은 파일명 구분자라 금지
+        assertThrows(IllegalArgumentException.class, () -> s.create("_web", 24));    // 영문·숫자로 시작해야 함
         assertThrows(IllegalArgumentException.class, () -> s.create("../x", 24));
         assertThrows(IllegalArgumentException.class, () -> s.create("w", 24));
         s.create("web-01.prod", 24);

@@ -28,8 +28,8 @@ import java.util.regex.Pattern;
  * 대시보드는 "실행해/말아" 만 알려 줄 뿐 명령어나 인자를 보내지 않음.
  */
 public class AgentStore {
-    /** 에이전트 이름: 리포트 파일명 접두어로 쓰므로 밑줄(_) 불가. */
-    private static final Pattern NAME = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9.-]{1,39}$");
+    /** 에이전트 이름: 리포트 파일명 접두어(agent-이름__…)로 쓰므로, 밑줄(_)은 되지만 구분자와 겹치는 '__'(연속 밑줄)는 불가. */
+    private static final Pattern NAME = Pattern.compile("^[A-Za-z0-9][A-Za-z0-9._-]{1,39}$");
     private static final SecureRandom RANDOM = new SecureRandom();
     /** 마지막 접속 후 이 시간이 지나면 오프라인 */
     public static final long OFFLINE_MILLIS = 3 * 60 * 1000L;
@@ -136,7 +136,7 @@ public class AgentStore {
     }
 
     public static boolean validName(String n) {
-        return n != null && NAME.matcher(n).matches();
+        return n != null && !n.contains("__") && NAME.matcher(n).matches();
     }
 
     public static boolean validInterval(int h) {
@@ -181,7 +181,7 @@ public class AgentStore {
     }
 
     public synchronized String create(String name, int intervalHours, String group) throws IOException {
-        if (!validName(name)) throw new IllegalArgumentException("에이전트 이름은 영문/숫자/.- 2~40자여야 합니다. (밑줄 불가)");
+        if (!validName(name)) throw new IllegalArgumentException("에이전트 이름은 영문/숫자/._- 2~40자이고 영문·숫자로 시작해야 합니다. (연속 밑줄 '__' 는 불가 — 파일명 구분자와 겹침)");
         if (agents.containsKey(name)) throw new IllegalArgumentException("이미 있는 에이전트 이름입니다.");
         if (!validInterval(intervalHours)) throw new IllegalArgumentException("점검 주기가 올바르지 않습니다.");
         String token = newToken();

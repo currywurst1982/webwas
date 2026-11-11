@@ -37,6 +37,18 @@ class ReportParserTest {
     }
 
     @Test
+    void parsesAgentNameWithUnderscore() throws Exception {
+        // 에이전트 이름에 밑줄이 있어도 'agent-<이름>__' 의 '__' 에서 정확히 끊어 source 를 읽어야 함
+        String body = resource(WF41);
+        assertEquals("web_01", ReportParser.parse("agent-web_01__wildfly_precheck_vm_20261016_050342_pid4072.txt", body).source);
+        assertEquals("HAPPY_a.1", ReportParser.parse("agent-HAPPY_a.1__wildfly_precheck_vm_20261016_050342_pid4072.txt", body).source);
+        // 호스트에 밑줄이 있어도 구분자(__)는 첫 번째 것
+        Report r = ReportParser.parse("agent-web_01__wildfly_precheck_vm_20261016_050342_pid4072.txt", body);
+        assertEquals("vm", r.host);
+        assertEquals("wildfly", r.product.id);
+    }
+
+    @Test
     void parsesLatestFinalReport() throws Exception {
         Report r = load(WF41);
         assertEquals("vm", r.host);

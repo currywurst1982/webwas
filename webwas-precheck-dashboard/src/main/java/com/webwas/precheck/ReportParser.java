@@ -25,7 +25,8 @@ public final class ReportParser {
 
     private static final Pattern HEADER = Pattern.compile("호스트:\\s*(.*?)\\s*\\|\\s*일시:\\s*(.+?)\\s*$");
     private static final Pattern FILE_NAME = Pattern.compile(
-            "^(?:agent-([A-Za-z0-9.-]+)__)?(apache|wildfly|tomcat|nginx)_precheck_(.+)_(\\d{8})_(\\d{6})(?:_pid(\\d+))?\\.txt$");
+            // 에이전트 이름에 밑줄(_) 허용. 구분자는 '__' 이고 이름에는 '__' 가 올 수 없으므로, 첫 '__' 에서 멈추도록 비탐욕(+?)
+            "^(?:agent-([A-Za-z0-9._-]+?)__)?(apache|wildfly|tomcat|nginx)_precheck_(.+)_(\\d{8})_(\\d{6})(?:_pid(\\d+))?\\.txt$");
     private static final Pattern SECTION = Pattern.compile("^ \\[(\\d)\\] ");
     private static final Pattern FINDING = Pattern.compile("^\\[(위험|주의|양호|정보)\\] (.*)$");
     private static final Pattern NOT_APPLICABLE = Pattern.compile("^\\[미해당\\] (CVE-\\d+-\\d+) \\((\\w+)\\) - 필요 모듈\\((.*)\\) 미사용");

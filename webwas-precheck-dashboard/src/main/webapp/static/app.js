@@ -860,6 +860,38 @@
       : [h('tr', null, h('td', { colspan: '7', class: 'muted' }, '등록된 예외가 없습니다.'))]));
   }
 
+  // ---------------------------------------------------------------- IP 자동 그룹 규칙
+  async function loadIpGroups() {
+    let data;
+    try { data = await api('ip-groups'); } catch (e) { return; }
+    const rules = data.rules || [];
+    $('#ipg-count').textContent = rules.length ? `규칙 ${rules.length}개` : '';
+    $('#ipg-rows').replaceChildren(...(rules.length ? rules.map((r, i) => h('tr', null,
+      h('td', { class: 'num' }, String(i + 1)),
+      h('td', { class: 'mono' }, r.pattern),
+      h('td', null, h('span', { class: 'badge b-group' }, r.group)),
+      h('td', { class: 'admin-only' }, h('button', { class: 'btn small btn-danger', type: 'button', onclick: () => removeIpGroup(i, r) }, '삭제'))))
+      : [h('tr', null, h('td', { colspan: '4', class: 'muted' }, '규칙이 없습니다. IP 대역과 그룹 이름을 넣어 추가하세요.'))]));
+  }
+
+  async function addIpGroup(ev) {
+    ev.preventDefault();
+    const pattern = $('#ipg-pattern').value.trim();
+    const group = $('#ipg-group').value.trim();
+    try {
+      await api('ip-groups', { method: 'POST', body: new URLSearchParams({ pattern, group }) });
+      $('#ipg-pattern').value = ''; $('#ipg-group').value = '';
+      await loadIpGroups();
+      await load(); // 서버 목록에 자동 그룹 반영
+    } catch (e) { alert(e.message); }
+  }
+
+  async function removeIpGroup(index, r) {
+    if (!confirm(`규칙 삭제: ${r.pattern} → ${r.group}\n이 규칙으로 자동 분류되던 서버는 그룹에서 빠집니다(수동 지정한 서버는 그대로).`)) return;
+    try { await api('ip-groups/' + index, { method: 'DELETE' }); await loadIpGroups(); await load(); }
+    catch (e) { alert(e.message); }
+  }
+
   function selectTab(name) {
     $$('#detail .tab').forEach(t => t.setAttribute('aria-selected', String(t.dataset.tab === name)));
     $$('#detail .tabpanel').forEach(p => { p.hidden = p.dataset.panel !== name; });
@@ -1180,7 +1212,8 @@
           a.authFailAt ? h('div', { class: 'sub warn-ink', title: `${abs(a.authFailAt)} · 접속 IP ${a.authFailIp || '?'}` },
             a.authLocked ? '토큰 인증 실패 반복 → 잠시 차단됨' : '토큰 인증 실패 중', ` (${rel(a.authFailAt, now)}, ${a.authFailIp || '?'}) → 토큰 재발급 필요`) : null),
         h('td', null, h('div', null, a.name,
-          a.group ? h('span', { class: 'badge b-group', title: `그룹: ${a.group}` }, a.group) : null),
+          a.group ? h('span', { class: 'badge b-group', title: `그룹: ${a.group} (직접 지정)` }, a.group)
+            : a.effectiveGroup ? h('span', { class: 'badge b-group', title: `그룹: ${a.effectiveGroup} (IP 규칙 자동)` }, a.effectiveGroup, h('span', { class: 'sub' }, ' 규칙')) : null),
           h('div', { class: 'sub mono' }, [a.hostname, a.ip].filter(Boolean).join(' · ') || '아직 접속 안 함')),
         h('td', { title: abs(a.lastSeen) }, rel(a.lastSeen, now)),
         h('td', null, lastRun),
@@ -1409,7 +1442,7 @@
     $('#tooltip').hidden = true;
     if (!fromHash && location.hash.slice(1) !== name) history.replaceState(null, '', '#' + name);
     if (!fromHash) window.scrollTo({ top: 0 });
-    if (name === 'settings') loadExceptions();
+    if (name === 'settings') { loadExceptions(); if (state.me && state.me.admin) loadIpGroups(); }
   }
 
   function tickClock() {
@@ -2073,6 +2106,7 @@
 
     $('#exc-form').addEventListener('submit', submitExc);
     $('#agurl-form').addEventListener('submit', ev => { ev.preventDefault(); saveAgentUrl($('#agurl-input').value); });
+    $('#ipg-form').addEventListener('submit', addIpGroup);
     $('#agurl-clear').addEventListener('click', () => saveAgentUrl(''));
     $('#d-reset-instance').addEventListener('click', async () => {
       if (!current) return;

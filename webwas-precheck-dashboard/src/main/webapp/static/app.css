@@ -640,7 +640,8 @@ pre.raw { margin: 0; padding: 12px; background: var(--code-bg); border: 1px soli
 /* 재설치 안내 */
 .reinstall-card { margin-bottom: 16px; border-color: rgba(250, 178, 25, .45); }
 .reinstall-list { margin: 0 0 10px; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; }
-.codebox pre { flex: 1; margin: 0; padding: 10px 12px; background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; white-space: pre; }
+/* 명령어는 가로 스크롤 대신 줄바꿈으로 전체가 보이게 (복사 버튼으로 복사하므로 줄바꿈은 표시용일 뿐) */
+.codebox pre { flex: 1; min-width: 0; margin: 0; padding: 10px 12px; background: var(--code-bg); border: 1px solid var(--line); border-radius: 10px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
 
 /* ---------------------------------------------------------------- 반응형 */
 @media (max-width: 1400px) {

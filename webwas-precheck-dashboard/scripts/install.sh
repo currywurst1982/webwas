@@ -54,7 +54,8 @@ done
 [ -n "$URL" ] && [ -n "$NAME" ] || die "사용법: sudo bash $0 <대시보드주소> <에이전트이름> [--ca-cert CA파일]"
 URL="${URL%/}"
 [[ "$URL" =~ ^https?:// ]] || die "대시보드 주소는 http:// 또는 https:// 로 시작해야 합니다."
-[[ "$NAME" =~ ^[A-Za-z0-9][A-Za-z0-9.-]{1,39}$ ]] || die "에이전트 이름이 올바르지 않습니다: $NAME"
+# 이름: 영문/숫자/._- 2~40자, 영문·숫자로 시작. 밑줄(_)은 되지만 파일명 구분자와 겹치는 연속 밑줄(__)은 불가 (대시보드와 같은 규칙)
+{ [[ "$NAME" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{1,39}$ ]] && [[ "$NAME" != *__* ]]; } || die "에이전트 이름이 올바르지 않습니다: $NAME (영문/숫자/._- 2~40자, 영문·숫자로 시작, 연속 밑줄 '__' 불가)"
 [ -z "$CA_CERT" ] || [ -r "$CA_CERT" ] || die "CA 파일을 읽을 수 없습니다: $CA_CERT"
 command -v curl >/dev/null 2>&1 || die "curl 이 필요합니다. (yum install curl / apt install curl)"
 command -v flock >/dev/null 2>&1 || die "flock 이 필요합니다. (util-linux 패키지)"

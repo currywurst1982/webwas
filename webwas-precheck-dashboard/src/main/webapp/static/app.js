@@ -157,6 +157,7 @@
   function filtered() {
     const q = $('#f-q').value.trim().toLowerCase();
     const st = $('#f-status').value;
+    const grp = $('#f-group') ? $('#f-group').value : '';
     const latestOnly = $('#f-latest').checked;
     const dqOnly = $('#f-dq').checked;
     const src = state.sourceFilter;
@@ -164,11 +165,12 @@
     let list = (latestOnly || !state.allReports ? state.reports : state.allReports).filter(r => !state.product || r.product === state.product);
     return list.filter(r => {
       if (st && r.status !== st) return false;
+      if (grp && (r.group || '') !== grp) return false;
       if (dqOnly && !r.dataQuality.length) return false;
       if (src && r.source !== src) return false;
       if (state.gapFilter && !(r.gaps || []).includes(state.gapFilter)) return false;
       if (!q) return true;
-      const hay = [r.host, ...(r.ips || []), r.productLabel, r.version, r.versionLine, r.binary, r.id, r.cveList.map(c => c.id).join(' '), (r.cveExemptIds || []).join(' ')].join(' ').toLowerCase();
+      const hay = [r.host, ...(r.ips || []), r.group, r.productLabel, r.version, r.versionLine, r.binary, r.id, r.cveList.map(c => c.id).join(' '), (r.cveExemptIds || []).join(' ')].join(' ').toLowerCase();
       return hay.includes(q);
     });
   }
@@ -203,14 +205,14 @@
       if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
       return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     };
-    const head = ['판정', '제품', '호스트', 'IP', '바이너리', '설정', '버전', '버전 상태', '설치 방식', '점검 시각',
+    const head = ['판정', '그룹', '제품', '호스트', 'IP', '바이너리', '설정', '버전', '버전 상태', '설치 방식', '점검 시각',
       '위험', '주의', '양호', '예외(위험)', '예외(주의)', 'CVE critical', 'CVE high', 'CVE moderate', 'CVE low',
       '점검 사각지대', '데이터 경고', '수집', '리포트'];
     const rows = list.map(r => {
       const cu = r.cveUnpatched || {};
       const ex = r.exempt || {};
       return [
-        (STATUS[r.status] || {}).label || r.status, r.productLabel || r.product, r.host, (r.ips || []).join(' ') || r.ip || '',
+        (STATUS[r.status] || {}).label || r.status, r.group || '', r.productLabel || r.product, r.host, (r.ips || []).join(' ') || r.ip || '',
         r.binary || '', r.confArg || '', r.version || '확인 불가',
         r.eol ? r.eolLabel : r.belowLatest ? (r.latestForVersion ? `최신 ${r.latestForVersion} 미만` : '지원 종료 브랜치') : r.version ? '최신' : '',
         r.installType || '', r.checkedAt || '', r.counts.risk, r.counts.warn, r.counts.ok, ex.risk || 0, ex.warn || 0,
@@ -254,7 +256,19 @@
     }));
   }
 
+  /** 그룹 필터 드롭다운 옵션을 현재 리포트들의 그룹으로 채움 (선택값은 유지) */
+  function fillGroupFilter() {
+    const sel = $('#f-group');
+    if (!sel) return;
+    const groups = [...new Set((state.allReports || state.reports || []).map(r => r.group).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+    const cur = sel.value;
+    sel.replaceChildren(h('option', { value: '' }, '그룹 전체'),
+      ...groups.map(g => h('option', { value: g, selected: g === cur || null }, g)));
+    if (cur && !groups.includes(cur)) sel.value = ''; // 그룹이 사라지면 전체로
+  }
+
   function render() {
+    fillGroupFilter();
     const list = sortList(filtered());
     const ov = overviewList();
     $('#empty').hidden = state.reports.length > 0;
@@ -393,7 +407,8 @@
         onkeydown: e => { if (e.key === 'Enter') openDetail(r.id); } },
         h('td', null, badge(r.status)),
         h('td', null, prodBadge(r.product)),
-        h('td', null, h('div', null, r.host), h('div', { class: 'sub mono' }, [r.ip ? (r.ipFromAgent ? `${r.ip}(접속 IP)` : r.ips.join(', ')) : null, r.binary, r.confArg ? (r.product === 'apache' ? '-f ' + r.confArg : r.confArg) : null].filter(Boolean).join(' · ')),
+        h('td', null, h('div', null, r.host, r.group ? h('span', { class: 'badge b-group', title: `그룹: ${r.group}` }, r.group) : null),
+          h('div', { class: 'sub mono' }, [r.ip ? (r.ipFromAgent ? `${r.ip}(접속 IP)` : r.ips.join(', ')) : null, r.binary, r.confArg ? (r.product === 'apache' ? '-f ' + r.confArg : r.confArg) : null].filter(Boolean).join(' · ')),
           h('div', { class: 'sub' }, r.source ? `에이전트 ${r.source} 수집` : '수동 업로드')),
         h('td', null, h('div', null, r.version || '확인 불가'),
           r.eol ? h('div', { class: 'sub nowrap', title: EOL_HINT[r.product] }, r.eolLabel) : r.belowLatest ? h('div', { class: 'sub nowrap', title: r.latestForVersion ? `최신 ${r.latestForVersion} 미만` : '지원 종료 브랜치' }, r.latestForVersion ? '최신 미만' : '지원 종료') : r.version ? h('div', { class: 'sub' }, '최신 버전') : null),
@@ -1154,6 +1169,7 @@
           a.state === 'running' ? '점검 중' : a.state === 'requested' || a.pendingRun ? '요청됨' : '지금 점검'),
         h('select', { 'aria-label': `${a.name} 점검 주기`, onchange: e => agentInterval(a.name, e.target.value) },
           ...INTERVALS.map(([v, l]) => h('option', { value: String(v), selected: v === a.intervalHours || null }, l))),
+        h('button', { class: 'btn small', type: 'button', onclick: () => agentGroup(a.name, a.group) }, '그룹'),
         h('button', { class: 'btn small', type: 'button', onclick: () => agentToken(a.name) }, '토큰 재발급'),
         h('button', { class: 'btn small btn-danger', type: 'button', title: '이 에이전트가 보낸 점검 기록과 상태를 초기화 (등록·토큰은 유지)',
           onclick: () => resetRecords('agent', a.name, `${a.name} 에이전트 기록 초기화`, { agentState: 'true' }) }, '기록 초기화'),
@@ -1163,7 +1179,9 @@
           a.state === 'offline' && a.pendingRun ? h('div', { class: 'sub', title: '에이전트가 다시 접속하면 바로 점검을 시작합니다' }, '점검 요청됨 · 접속 대기') : null,
           a.authFailAt ? h('div', { class: 'sub warn-ink', title: `${abs(a.authFailAt)} · 접속 IP ${a.authFailIp || '?'}` },
             a.authLocked ? '토큰 인증 실패 반복 → 잠시 차단됨' : '토큰 인증 실패 중', ` (${rel(a.authFailAt, now)}, ${a.authFailIp || '?'}) → 토큰 재발급 필요`) : null),
-        h('td', null, h('div', null, a.name), h('div', { class: 'sub mono' }, [a.hostname, a.ip].filter(Boolean).join(' · ') || '아직 접속 안 함')),
+        h('td', null, h('div', null, a.name,
+          a.group ? h('span', { class: 'badge b-group', title: `그룹: ${a.group}` }, a.group) : null),
+          h('div', { class: 'sub mono' }, [a.hostname, a.ip].filter(Boolean).join(' · ') || '아직 접속 안 함')),
         h('td', { title: abs(a.lastSeen) }, rel(a.lastSeen, now)),
         h('td', null, lastRun),
         h('td', null, versionCell(a)),
@@ -1328,6 +1346,16 @@
     try { await api('agents/' + encodeURIComponent(name) + '/interval', { method: 'POST', body: new URLSearchParams({ hours }) }); await loadAgents(); }
     catch (e) { alert(e.message); }
   }
+  async function agentGroup(name, current) {
+    const v = prompt(`${name} 서버의 그룹 이름을 입력하세요. (같은 이름끼리 묶여서 보입니다. 예: HAPPY)\n비워 두면 그룹에서 빼냅니다.`, current || '');
+    if (v === null) return; // 취소
+    try {
+      await api('agents/' + encodeURIComponent(name) + '/group', { method: 'POST', body: new URLSearchParams({ group: v }) });
+      await loadAgents();
+      await load(); // 서버 목록·필터에도 반영
+    } catch (e) { alert(e.message); }
+  }
+
   async function agentToken(name) {
     if (!confirm(`${name} 토큰을 재발급할까요? 기존 토큰은 바로 사용할 수 없게 되어, 그 서버의 설정을 바꾸기 전까지 에이전트가 접속하지 못합니다.`)) return;
     try {
@@ -2013,7 +2041,7 @@
     $('#logout-csrf').value = state.me.csrf;
     if (state.me.reportDir) $('#report-dir').textContent = `(리포트 폴더: ${state.me.reportDir})`;
 
-    ['#f-q', '#f-status', '#f-dq'].forEach(s => $(s).addEventListener('input', () => { state.tableLimit = TABLE_PAGE; render(); }));
+    ['#f-q', '#f-status', '#f-dq', '#f-group'].forEach(s => $(s).addEventListener('input', () => { state.tableLimit = TABLE_PAGE; render(); }));
     $('#f-latest').addEventListener('change', async () => { // 끄면 전체 이력을 받아 옴
       if (!$('#f-latest').checked) $('#f-count').textContent = '전체 이력을 불러오는 중…';
       state.tableLimit = TABLE_PAGE;

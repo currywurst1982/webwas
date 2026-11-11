@@ -78,6 +78,7 @@ public class Report {
     public final List<String> ips = new ArrayList<>();
     /** IP 기록이 없을 때 대신 보여 줄 에이전트 접속 IP (화면 표시용, 파일에는 없음) */
     public volatile String fallbackIp;
+    public volatile String group;        // 이 리포트를 보낸 에이전트의 그룹 라벨 (요청마다 채움, 없으면 null)
     /** 인스턴스 구분. Apache: -f 설정 파일 / WildFly: "base=... config=..." / Tomcat: "base=/srv/tomcat1" (CATALINA_BASE) */
     public String confArg;
     /** 메인 설정 파일 경로 (수정본 스크립트가 기록) */
@@ -242,6 +243,7 @@ public class Report {
         m.put("productLabel", product.label);
         m.put("host", host);
         m.put("source", source);
+        m.put("group", group == null || group.isEmpty() ? null : group);
         m.put("checkedAt", checkedAt);
         m.put("pid", pid);
         m.put("ip", displayIp());

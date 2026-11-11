@@ -40,6 +40,7 @@ public class AgentStore {
 
     public static final class Agent {
         public String name;
+        public String group = "";            // 서버 그룹 라벨 (관리자가 직접 지정, 빈 값 = 그룹 없음)
         public String tokenHash;
         public int intervalHours = 24;       // 0 = 수동 점검만
         public long createdAt;
@@ -61,7 +62,7 @@ public class AgentStore {
 
         Agent copy() {
             Agent a = new Agent();
-            a.name = name; a.tokenHash = tokenHash; a.intervalHours = intervalHours; a.createdAt = createdAt;
+            a.name = name; a.group = group; a.tokenHash = tokenHash; a.intervalHours = intervalHours; a.createdAt = createdAt;
             a.lastSeen = lastSeen; a.lastSeenPersisted = lastSeenPersisted; a.hostname = hostname; a.ip = ip;
             a.agentVersion = agentVersion; a.scriptSha256 = scriptSha256; a.pendingRun = pendingRun;
             a.versions = new java.util.EnumMap<>(Product.class);
@@ -96,6 +97,7 @@ public class AgentStore {
         public Map<String, Object> toMap(long now, String expectedSha) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("name", name);
+            m.put("group", group == null ? "" : group);
             m.put("state", state(now));
             // 접속은 하는데 토큰이 틀려 거절되는 중인지 (마지막 정상 접속보다 나중의 실패만)
             boolean failing = authFailAt > lastSeen;
@@ -167,19 +169,39 @@ public class AgentStore {
     }
 
     /** 새 에이전트 등록. 반환값은 토큰 원문(이 때 한 번만 알 수 있음). */
+    /** 그룹 라벨 정리: 제어문자 제거·공백 정리·30자 제한. 빈 값 허용(그룹 없음). 한글·영문·숫자 모두 가능. */
+    public static String normGroup(String g) {
+        if (g == null) return "";
+        String s = g.replaceAll("\\p{Cntrl}", " ").replaceAll("\\s+", " ").trim();
+        return s.length() > 30 ? s.substring(0, 30).trim() : s;
+    }
+
     public synchronized String create(String name, int intervalHours) throws IOException {
+        return create(name, intervalHours, "");
+    }
+
+    public synchronized String create(String name, int intervalHours, String group) throws IOException {
         if (!validName(name)) throw new IllegalArgumentException("에이전트 이름은 영문/숫자/.- 2~40자여야 합니다. (밑줄 불가)");
         if (agents.containsKey(name)) throw new IllegalArgumentException("이미 있는 에이전트 이름입니다.");
         if (!validInterval(intervalHours)) throw new IllegalArgumentException("점검 주기가 올바르지 않습니다.");
         String token = newToken();
         Agent a = new Agent();
         a.name = name;
+        a.group = normGroup(group);
         a.tokenHash = sha256(token);
         a.intervalHours = intervalHours;
         a.createdAt = System.currentTimeMillis();
         agents.put(name, a);
         save();
         return token;
+    }
+
+    /** 그룹 라벨 지정/변경 (빈 값이면 그룹 해제). 바뀐 값을 돌려줌. */
+    public synchronized String setGroup(String name, String group) throws IOException {
+        Agent a = require(name);
+        a.group = normGroup(group);
+        save();
+        return a.group;
     }
 
     public synchronized String rotateToken(String name) throws IOException {
@@ -404,6 +426,7 @@ public class AgentStore {
             a.intervalHours = (int) num(p, n + ".intervalHours", 24);
             a.createdAt = num(p, n + ".createdAt", 0);
             a.lastSeen = num(p, n + ".lastSeen", 0);
+            a.group = normGroup(p.getProperty(n + ".group", ""));
             a.hostname = p.getProperty(n + ".hostname");
             a.ip = p.getProperty(n + ".ip");
             a.agentVersion = p.getProperty(n + ".agentVersion");
@@ -439,6 +462,7 @@ public class AgentStore {
             p.setProperty(n + ".intervalHours", String.valueOf(a.intervalHours));
             p.setProperty(n + ".createdAt", String.valueOf(a.createdAt));
             p.setProperty(n + ".lastSeen", String.valueOf(a.lastSeen));
+            if (a.group != null && !a.group.isEmpty()) p.setProperty(n + ".group", a.group);
             if (a.hostname != null) p.setProperty(n + ".hostname", a.hostname);
             if (a.ip != null) p.setProperty(n + ".ip", a.ip);
             if (a.agentVersion != null) p.setProperty(n + ".agentVersion", a.agentVersion);

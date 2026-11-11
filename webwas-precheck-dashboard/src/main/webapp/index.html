@@ -208,6 +208,9 @@
               <option value="ok">양호</option>
             </select>
           </label>
+          <label>그룹
+            <select id="f-group"><option value="">그룹 전체</option></select>
+          </label>
           <label class="check"><input id="f-latest" type="checkbox" checked> 인스턴스별 최신 점검만</label>
           <span class="chip" id="f-source" hidden></span>
           <span class="chip" id="f-gap" hidden></span>
@@ -460,6 +463,7 @@
     <div class="dialog-body">
       <form id="agent-form" class="inline-form">
         <label>에이전트 이름 <input name="name" required pattern="[A-Za-z0-9][A-Za-z0-9.\-]{1,39}" placeholder="예: web01 (영문/숫자/.-)"></label>
+        <label>그룹 (선택) <input name="group" maxlength="30" placeholder="예: HAPPY (서버 묶음 이름, 나중에 변경 가능)"></label>
         <label>자동 점검 주기
           <select name="intervalHours">
             <option value="24" selected>24시간마다</option>

@@ -254,4 +254,34 @@ class AgentStoreTest {
         s.heartbeat("web09", t + 200_000, "h", "10.0.0.9", "2.1.0", null, false, true); // 토큰 고친 뒤 정상 접속
         assertEquals(0L, s.get("web09").toMap(t + 210_000, null).get("authFailAt"));
     }
+
+    @Test
+    void groupLabel() throws Exception {
+        Path f = dir.resolve("agents.properties");
+        AgentStore s = new AgentStore(f);
+        s.create("web01", 24, "HAPPY");
+        s.create("web02", 24, "  HAPPY  ");          // 공백은 정리
+        s.create("web03", 24, null);                 // 그룹 없음
+        assertEquals("HAPPY", group(s, "web01"));
+        assertEquals("HAPPY", group(s, "web02"));
+        assertEquals("", group(s, "web03"));
+        // 변경·해제
+        assertEquals("SAMPLE 운영", s.setGroup("web03", "SAMPLE 운영"));   // 한글·공백 허용
+        assertEquals("", s.setGroup("web01", "  "));                      // 공백만이면 해제
+        // 제어문자 제거, 30자 제한
+        assertEquals("a b", AgentStore.normGroup("a\t\n b"));
+        assertEquals(30, AgentStore.normGroup("x".repeat(50)).length());
+        // 다시 읽어도 유지
+        AgentStore s2 = new AgentStore(f);
+        assertEquals("HAPPY", group(s2, "web02"));
+        assertEquals("SAMPLE 운영", group(s2, "web03"));
+        assertEquals("", group(s2, "web01"));
+        // 없는 에이전트
+        assertThrows(IllegalArgumentException.class, () -> s.setGroup("nope", "X"));
+    }
+
+    private static String group(AgentStore s, String name) {
+        return s.list().stream().filter(a -> a.name.equals(name)).findFirst().orElseThrow().group;
+    }
+
 }

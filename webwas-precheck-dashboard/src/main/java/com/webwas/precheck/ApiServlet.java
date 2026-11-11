@@ -100,7 +100,7 @@ public class ApiServlet extends HttpServlet {
             Report light = p[1] == null ? null : allReports(store).stream().filter(x -> x.id.equals(p[1])).findFirst().orElse(null);
             Report r = light == null ? null : store.full(light.id);
             if (r != null && Web.exceptions(getServletContext()) != null) Web.exceptions(getServletContext()).apply(r, System.currentTimeMillis());
-            if (r != null) r.fallbackIp = light.fallbackIp;
+            if (r != null) { r.fallbackIp = light.fallbackIp; r.group = light.group; }
             if (r == null) {
                 Web.json(resp, 404, Map.of("error", "리포트를 찾을 수 없습니다."));
             } else if (p.length == 3 && p[2].equals("raw")) {
@@ -351,9 +351,13 @@ public class ApiServlet extends HttpServlet {
             } else if (p.length == 1) {
                 String name = req.getParameter("name");
                 name = name == null ? null : name.trim();
-                String token = agents.create(name, parseHours(req.getParameter("intervalHours")));
+                String token = agents.create(name, parseHours(req.getParameter("intervalHours")), req.getParameter("group"));
                 LOG.info("[webwas-precheck] 에이전트 등록: " + name + " by " + by);
                 Web.json(resp, 200, Map.of("name", name, "token", token));
+            } else if (p.length == 3 && p[2].equals("group")) {
+                String g = agents.setGroup(p[1], req.getParameter("group"));
+                LOG.info("[webwas-precheck] 에이전트 그룹 변경: " + p[1] + " = " + (g.isEmpty() ? "(없음)" : g) + " by " + by);
+                Web.json(resp, 200, Map.of("name", p[1], "group", g));
             } else if (p.length == 3 && p[2].equals("run")) {
                 agents.requestRun(p[1]);
                 LOG.info("[webwas-precheck] 에이전트 점검 요청: " + p[1] + " by " + by);
@@ -418,7 +422,7 @@ public class ApiServlet extends HttpServlet {
     private String etag(ReportStore store, String scope) {
         StringBuilder sb = new StringBuilder();
         sb.append(store.version()).append('|').append(scope).append('|').append(Web.latest(getServletContext()).summary());
-        for (AgentStore.Agent a : Web.agents(getServletContext()).list()) sb.append('|').append(a.name).append('=').append(a.ip);
+        for (AgentStore.Agent a : Web.agents(getServletContext()).list()) sb.append('|').append(a.name).append('=').append(a.ip).append('#').append(a.group);
         // 예외를 등록·해제하거나 만료되면 판정이 바뀌므로 응답도 새로
         ExceptionStore ex = Web.exceptions(getServletContext());
         if (ex != null) sb.append('|').append(ex.signature(System.currentTimeMillis()));
@@ -456,14 +460,17 @@ public class ApiServlet extends HttpServlet {
      */
     private List<Report> allReports(ReportStore store) {
         Map<String, String> agentIps = new java.util.HashMap<>();
+        Map<String, String> agentGroups = new java.util.HashMap<>();
         for (AgentStore.Agent a : Web.agents(getServletContext()).list()) {
             if (a.ip != null) agentIps.put(a.name, a.ip);
+            if (a.group != null && !a.group.isEmpty()) agentGroups.put(a.name, a.group);
         }
         List<Report> all = store.all();
         ExceptionStore ex = Web.exceptions(getServletContext());
         long now = System.currentTimeMillis();
         for (Report r : all) {
             r.fallbackIp = r.source == null ? null : agentIps.get(r.source);
+            r.group = r.source == null ? null : agentGroups.get(r.source);
             if (ex != null) ex.apply(r, now);
         }
         return all;

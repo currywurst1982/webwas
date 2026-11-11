@@ -1627,7 +1627,17 @@ if [ -n "$RUN_USER" ] && [ "$RUN_USER" != "root" ] && id "$RUN_USER" >/dev/null 
   report_user_procs "Tomcat 실행계정($RUN_USER)" "Tomcat"
 
   CR="$(crontab -l -u "$RUN_USER" 2>/dev/null | grep -vE '^\s*(#|$)')"
-  if [ -n "$CR" ]; then risk "실행계정($RUN_USER)에 크론 작업 등록됨 (지속성 확보 의심)"; printf '%s\n' "$CR" | show
+  if [ -n "$CR" ]; then
+    # 모든 크론을 위험으로 보지 않고, 공격자 지속성 패턴(원격 다운로드 실행·리버스쉘·인코딩 실행·임시폴더 실행 등)만 위험.
+    #   그 밖(로그 압축·백업·정리 등 운영 작업)은 내용 확인용 주의로.
+    CR_SUSP="$(printf '%s\n' "$CR" | grep -E '(\||;|&&)[[:space:]]*(ba)?sh([[:space:]]|$)|/dev/tcp/|/dev/shm|\b(ncat|netcat)\b|\bnc[[:space:]]+-|bash[[:space:]]+-i|mkfifo|base64[[:space:]]+(-d|--decode)|python[0-9]*[[:space:]]+-c|perl[[:space:]]+-e|php[[:space:]]+-r|ruby[[:space:]]+-e|[[:space:]]eval[[:space:]]|(bash|sh|source|\.)[[:space:]]+/(tmp|var/tmp)/|/(tmp|var/tmp)/[^[:space:]]*\.(sh|py|pl|bin|elf)')"
+    if [ -n "$CR_SUSP" ]; then
+      risk "실행계정($RUN_USER) 크론에 공격자 지속성 패턴 의심(원격 다운로드 실행·리버스쉘·인코딩 실행·임시폴더 실행 등) → 즉시 확인"
+      printf '%s\n' "$CR_SUSP" | show
+    else
+      warn "실행계정($RUN_USER)에 크론 작업 등록됨 → 정상 운영 작업(로그 압축·백업·정리 등)인지 명령 내용 확인 필요"
+    fi
+    printf '%s\n' "$CR" | show
   else ok "실행계정 크론 작업 없음"; fi
 
   TMPF="$(find /tmp /var/tmp /dev/shm -xdev -user "$RUN_USER" -type f ! -path '*/hsperfdata_*' ! -path '*/tomcat-docbase.*' ! -path '*/tomcat.*' 2>/dev/null | head -n 20)"

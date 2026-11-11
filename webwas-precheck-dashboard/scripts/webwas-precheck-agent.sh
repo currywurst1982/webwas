@@ -38,7 +38,7 @@
 #    TOMCAT_SERVER_LOG_PATHS=  (tomcat_precheck.sh  -s 값, catalina.out 등이 logs 폴더 밖에 있을 때)
 # =====================================================================
 
-AGENT_VERSION="2.3.0"   # 2.1.0: 점검 중에도 1분마다 heartbeat(busy=1) 전송 / 2.2.0: 서버 로그 경로(-s) 전달 / 2.3.0: Nginx
+AGENT_VERSION="2.3.1"   # 2.1.0: heartbeat(busy=1) / 2.2.0: 서버 로그 경로(-s) / 2.3.0: Nginx / 2.3.1: 구버전 ps 호환(ps -o 분리) — RHEL7 등에서 제품 탐지 실패 수정
 CONF="${WEBWAS_PRECHECK_AGENT_CONF:-/etc/webwas-precheck-agent.conf}"
 BASE_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 ALL_PRODUCTS="apache wildfly tomcat nginx"   # 순서 고정 (스크립트 SHA-256 계산 순서 = 대시보드 Product 순서와 같음)
@@ -94,7 +94,7 @@ detect_products() {
     for p in $want; do case " $ALL_PRODUCTS " in *" $p "*) out="$out $p" ;; esac; done
     echo "${out# }"; return
   fi
-  local ps_out; ps_out="$(ps -eo comm=,args= 2>/dev/null)"
+  local ps_out; ps_out="$(ps -e -o comm= -o args= 2>/dev/null)"
   printf '%s\n' "$ps_out" | grep -qE '^(httpd|apache2|httpd\.worker|httpd\.event)[[:space:]]' && out="$out apache"
   printf '%s\n' "$ps_out" | grep -q 'jboss-modules\.jar' && out="$out wildfly"
   printf '%s\n' "$ps_out" | grep -q 'org\.apache\.catalina\.startup\.Bootstrap' && out="$out tomcat"

@@ -75,7 +75,7 @@ fi
 #   PID 가 인자 자리로 밀려 들어감 → httpd 호출 실패(모듈 0개). 공백이 아닌 \x1f 사용.
 detect_instances() {
   local pid ppid comm pcomm exe args
-  ps -eo pid=,ppid=,comm= 2>/dev/null | awk '$3 ~ /^(httpd|apache2|httpd\.worker|httpd\.event|apache)$/' |
+  ps -e -o pid= -o ppid= -o comm= 2>/dev/null | awk '$3 ~ /^(httpd|apache2|httpd\.worker|httpd\.event|apache)$/' |
   while read -r pid ppid comm; do
     # 부모도 httpd 이면 워커 프로세스 → 건너뜀 (마스터만 사용)
     pcomm="$(ps -o comm= -p "$ppid" 2>/dev/null)"
@@ -724,7 +724,7 @@ MASTER_USER=""; PROC_USER=""
 if [ -n "${PRECHECK_PID:-}" ]; then
   MASTER_USER="$(ps -o user= -p "$PRECHECK_PID" 2>/dev/null | tr -d ' ')"
   # 자식 중 httpd 만 (rotatelogs 같은 로그 프로그램은 마스터 계정으로 돌 수 있어 제외)
-  PROC_USER="$(ps -o user=,comm= --ppid "$PRECHECK_PID" 2>/dev/null | awk '$2 ~ /^(httpd|apache2)/ {print $1}' | sort | uniq -c | sort -rn | awk 'NR==1{print $2}')"
+  PROC_USER="$(ps -o user= -o comm= --ppid "$PRECHECK_PID" 2>/dev/null | awk '$2 ~ /^(httpd|apache2)/ {print $1}' | sort | uniq -c | sort -rn | awk 'NR==1{print $2}')"
 fi
 # httpd 바이너리에 setuid-root 가 걸려 있으면(예: chmod 4750 root:web), 어떤 계정으로 띄워도 마스터의 유효 사용자(euid)는 root 가 됨.
 #   그래서 ps 의 user 칸(=euser, 유효 사용자)도 root 로 보이고, 80·443 을 열 수 있는 것도 이 root 권한 덕분. 설정·실행파일을 바꾸면 root 로 실행됨.
@@ -736,7 +736,7 @@ fi
 if [ -n "$PROC_USER" ]; then RUN_USER="$PROC_USER"
 elif [ -n "$MASTER_USER" ] && [ "$MASTER_USER" != "root" ]; then RUN_USER="$MASTER_USER"
 else RUN_USER="$CFG_USER"; fi
-[ -z "$RUN_USER" ] && RUN_USER="$(ps -eo user=,comm= | awk '$2 ~ /httpd|apache2/ && $1!="root"{print $1; exit}')"
+[ -z "$RUN_USER" ] && RUN_USER="$(ps -e -o user= -o comm= | awk '$2 ~ /httpd|apache2/ && $1!="root"{print $1; exit}')"
 # 마스터가 root 권한으로 동작하는가 (직접 root 기동이거나 setuid-root 바이너리)
 MASTER_ROOT=""; { [ "$MASTER_USER" = "root" ] || [ -n "$BIN_SETUID_ROOT" ]; } && MASTER_ROOT=1
 MASTER_DESC="$MASTER_USER"

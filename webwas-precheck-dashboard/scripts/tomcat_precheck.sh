@@ -76,7 +76,7 @@ fi
 # 출력: PID (한 줄에 하나)
 detect_instances() {
   local pid cl ppid all="" parents=""
-  for pid in $(ps -eo pid=,args= 2>/dev/null | awk '/org\.apache\.catalina\.startup\.Bootstrap/ && !/awk/ {print $1}'); do
+  for pid in $(ps -e -o pid= -o args= 2>/dev/null | awk '/org\.apache\.catalina\.startup\.Bootstrap/ && !/awk/ {print $1}'); do
     cl="$(tr '\0' ' ' < /proc/"$pid"/cmdline 2>/dev/null)"
     case "$cl" in
       *org.apache.catalina.startup.Bootstrap*\ stop*) ;;   # 종료 명령 프로세스 제외

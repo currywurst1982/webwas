@@ -72,7 +72,7 @@ fi
 # nginx 마스터의 명령줄은 "nginx: master process /usr/sbin/nginx -c /etc/nginx/nginx.conf" 처럼 한 줄로 바뀌어 있음
 detect_instances() {
   local pid ppid comm pcomm exe args conf prefix
-  ps -eo pid=,ppid=,comm= 2>/dev/null | awk '$3 == "nginx"' | while read -r pid ppid comm; do
+  ps -e -o pid= -o ppid= -o comm= 2>/dev/null | awk '$3 == "nginx"' | while read -r pid ppid comm; do
     pcomm="$(ps -o comm= -p "$ppid" 2>/dev/null)"
     [ "$pcomm" = "nginx" ] && continue   # 워커·캐시 관리 프로세스
     args="$(tr '\0' ' ' < /proc/"$pid"/cmdline 2>/dev/null)"

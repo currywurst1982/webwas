@@ -38,7 +38,10 @@
   <div class="shell">
     <nav class="rail" aria-label="주 메뉴">
       <div class="rail-logo" aria-hidden="true"><svg><use href="#i-shield"/></svg></div>
-      <button class="rail-btn" data-view="overview" type="button" title="개요"><svg><use href="#i-home"/></svg><span>개요</span></button>
+      <button class="rail-btn" data-view="overview" type="button" title="요약 (핵심 지표·서버 현황판·판정 분포)"><svg><use href="#i-home"/></svg><span>요약</span></button>
+      <button class="rail-btn" data-view="security" type="button" title="침해·사각지대"><svg><use href="#i-shield"/></svg><span>침해</span></button>
+      <button class="rail-btn" data-view="vuln" type="button" title="취약점 (CVE·설정 취약 항목)"><svg><use href="#i-bug"/></svg><span>취약점</span></button>
+      <button class="rail-btn" data-view="trends" type="button" title="점검 현황 (최신 버전·일자별 건수·에이전트 상태)"><svg><use href="#i-activity"/></svg><span>현황</span></button>
       <button class="rail-btn" data-view="servers" type="button" title="서버 목록"><svg><use href="#i-server"/></svg><span>서버</span></button>
       <button class="rail-btn" data-view="agents" type="button" title="에이전트"><svg><use href="#i-agent"/></svg><span>에이전트</span></button>
       <button class="rail-btn" data-view="settings" type="button" title="설정"><svg><use href="#i-settings"/></svg><span>설정</span></button>
@@ -88,10 +91,9 @@
       </section>
 
       <!-- ===================== 개요 ===================== -->
-      <section class="view" data-view="overview" aria-label="개요">
+            <section class="view" data-view="overview" aria-label="요약" >
         <div id="kpis" class="kpis" aria-label="핵심 지표"></div>
-
-        <div class="dash">
+        <div class="dash-sub">
           <article class="card hero" aria-labelledby="hero-title">
             <div class="card-head">
               <h2 id="hero-title">서버 현황판</h2>
@@ -118,17 +120,49 @@
             <p class="card-hint" id="hero-hint"></p>
             <div id="hero-map" class="hero-map"></div>
           </article>
-
-          <article class="card trend" aria-labelledby="trend-title">
-            <div class="card-head"><h2 id="trend-title">일자별 점검 건수</h2><span class="card-meta">최근 14일</span></div>
-            <div id="trend-bars" class="trend-bars"></div>
+          <article class="card staff" aria-labelledby="status-title">
+            <div class="card-head"><h2 id="status-title">판정 분포</h2></div>
+            <div id="status-donut" class="donut-wrap"></div>
           </article>
+        </div>
+      </section>
 
-          <article class="card donut-card" aria-labelledby="latest-donut-title">
-            <div class="card-head"><h2 id="latest-donut-title">최신 버전 적용률</h2></div>
-            <div id="latest-donut" class="donut-wrap"></div>
+      <section class="view" data-view="security" aria-label="침해·사각지대" hidden>
+        <div class="dash-sub">
+          <article class="card emerg" id="intrusion-card" aria-labelledby="suspects-title">
+            <div class="card-head">
+              <h2 id="suspects-title">침해 상태</h2>
+              <a class="btn small btn-danger" id="btn-suspects-pdf" href="api/suspects.pdf" download hidden><svg><use href="#i-file"/></svg>의심 서버 PDF</a>
+            </div>
+            <div id="intrusion-status" class="istatus"></div>
+            <div id="intrusion-area" class="area"></div>
+            <div id="suspects" class="suspects"></div>
           </article>
+          <article class="card gaps" aria-labelledby="gaps-title">
+            <div class="card-head">
+              <h2 id="gaps-title">점검 사각지대</h2>
+              <span class="card-meta" id="gaps-meta"></span>
+            </div>
+            <p class="card-hint">점검 스크립트가 로그·파일을 찾지 못해 <b>실제로는 검사하지 못한</b> 항목입니다. "침해 흔적 없음"이어도 이 항목은 확인되지 않은 것입니다. 누르면 서버 목록에서 해당 서버만 봅니다.</p>
+            <div id="gap-tiles" class="gap-tiles"></div>
+          </article>
+        </div>
+      </section>
 
+      <section class="view" data-view="vuln" aria-label="취약점" hidden>
+        <div class="dash-sub">
+          <article class="card cve" aria-labelledby="cve-title">
+            <div class="card-head">
+              <h2 id="cve-title">CVE별 해당 서버</h2>
+              <div class="head-right">
+                <div class="legend" id="legend-cve"></div>
+                <a class="btn small" id="btn-cve-pdf" href="api/cve.pdf" download
+                   title="CVE별 설명·영향 구간·조건과 대상 서버(미조치/백포트 추정)를 PDF로 받습니다. 인스턴스별 최신 점검 기준이며, 고른 제품·에이전트 필터가 반영됩니다."><svg><use href="#i-file"/></svg>PDF</a>
+              </div>
+            </div>
+            <p class="card-hint">막대 = 전체 서버 중 해당 서버 비율. 마우스를 올리면 대상 서버, 누르면 목록 창</p>
+            <div id="chart-cve" class="hbars"></div>
+          </article>
           <article class="card config" aria-labelledby="config-title">
             <div class="card-head">
               <h2 id="config-title">설정 취약 항목</h2>
@@ -141,17 +175,23 @@
             <p class="card-hint">막대 = 전체 서버 중 해당 서버 비율. 마우스를 올리면 대상 서버, 누르면 목록 창</p>
             <div id="chart-config" class="hbars"></div>
           </article>
+        </div>
+      </section>
 
+      <section class="view" data-view="trends" aria-label="점검 현황" hidden>
+        <div class="dash-sub">
+          <article class="card donut-card" aria-labelledby="latest-donut-title">
+            <div class="card-head"><h2 id="latest-donut-title">최신 버전 적용률</h2></div>
+            <div id="latest-donut" class="donut-wrap"></div>
+          </article>
+          <article class="card trend" aria-labelledby="trend-title">
+            <div class="card-head"><h2 id="trend-title">일자별 점검 건수</h2><span class="card-meta">최근 14일</span></div>
+            <div id="trend-bars" class="trend-bars"></div>
+          </article>
           <article class="card res" aria-labelledby="res-title">
             <div class="card-head"><h2 id="res-title">에이전트 상태</h2></div>
             <div id="agent-tiles" class="tiles"></div>
           </article>
-
-          <article class="card staff" aria-labelledby="status-title">
-            <div class="card-head"><h2 id="status-title">판정 분포</h2></div>
-            <div id="status-donut" class="donut-wrap"></div>
-          </article>
-
           <article class="card appt" aria-labelledby="side-agents-title">
             <div class="card-head">
               <h2 id="side-agents-title">에이전트 서버 · 다음 점검</h2>
@@ -159,38 +199,6 @@
             </div>
             <ul class="sched" id="side-agents"></ul>
             <button class="btn small wide-btn" id="btn-agents" type="button"><svg><use href="#i-agent"/></svg>에이전트 관리</button>
-          </article>
-
-          <article class="card emerg" id="intrusion-card" aria-labelledby="suspects-title">
-            <div class="card-head">
-              <h2 id="suspects-title">침해 상태</h2>
-              <a class="btn small btn-danger" id="btn-suspects-pdf" href="api/suspects.pdf" download hidden><svg><use href="#i-file"/></svg>의심 서버 PDF</a>
-            </div>
-            <div id="intrusion-status" class="istatus"></div>
-            <div id="intrusion-area" class="area"></div>
-            <div id="suspects" class="suspects"></div>
-          </article>
-
-          <article class="card gaps" aria-labelledby="gaps-title">
-            <div class="card-head">
-              <h2 id="gaps-title">점검 사각지대</h2>
-              <span class="card-meta" id="gaps-meta"></span>
-            </div>
-            <p class="card-hint">점검 스크립트가 로그·파일을 찾지 못해 <b>실제로는 검사하지 못한</b> 항목입니다. "침해 흔적 없음"이어도 이 항목은 확인되지 않은 것입니다. 누르면 서버 목록에서 해당 서버만 봅니다.</p>
-            <div id="gap-tiles" class="gap-tiles"></div>
-          </article>
-
-          <article class="card cve" aria-labelledby="cve-title">
-            <div class="card-head">
-              <h2 id="cve-title">CVE별 해당 서버</h2>
-              <div class="head-right">
-                <div class="legend" id="legend-cve"></div>
-                <a class="btn small" id="btn-cve-pdf" href="api/cve.pdf" download
-                   title="CVE별 설명·영향 구간·조건과 대상 서버(미조치/백포트 추정)를 PDF로 받습니다. 인스턴스별 최신 점검 기준이며, 고른 제품·에이전트 필터가 반영됩니다."><svg><use href="#i-file"/></svg>PDF</a>
-              </div>
-            </div>
-            <p class="card-hint">막대 = 전체 서버 중 해당 서버 비율. 마우스를 올리면 대상 서버, 누르면 목록 창</p>
-            <div id="chart-cve" class="hbars"></div>
           </article>
         </div>
       </section>
@@ -394,8 +402,11 @@
       <p class="refresh-note muted" id="last-refresh"></p>
 
       <nav class="tabbar" aria-label="화면 전환">
-        <button class="tab-btn" data-view="overview" type="button"><svg><use href="#i-home"/></svg><span>개요</span></button>
-        <button class="tab-btn" data-view="servers" type="button"><svg><use href="#i-server"/></svg><span>서버 목록</span></button>
+        <button class="tab-btn" data-view="overview" type="button"><svg><use href="#i-home"/></svg><span>요약</span></button>
+        <button class="tab-btn" data-view="security" type="button"><svg><use href="#i-shield"/></svg><span>침해</span></button>
+        <button class="tab-btn" data-view="vuln" type="button"><svg><use href="#i-bug"/></svg><span>취약점</span></button>
+        <button class="tab-btn" data-view="trends" type="button"><svg><use href="#i-activity"/></svg><span>현황</span></button>
+        <button class="tab-btn" data-view="servers" type="button"><svg><use href="#i-server"/></svg><span>서버</span></button>
         <button class="tab-btn" data-view="agents" type="button"><svg><use href="#i-agent"/></svg><span>에이전트</span></button>
         <button class="tab-btn" data-view="settings" type="button"><svg><use href="#i-settings"/></svg><span>설정</span></button>
       </nav>

@@ -1432,7 +1432,7 @@
   }
 
   // ---------------------------------------------------------------- 화면 전환 · 시계
-  const VIEWS = ['overview', 'servers', 'agents', 'settings'];
+  const VIEWS = ['overview', 'security', 'vuln', 'trends', 'servers', 'agents', 'settings'];
   function showView(name, fromHash) {
     if (!VIEWS.includes(name)) name = 'overview';
     $$('section.view').forEach(v => { v.hidden = v.dataset.view !== name; });
@@ -1519,7 +1519,6 @@
     if (view !== 'board' && view !== 'iso') view = servers.length > 24 ? 'board' : 'iso'; // 처음엔 서버 수로 자동 선택
     $$('[data-hview]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.hview === view)));
     $('#hero-tools').hidden = view !== 'board';
-    $('.dash').classList.toggle('board-mode', view === 'board');
     if (view === 'iso') {
       $('#hero-hint').textContent = `서버 ${servers.length}대 전체 · 서버(호스트·IP)마다 상자 하나, 층 하나가 인스턴스 하나입니다. 위험한 서버일수록 위쪽에 놓입니다. `
         + '층을 누르면 상세 결과가 열립니다.' + (servers.length > 24 ? ' 서버가 많아 처음엔 작게 보이니 확대해서 보세요. 이름으로 찾기·묶기는 [타일] 보기가 편합니다.' : '');

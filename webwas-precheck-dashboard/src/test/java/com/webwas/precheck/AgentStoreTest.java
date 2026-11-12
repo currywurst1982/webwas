@@ -22,8 +22,14 @@ class AgentStoreTest {
     void tokenAuthAndPersistence() throws Exception {
         AgentStore s = new AgentStore(dir.resolve("agents.properties"));
         String token = s.create("web01", 24);
+        // 입력하기 쉬운 토큰: 20자 + 하이픈, 헷갈리는 0·1·I·O 없음
+        assertTrue(token.matches("[A-HJ-NP-Z2-9]{5}-[A-HJ-NP-Z2-9]{5}-[A-HJ-NP-Z2-9]{5}-[A-HJ-NP-Z2-9]{5}"), token);
         assertTrue(s.authenticate("web01", token));
-        assertFalse(s.authenticate("web01", token + "x"));
+        // 대소문자·하이픈·공백은 무시 (타이핑 실수 허용)
+        assertTrue(s.authenticate("web01", token.toLowerCase()));
+        assertTrue(s.authenticate("web01", token.replace("-", "")));
+        assertTrue(s.authenticate("web01", "  " + token.toLowerCase() + " "));
+        assertFalse(s.authenticate("web01", token + "X"));
         assertFalse(s.authenticate("nobody", token));
         assertFalse(s.authenticate("web01", null));
         // 파일에는 토큰 원문이 없어야 함

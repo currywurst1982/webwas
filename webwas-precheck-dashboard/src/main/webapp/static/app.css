@@ -606,6 +606,10 @@ pre.raw { margin: 0; padding: 12px; background: var(--code-bg); border: 1px soli
 .inline-form label { display: grid; gap: 4px; color: var(--ink-2); font-size: 13px; }
 .steps { margin: 0; padding-left: 20px; display: grid; gap: 14px; }
 .steps li > p { margin: 0 0 6px; }
+/* 설치 토큰: 화면 보고 입력하기 쉽게 크게·또렷하게 (한 번 클릭하면 전체 선택) */
+.token-show { font-family: var(--mono, ui-monospace, monospace); font-size: 25px; font-weight: 700; letter-spacing: 3px;
+  text-align: center; padding: 14px 12px; margin: 8px 0; border: 1px solid var(--line-2); border-radius: 12px;
+  background: var(--code-bg); color: var(--ink); user-select: all; word-break: break-all; }
 .codebox { display: flex; gap: 8px; align-items: flex-start; }
 /* IP 자동 그룹 규칙 */
 .ipg-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }

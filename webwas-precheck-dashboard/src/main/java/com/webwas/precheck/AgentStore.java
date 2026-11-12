@@ -11,7 +11,6 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -151,10 +150,22 @@ public class AgentStore {
         }
     }
 
+    // 화면 보고 손으로 입력하기 쉬운 토큰용 문자 (헷갈리는 0·1·I·O 제외, 32자)
+    private static final char[] TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray();
+
+    /** 입력하기 쉬운 토큰 생성: 20자(=100비트), 5자씩 '-' 로 묶어 표시. 대소문자·하이픈은 검증 때 무시(normToken). */
     private static String newToken() {
-        byte[] b = new byte[32];
-        RANDOM.nextBytes(b);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(b);
+        StringBuilder sb = new StringBuilder(24);
+        for (int i = 0; i < 20; i++) {
+            if (i > 0 && i % 5 == 0) sb.append('-');
+            sb.append(TOKEN_ALPHABET[RANDOM.nextInt(TOKEN_ALPHABET.length)]);
+        }
+        return sb.toString();
+    }
+
+    /** 토큰 정규화: 하이픈·공백 등 제거하고 대문자화 → 저장·검증은 이 형태의 해시로. (타이핑 시 대소문자·하이픈 실수 허용) */
+    static String normToken(String t) {
+        return t == null ? "" : t.toUpperCase(java.util.Locale.ROOT).replaceAll("[^A-Z0-9]", "");
     }
 
     public synchronized List<Agent> list() {
@@ -188,7 +199,7 @@ public class AgentStore {
         Agent a = new Agent();
         a.name = name;
         a.group = normGroup(group);
-        a.tokenHash = sha256(token);
+        a.tokenHash = sha256(normToken(token));
         a.intervalHours = intervalHours;
         a.createdAt = System.currentTimeMillis();
         agents.put(name, a);
@@ -207,7 +218,7 @@ public class AgentStore {
     public synchronized String rotateToken(String name) throws IOException {
         Agent a = require(name);
         String token = newToken();
-        a.tokenHash = sha256(token);
+        a.tokenHash = sha256(normToken(token));
         save();
         return token;
     }
@@ -269,8 +280,11 @@ public class AgentStore {
     public synchronized boolean authenticate(String name, String token) {
         Agent a = name == null ? null : agents.get(name);
         String expected = a == null ? sha256("no-such-agent") : a.tokenHash;
-        boolean ok = MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8),
-                sha256(token == null ? "" : token).getBytes(StandardCharsets.UTF_8));
+        byte[] exp = expected.getBytes(StandardCharsets.UTF_8);
+        String t = token == null ? "" : token;
+        // 새 토큰: 정규화(대소문자·하이픈 무시) 해시 / 예전 토큰: 원문 그대로 해시 — 둘 다 허용(기존 에이전트 호환)
+        boolean ok = MessageDigest.isEqual(exp, sha256(normToken(t)).getBytes(StandardCharsets.UTF_8))
+                | MessageDigest.isEqual(exp, sha256(t).getBytes(StandardCharsets.UTF_8));
         return a != null && ok;
     }
 

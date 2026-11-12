@@ -1250,6 +1250,11 @@
           a.state === 'running' ? '점검 중' : a.state === 'requested' || a.pendingRun ? '요청됨' : '지금 점검'),
         h('select', { 'aria-label': `${a.name} 점검 주기`, onchange: e => agentInterval(a.name, e.target.value) },
           ...INTERVALS.map(([v, l]) => h('option', { value: String(v), selected: v === a.intervalHours || null }, l))),
+        (a.scriptMatches === false || a.agentOutdated) && a.updateCapable
+          ? h('button', { class: 'btn small btn-primary', type: 'button', disabled: a.pendingUpdate || null,
+              title: '서버에 들어가지 않고, 에이전트가 대시보드에서 스크립트를 다시 받아 교체합니다(1~2분)',
+              onclick: () => updateAgentScripts(a.name) }, a.pendingUpdate ? '업데이트 요청됨' : '스크립트 업데이트')
+          : null,
         h('button', { class: 'btn small', type: 'button', onclick: () => agentGroup(a.name, a.group) }, '그룹'),
         h('button', { class: 'btn small', type: 'button', onclick: () => agentToken(a.name) }, '토큰 재발급'),
         h('button', { class: 'btn small btn-danger', type: 'button', title: '이 에이전트가 보낸 점검 기록과 상태를 초기화 (등록·토큰은 유지)',
@@ -1372,9 +1377,34 @@
       h('span', { class: 'sub mono' }, [a.hostname, a.ip].filter(Boolean).join(' · ')), ' — ',
       [a.scriptMatches === false ? '점검 스크립트가 대시보드와 다름' : null,
         a.agentOutdated ? `에이전트 ${a.agentVersion} → ${data.expectedAgentVersion}` : null].filter(Boolean).join(', '),
+      a.updateCapable ? null : h('span', { class: 'sub warn-ink' }, ' (원격 업데이트 미지원 — 수동 재설치 필요)'),
       a.state === 'offline' || a.state === 'never' ? h('span', { class: 'sub warn-ink' }, ' (지금 오프라인 — 서버 상태부터 확인)') : null)));
-    $('#reinstall-cmd').replaceChildren(codeBox(REINSTALL_CMD),
+    const capable = need.filter(a => a.updateCapable).length;
+    $('#reinstall-cmd').replaceChildren(
+      capable ? h('div', { class: 'reinstall-remote' },
+        h('p', null, h('b', null, '방법 1 — 원격 업데이트(권장): '), '서버에 들어가지 않고 버튼 한 번으로 에이전트가 대시보드에서 스크립트를 다시 받아 교체합니다(1~2분).'),
+        h('button', { class: 'btn btn-primary', type: 'button', onclick: () => updateAllScripts() }, `스크립트 업데이트 요청 (${capable}대)`),
+        h('p', { class: 'muted small-note' }, '에이전트 2.4.0 이상만 가능합니다. 그 이하 버전은 아래 수동 재설치가 한 번 필요합니다(이후부터 버튼 사용 가능).')) : null,
+      h('p', { class: 'muted small-note', style: 'margin-top:10px' }, h('b', null, '방법 2 — 수동 재설치: '), '서버마다 sudo -i 로 root 가 된 뒤 아래 명령을 붙여 넣으세요.'),
+      codeBox(REINSTALL_CMD),
       h('p', { class: 'muted small-note' }, '확인: 설치 출력에 "대시보드에서 받음" 과 "설치 완료" 가 보여야 합니다. 대시보드 주소가 예전 주소로 나오면 실행을 멈추고 /etc/webwas-precheck-agent.conf 의 DASHBOARD_URL 부터 고치세요.'));
+  }
+
+  async function updateAgentScripts(name) {
+    try {
+      await api('agents/' + encodeURIComponent(name) + '/update-scripts', { method: 'POST' });
+      await loadAgents();
+      alert(name + ' 스크립트 업데이트를 요청했습니다.\n에이전트가 1~2분 안에 대시보드에서 스크립트를 다시 받아 교체합니다. 완료되면 스크립트가 "대시보드와 같음" 으로 바뀝니다.');
+    } catch (e) { alert(e.message); }
+  }
+
+  async function updateAllScripts() {
+    try {
+      const r = await api('agents-update', { method: 'POST' });
+      await loadAgents();
+      alert(`스크립트 업데이트를 ${r.requested}대에 요청했습니다. 1~2분 안에 각 에이전트가 받아 교체합니다.`
+        + (r.notCapable ? `\n(원격 업데이트 미지원 ${r.notCapable}대는 수동 재설치가 필요합니다.)` : ''));
+    } catch (e) { alert(e.message); }
   }
 
   function codeBox(text) {

@@ -264,6 +264,27 @@ class AgentStoreTest {
     }
 
     @Test
+    void scriptUpdateRequest() throws Exception {
+        java.nio.file.Path f = dir.resolve("agents.properties");
+        AgentStore s = new AgentStore(f);
+        s.create("web01", 24);
+        s.create("web02", 24);
+        // 업데이트 요청 → heartbeat 때 한 번만 지시하고 꺼짐
+        assertEquals(1, s.requestUpdate("web01"));
+        assertTrue(s.takePendingUpdate("web01"));
+        assertFalse(s.takePendingUpdate("web01"), "두 번째 heartbeat 에는 지시 안 함");
+        assertFalse(s.takePendingUpdate("web02"), "요청 안 한 에이전트는 false");
+        // 저장/로드 유지 (요청 후 heartbeat 전)
+        s.requestUpdate("web02");
+        assertTrue(new AgentStore(f).takePendingUpdate("web02"));
+        // 여러 대 한 번에
+        assertEquals(2, s.requestUpdate(java.util.List.of("web01", "web02")));
+        assertEquals(0, s.requestUpdate(java.util.List.of("nope")));
+        // 없는 에이전트 단건은 예외
+        assertThrows(IllegalArgumentException.class, () -> s.requestUpdate("nope"));
+    }
+
+    @Test
     void groupLabel() throws Exception {
         Path f = dir.resolve("agents.properties");
         AgentStore s = new AgentStore(f);

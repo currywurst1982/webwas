@@ -52,6 +52,7 @@ public class AgentStore {
         /** 마지막 점검에서 읽은 제품별 버전 (같은 제품 인스턴스가 여러 개면 가장 낮은 버전) */
         public Map<Product, String> versions = new java.util.EnumMap<>(Product.class);
         public boolean pendingRun;           // 관리자가 "지금 점검" 요청
+        public boolean pendingUpdate;        // 관리자가 "스크립트 업데이트" 요청 → 다음 heartbeat 때 에이전트가 스크립트 다시 받음
         public long runStartedAt;            // 에이전트에게 실행하라고 응답한 시각 (0 = 실행 중 아님)
         public long lastRunAt;               // 마지막 실행 완료 시각
         public int lastExit = -1;
@@ -63,7 +64,7 @@ public class AgentStore {
             Agent a = new Agent();
             a.name = name; a.group = group; a.tokenHash = tokenHash; a.intervalHours = intervalHours; a.createdAt = createdAt;
             a.lastSeen = lastSeen; a.lastSeenPersisted = lastSeenPersisted; a.hostname = hostname; a.ip = ip;
-            a.agentVersion = agentVersion; a.scriptSha256 = scriptSha256; a.pendingRun = pendingRun;
+            a.agentVersion = agentVersion; a.scriptSha256 = scriptSha256; a.pendingRun = pendingRun; a.pendingUpdate = pendingUpdate;
             a.versions = new java.util.EnumMap<>(Product.class);
             a.versions.putAll(versions);
             a.runStartedAt = runStartedAt; a.lastRunAt = lastRunAt; a.lastExit = lastExit;
@@ -115,6 +116,7 @@ public class AgentStore {
             m.put("versions", vs);
             m.put("scriptMatches", scriptSha256 == null || expectedSha == null ? null : scriptSha256.equals(expectedSha));
             m.put("pendingRun", pendingRun);
+            m.put("pendingUpdate", pendingUpdate);
             m.put("runStartedAt", runStartedAt);
             m.put("lastRunAt", lastRunAt);
             m.put("lastExit", lastExit);
@@ -240,6 +242,37 @@ public class AgentStore {
         if (name != null && n == 0) throw new IllegalArgumentException("에이전트가 없습니다.");
         save();
         return n;
+    }
+
+    /** 스크립트 업데이트 요청: 다음 heartbeat 때 에이전트가 대시보드에서 스크립트를 다시 받아 교체. name 이 null 이면 전체. */
+    public synchronized int requestUpdate(String name) throws IOException {
+        int n = 0;
+        for (Agent a : agents.values()) {
+            if (name == null || a.name.equals(name)) { a.pendingUpdate = true; n++; }
+        }
+        if (name != null && n == 0) throw new IllegalArgumentException("에이전트가 없습니다.");
+        save();
+        return n;
+    }
+
+    /** 여러 에이전트에 한 번에 업데이트 요청 (전체 버튼용). 저장은 한 번만. */
+    public synchronized int requestUpdate(java.util.Collection<String> names) throws IOException {
+        int n = 0;
+        for (String nm : names) {
+            Agent a = agents.get(nm);
+            if (a != null) { a.pendingUpdate = true; n++; }
+        }
+        if (n > 0) save();
+        return n;
+    }
+
+    /** heartbeat 때: 업데이트 요청이 있었으면 true 를 돌려주고 플래그를 끔(한 번만 지시). */
+    public synchronized boolean takePendingUpdate(String name) throws IOException {
+        Agent a = name == null ? null : agents.get(name);
+        if (a == null || !a.pendingUpdate) return false;
+        a.pendingUpdate = false;
+        save();
+        return true;
     }
 
     /**
@@ -450,6 +483,7 @@ public class AgentStore {
                 if (v != null) a.versions.put(prod, v);
             }
             a.pendingRun = "true".equals(p.getProperty(n + ".pendingRun"));
+            a.pendingUpdate = "true".equals(p.getProperty(n + ".pendingUpdate"));
             a.runStartedAt = num(p, n + ".runStartedAt", 0);
             a.lastRunAt = num(p, n + ".lastRunAt", 0);
             a.lastExit = (int) num(p, n + ".lastExit", -1);
@@ -483,6 +517,7 @@ public class AgentStore {
             if (a.scriptSha256 != null) p.setProperty(n + ".scriptSha256", a.scriptSha256);
             a.versions.forEach((prod, v) -> p.setProperty(n + ".version." + prod.id, v));
             p.setProperty(n + ".pendingRun", String.valueOf(a.pendingRun));
+            p.setProperty(n + ".pendingUpdate", String.valueOf(a.pendingUpdate));
             p.setProperty(n + ".runStartedAt", String.valueOf(a.runStartedAt));
             p.setProperty(n + ".lastRunAt", String.valueOf(a.lastRunAt));
             p.setProperty(n + ".lastExit", String.valueOf(a.lastExit));

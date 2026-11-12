@@ -201,6 +201,8 @@ public class ApiServlet extends HttpServlet {
                 // 에이전트 본체가 WAR 의 에이전트보다 낮으면 재설치 필요 (점검 스크립트 비교와 별개)
                 m.put("agentOutdated", expectedAgent != null && a.agentVersion != null
                         && ReportParser.compareVersions(a.agentVersion, expectedAgent) < 0);
+                // 원격 스크립트 업데이트(버튼) 지원 여부: 에이전트 2.4.0 이상
+                m.put("updateCapable", a.agentVersion != null && ReportParser.compareVersions(a.agentVersion, "2.4.0") >= 0);
                 Map<String, Boolean> each = new LinkedHashMap<>();
                 a.versions.forEach((prod, v) -> each.put(prod.id, lv.isUpToDate(prod, v)));
                 m.put("versionUpToDate", each);
@@ -232,7 +234,7 @@ public class ApiServlet extends HttpServlet {
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws IOException, ServletException {
         String[] p = parts(req);
         if (!requireAdmin(req, resp)) return;
-        if (p.length >= 1 && (p[0].equals("agents") || p[0].equals("agents-run"))) {
+        if (p.length >= 1 && (p[0].equals("agents") || p[0].equals("agents-run") || p[0].equals("agents-update"))) {
             agentAction(req, resp, p);
         } else if (p.length == 1 && p[0].equals("latest-version")) {
             LatestVersions lvs = Web.latest(getServletContext());
@@ -372,6 +374,35 @@ public class ApiServlet extends HttpServlet {
                 long offline = agents.list().stream().filter(a -> "offline".equals(a.state(nowMs)) || "never".equals(a.state(nowMs))).count();
                 LOG.info("[webwas-precheck] 전체 에이전트 점검 요청 (" + n + "대) by " + by);
                 Web.json(resp, 200, Map.of("requested", n, "offline", offline));
+            } else if (p.length == 1 && p[0].equals("agents-update")) {
+                // 스크립트/에이전트가 대시보드와 다른 에이전트만 업데이트 요청 (2.4.0 미만은 원격 업데이트 미지원이라 제외)
+                Object sha = getServletContext().getAttribute(AppInit.ATTR_SCRIPT_SHA);
+                String expSha = sha == null ? null : sha.toString();
+                Object av = getServletContext().getAttribute(AppInit.ATTR_AGENT_VERSION);
+                String expAgent = av == null ? null : av.toString();
+                List<String> names = new ArrayList<>();
+                int notCapable = 0;
+                for (AgentStore.Agent a : agents.list()) {
+                    boolean capable = a.agentVersion != null && ReportParser.compareVersions(a.agentVersion, "2.4.0") >= 0;
+                    boolean scriptDiff = a.scriptSha256 != null && expSha != null && !expSha.equals(a.scriptSha256);
+                    boolean agentOld = expAgent != null && a.agentVersion != null && ReportParser.compareVersions(a.agentVersion, expAgent) < 0;
+                    if (scriptDiff || agentOld) {
+                        if (capable) names.add(a.name); else notCapable++;
+                    }
+                }
+                int n = agents.requestUpdate(names);
+                LOG.info("[webwas-precheck] 전체 스크립트 업데이트 요청 (" + n + "대) by " + by);
+                Web.json(resp, 200, Map.of("requested", n, "notCapable", notCapable));
+            } else if (p.length == 3 && p[2].equals("update-scripts")) {
+                boolean capable = agents.list().stream().anyMatch(a -> a.name.equals(p[1])
+                        && a.agentVersion != null && ReportParser.compareVersions(a.agentVersion, "2.4.0") >= 0);
+                if (!capable) {
+                    Web.json(resp, 400, Map.of("error", "이 에이전트는 원격 업데이트를 지원하지 않는 버전입니다(2.4.0 미만). 한 번은 수동 재설치가 필요합니다."));
+                } else {
+                    agents.requestUpdate(p[1]);
+                    LOG.info("[webwas-precheck] 에이전트 스크립트 업데이트 요청: " + p[1] + " by " + by);
+                    Web.json(resp, 200, Map.of("requested", 1));
+                }
             } else if (p.length == 1) {
                 String name = req.getParameter("name");
                 name = name == null ? null : name.trim();

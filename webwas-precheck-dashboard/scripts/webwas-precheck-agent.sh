@@ -38,7 +38,7 @@
 #    TOMCAT_SERVER_LOG_PATHS=  (tomcat_precheck.sh  -s 값, catalina.out 등이 logs 폴더 밖에 있을 때)
 # =====================================================================
 
-AGENT_VERSION="2.3.1"   # 2.1.0: heartbeat(busy=1) / 2.2.0: 서버 로그 경로(-s) / 2.3.0: Nginx / 2.3.1: 구버전 ps 호환(ps -o 분리) — RHEL7 등에서 제품 탐지 실패 수정
+AGENT_VERSION="2.4.0"   # 2.2.0: 서버 로그 경로(-s) / 2.3.0: Nginx / 2.3.1: 구버전 ps 호환 / 2.4.0: 대시보드 버튼으로 원격 스크립트 업데이트(update_scripts)
 CONF="${WEBWAS_PRECHECK_AGENT_CONF:-/etc/webwas-precheck-agent.conf}"
 BASE_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 ALL_PRODUCTS="apache wildfly tomcat nginx"   # 순서 고정 (스크립트 SHA-256 계산 순서 = 대시보드 Product 순서와 같음)
@@ -163,6 +163,28 @@ flush_outbox() {
   echo "$n"
 }
 
+# 대시보드가 "스크립트 업데이트"를 지시하면(heartbeat 응답 update:true) 호출.
+# 에이전트가 자기 대시보드(DASHBOARD_URL)에서 점검 스크립트 4개 + 에이전트 본체를 다시 받아 교체.
+#   - 받은 파일이 비어있지 않고 '#!' 로 시작하고 bash 문법검사를 통과할 때만 교체(원자적 mv). 아니면 기존 유지.
+#   - 에이전트 본체는 맨 마지막에 교체 → 다음 타이머 실행부터 새 버전 적용.
+update_scripts() {
+  log "스크립트 업데이트 시작 (대시보드에서 다시 받기)"
+  local name code tmp fail=0
+  for name in apache_precheck.sh wildfly_precheck.sh tomcat_precheck.sh nginx_precheck.sh webwas-precheck-agent.sh; do
+    code="$(api "files/$name" -X GET)"
+    if [ "$code" = "200" ] && [ -s "$WORK/resp" ] && head -n1 "$WORK/resp" | grep -q '^#!' && bash -n "$WORK/resp" 2>/dev/null; then
+      tmp="$BASE_DIR/.upd.$$.$name"
+      if cp -f "$WORK/resp" "$tmp" 2>/dev/null && chmod +x "$tmp" && mv -f "$tmp" "$BASE_DIR/$name"; then
+        log "  갱신: $name"
+      else rm -f "$tmp" 2>/dev/null; log "  실패(쓰기 권한 확인): $name"; fail=1; fi
+    else
+      log "  실패: $name (HTTP ${code:-없음} 또는 내용 이상 → 건너뜀, 기존 유지)"; fail=1
+    fi
+  done
+  [ "$fail" = 0 ] && log "스크립트 업데이트 완료" || log "스크립트 업데이트 일부 실패 — 대시보드에서 다시 요청하세요"
+  heartbeat 0 >/dev/null 2>&1 || true   # 새 스크립트 해시를 바로 보고(화면이 '같음'으로 갱신되도록)
+}
+
 do_run() {
   local marker="$WORK/marker" rc=0 one n_made n_sent msg products p args cve lp slp script done_list="" fail_list=""
   : > "$marker"; sleep 1
@@ -249,9 +271,12 @@ case "${1:-poll}" in
       log "heartbeat 실패(HTTP ${code:-없음}): $(head -c 300 "$WORK/resp" 2>/dev/null) $(cat "$WORK/curl.err" 2>/dev/null)"
       exit 1
     fi
-    if grep -q '"run":true' "$WORK/resp"; then
-      do_run
-    fi
+    # 응답 플래그를 먼저 읽음 (update_scripts 가 $WORK/resp 를 덮어쓰므로)
+    do_upd=0; do_chk=0
+    grep -q '"update":true' "$WORK/resp" && do_upd=1
+    grep -q '"run":true' "$WORK/resp" && do_chk=1
+    [ "$do_upd" = 1 ] && update_scripts
+    [ "$do_chk" = 1 ] && do_run
     ;;
   *)
     echo "사용법: $0 {poll|run|test|detect}"; exit 1 ;;

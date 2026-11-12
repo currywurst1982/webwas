@@ -92,10 +92,13 @@ public class AgentApiServlet extends HttpServlet {
                             "1".equals(req.getParameter("busy")), "1".equals(req.getParameter("probe")),
                             latest.skipUpToDate() ? latest : null);
                     Map<String, Object> out = new LinkedHashMap<>();
+                    boolean doUpdate = agents.takePendingUpdate(name);
                     out.put("run", reason != null);
                     out.put("reason", reason);
+                    out.put("update", doUpdate);
                     out.put("expectedScriptSha256", getServletContext().getAttribute(AppInit.ATTR_SCRIPT_SHA));
                     if (reason != null) LOG.info("[webwas-precheck] 에이전트 점검 지시: " + name + " (" + reason + ")");
+                    if (doUpdate) LOG.info("[webwas-precheck] 에이전트 스크립트 업데이트 지시: " + name);
                     Web.json(resp, 200, out);
                 }
                 case "/report" -> {

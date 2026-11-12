@@ -32,6 +32,11 @@ public class AuthFilter extends HttpFilter {
                         + "object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
 
         String path = req.getRequestURI().substring(req.getContextPath().length());
+        // 화면 파일(HTML·JS·CSS)은 항상 서버에 최신인지 확인하고 받도록 (no-cache = 캐시는 하되 쓰기 전 재검증).
+        // WAR 를 새로 올렸는데 브라우저가 예전 app.js 를 캐시에서 계속 쓰는 문제를 막음 → 다음부터 하드 리프레시 불필요.
+        if (path.equals("/") || path.equals("/index.html") || path.startsWith("/static/")) {
+            resp.setHeader("Cache-Control", "no-cache");
+        }
         boolean secure = req.isSecure() || "https".equalsIgnoreCase(req.getHeader("X-Forwarded-Proto"));
         if (AppInit.httpsOnly()) {
             if (secure) {

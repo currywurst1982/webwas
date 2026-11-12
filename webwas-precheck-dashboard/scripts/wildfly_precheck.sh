@@ -970,9 +970,17 @@ DL="$(grep -E 'directory-listing="true"' "$CFG")"
 if [ -n "$DL" ]; then warn "디렉터리 목록 노출(directory-listing=\"true\")"; printf '%s\n' "$DL" | sed 's/^[ \t]*//' | show
 else ok "디렉터리 목록 노출 설정 없음"; fi
 if grep -qE '<jsp-config[^>]*development="true"' "$CFG"; then warn "JSP 개발 모드(development=\"true\") → 운영에서는 끄기 권장"; fi
-if grep -qE '(<response-header[^>]*header-name="(Server|X-Powered-By)")' "$CFG"; then
-  warn "응답 헤더로 서버 정보 노출 설정(Server / X-Powered-By) 있음"
-  grep -E '<response-header[^>]*header-name="(Server|X-Powered-By)"' "$CFG" | sed 's/^[ \t]*//' | show
+# Server/X-Powered-By 응답 헤더 필터: 값(header-value)에 버전 번호가 있으면 노출=[주의],
+#   버전 없는 고정값이면 실제 서버 정보를 숨기는 하드닝 설정이므로 [정보] (값만 확인)
+SRVH="$(grep -E '<response-header[^>]*header-name="(Server|X-Powered-By)"' "$CFG")"
+if [ -n "$SRVH" ]; then
+  if printf '%s' "$SRVH" | grep -qE 'header-value="[^"]*[0-9]+\.[0-9]'; then
+    warn "응답 헤더(Server/X-Powered-By) 값에 버전 번호가 들어 있음 → 서버 상세 노출. 값에서 버전 제거 권장"
+    printf '%s\n' "$SRVH" | sed 's/^[ \t]*//' | show
+  else
+    info "응답 헤더(Server/X-Powered-By)를 고정값으로 설정 — 실제 서버·버전을 숨기는 하드닝 설정으로 보임. 값에 버전·상세가 없는지만 확인하세요"
+    printf '%s\n' "$SRVH" | sed 's/^[ \t]*//' | show
+  fi
 fi
 HTTP_PORT="$(port_of http)"
 if [ -n "$HTTP_PORT" ] && command -v curl >/dev/null 2>&1 && [ -n "${PRECHECK_PID:-}" ]; then

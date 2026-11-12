@@ -196,6 +196,42 @@
   }
 
   // ---------------------------------------------------------------- CSV 내보내기
+  /** CSV 셀: 수식 주입 방지(=,+,-,@ 로 시작하면 ' 붙임) + 따옴표/쉼표/줄바꿈 처리 */
+  function csvCell(v) {
+    let s = v == null ? '' : String(v);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  /** CSV 파일로 저장 (UTF-8 BOM 으로 엑셀 한글 깨짐 방지) */
+  function downloadCsv(prefix, head, rows) {
+    const csv = '﻿' + [head.map(csvCell).join(','), ...rows.map(r => r.map(csvCell).join(','))].join('\r\n') + '\r\n';
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    const name = `webwas-precheck_${prefix}_${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}.csv`;
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = h('a', { href: url, download: name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  /** 에이전트(등록된 서버) 목록을 CSV 로 저장 */
+  function exportAgentsCsv() {
+    const data = state.agents;
+    const list = (data && data.agents) || [];
+    if (!list.length) { alert('내보낼 에이전트가 없습니다.'); return; }
+    const head = ['상태', '에이전트', '그룹', '호스트', 'IP', '마지막 접속', '마지막 점검', '점검 제품·버전',
+      '다음 자동 점검', '주기(시간)', '스크립트', '에이전트 버전', '마지막 메시지'];
+    const rows = list.map(a => {
+      const grp = a.group || (a.groupFromRule && a.effectiveGroup ? a.effectiveGroup + '(규칙)' : '');
+      const prods = (a.instances || []).map(x => `${PRODUCTS[x.product] || x.product} ${x.version || '?'}`).join(' / ');
+      const next = a.intervalHours === 0 ? '수동만' : (a.lastReportAt ? abs(a.nextRunAt) : '설치 후 바로');
+      const script = a.scriptMatches === false ? '다름' : a.scriptMatches ? '같음' : '-';
+      return [(AGENT_STATE[a.state] || {}).label || a.state, a.name, grp, a.hostname || '', a.ip || '',
+        a.lastSeen ? abs(a.lastSeen) : '', a.lastReportAt ? abs(a.lastReportAt) : '아직 없음', prods,
+        next, a.intervalHours, script, a.agentVersion || '', a.lastMessage || ''];
+    });
+    downloadCsv('agents', head, rows);
+  }
+
   /** 지금 걸러진 서버 목록을 CSV 로 저장. 엑셀이 한글을 바로 읽도록 UTF-8 BOM, 수식 주입 방지(=,+,-,@ 로 시작하면 ' 붙임) */
   function exportCsv() {
     const list = sortList(filtered());
@@ -611,10 +647,23 @@
   let current = null;
 
   async function openDetail(id) {
-    let r;
-    try { r = await api('reports/' + encodeURIComponent(id)); } catch (e) { showAlert(e.message); return; }
-    current = r;
     const dlg = $('#detail');
+    // 창을 먼저 즉시 열고 '불러오는 중'을 표시 (네트워크·렌더를 기다리는 동안 멈춘 듯 보이지 않게)
+    $('#d-title').replaceChildren(h('span', { class: 'muted' }, '상세 결과 불러오는 중…'));
+    $('#d-sub').textContent = '';
+    $('#d-dq').replaceChildren();
+    $('[data-panel="findings"]').replaceChildren(h('p', { class: 'muted' }, '불러오는 중…'));
+    if (!dlg.open) dlg.showModal();
+    $('#detail .dialog-body').scrollTop = 0;
+    $('#d-top').hidden = true;
+    let r;
+    try { r = await api('reports/' + encodeURIComponent(id)); }
+    catch (e) {
+      $('#d-title').replaceChildren(h('span', { class: 'muted' }, '상세를 불러오지 못했습니다'));
+      $('[data-panel="findings"]').replaceChildren(h('p', { class: 'muted' }, e.message));
+      return;
+    }
+    current = r;
     $('#d-title').replaceChildren(badge(r.status), prodBadge(r.product), r.host, h('span', { class: 'muted' }, prodVer(r)));
     $('#d-sub').textContent = [r.checkedAt, r.ips.length ? 'IP ' + r.ips.join(', ') + (r.ipFromAgent ? '(접속 IP)' : '') : null, r.binary,
       r.confArg ? (r.product === 'apache' ? '-f ' + r.confArg : r.product === 'nginx' ? '-c ' + r.confArg : r.confArg) : null,
@@ -638,7 +687,6 @@
     renderDiff(r);
     $('#d-rawtext').textContent = r.raw;
     selectTab('findings');
-    if (!dlg.open) dlg.showModal();
     // 창이 열린 뒤에 맨 위로 (닫힌 창에서는 스크롤 위치가 바뀌지 않음)
     $('#detail .dialog-body').scrollTop = 0;
     $('#d-top').hidden = true;
@@ -2133,6 +2181,7 @@
     });
     $('#btn-refresh').addEventListener('click', refreshAll);
     $('#btn-csv').addEventListener('click', exportCsv);
+    $('#btn-agents-csv').addEventListener('click', exportAgentsCsv);
     $$('#servers th[data-sort]').forEach(th => th.addEventListener('click', () => {
       const k = th.dataset.sort;
       state.sort = { key: k, asc: state.sort.key === k ? !state.sort.asc : k === 'status' || k === 'host' };

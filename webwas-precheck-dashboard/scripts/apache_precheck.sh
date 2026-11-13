@@ -845,12 +845,12 @@ else
   done | grep -E '^/' | grep -iE 'log' | grep -vE '^/(dev|proc)/|\(deleted\)$' | sort -u | while read -r f; do
     [ -f "$f" ] || continue
     echo "$f"
-    find "$(dirname "$f")" -maxdepth 1 -type f -name '*access*' 2>/dev/null
+    find "$(dirname "$f")" -maxdepth 1 -type f -mtime "-$RECENT_DAYS" -name '*access*' 2>/dev/null
   done >> "$LOGS"
 
   # (c) 배포판 기본 경로
   for d in /var/log/httpd /var/log/apache2 /usr/local/apache2/logs /opt/apache2/logs; do
-    [ -d "$d" ] && find "$d" -type f \( -name '*access*' -o -name '*ssl_request*' \) 2>/dev/null
+    [ -d "$d" ] && find "$d" -type f -mtime "-$RECENT_DAYS" \( -name '*access*' -o -name '*ssl_request*' \) 2>/dev/null
   done >> "$LOGS"
 fi
 # 정규 파일만, 에러 로그·작업 디렉터리 제외

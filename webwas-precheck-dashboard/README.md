@@ -313,6 +313,14 @@ mvn package
 |---|---|
 | `/opt/webwas-precheck-agent/` | 에이전트, 점검 스크립트 3개, 받은 CVE 목록(`cve/`), 보낸 리포트(`sent/`), 전송 대기(`outbox/`) |
 | `/etc/webwas-precheck-agent.conf` | 주소·이름·토큰(권한 600), `PRODUCTS`, `RECENT_DAYS`, `RUN_TIMEOUT`, `APACHE_LOG_PATHS`·`WILDFLY_LOG_PATHS`·`TOMCAT_LOG_PATHS`(접근 로그, -l), `WILDFLY_SERVER_LOG_PATHS`·`TOMCAT_SERVER_LOG_PATHS`(서버 로그, -s) |
+
+### 점검 시간 초과(RUN_TIMEOUT) · 로그 스캔 범위 (2026-11-13)
+
+제품 하나 점검이 `RUN_TIMEOUT`(기본 3600초=1시간)을 넘기면 "점검 시간 초과로 중단됨"이 됩니다. 주원인은 **침해 흔적 점검의 로그 스캔**인데, 예전에는 접근 로그·server.log·catalina.out 을 **날짜 제한 없이 전체(오래된 회전·압축 로그 포함)** 훑어, WildFly 인스턴스가 많은 서버(예: 8개)에서 1시간을 넘기곤 했습니다.
+
+- **수정**: 자동으로 찾는 접근/서버 로그를 **최근 `RECENT_DAYS`일(기본 30일) 안에 바뀐 파일만** 스캔하도록 제한했습니다(로그인 기록·배포 파일 점검과 같은 기준). 오래된 회전·압축 로그는 건너뛰어 스캔 시간이 크게 줄어듭니다.
+- **더 넓게/좁게**: 과거 전체를 한 번 깊게 보려면 `RECENT_DAYS` 를 크게(예: 365), 더 빠르게 하려면 작게(예: 7) 설정하세요. 여전히 느리면 `RUN_TIMEOUT` 을 늘리세요(예: 7200). 모두 `/etc/webwas-precheck-agent.conf`.
+- 단, 활성 로그 1개가 매우 크면(예: 회전 안 하는 catalina.out 수 GB) 그 파일 자체 스캔은 날짜 제한으로 못 줄입니다 → 로그 회전(rotate) 설정을 권장합니다.
 | systemd 타이머 `webwas-precheck-agent.timer` | 1분마다 실행 (없으면 `/etc/cron.d/webwas-precheck-agent`) |
 
 ```bash

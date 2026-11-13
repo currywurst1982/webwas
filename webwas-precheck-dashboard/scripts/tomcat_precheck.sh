@@ -1589,7 +1589,7 @@ for n in z.namelist():
 fi
 
 # 4-3 Tomcat 로그(catalina.out / catalina.*.log / localhost.*.log)의 공격·침해 흔적
-CLOGS="$(find "$LOG_DIR" -maxdepth 2 -type f \( -name 'catalina.out*' -o -name 'catalina.*.log*' -o -name 'localhost.*.log*' -o -name 'manager.*.log*' \) 2>/dev/null | sort)"
+CLOGS="$(find "$LOG_DIR" -maxdepth 2 -type f -mtime "-$RECENT_DAYS" \( -name 'catalina.out*' -o -name 'catalina.*.log*' -o -name 'localhost.*.log*' -o -name 'manager.*.log*' \) 2>/dev/null | sort)"
 if [ -n "$SERVER_LOG_PATHS" ]; then
   # -s 로 지정한 경로 (와일드카드 가능)
   for p in $SERVER_LOG_PATHS; do

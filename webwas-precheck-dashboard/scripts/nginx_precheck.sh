@@ -838,7 +838,7 @@ else
   # (c) 위에서 못 찾았을 때만 기본 경로
   if ! grep -q . "$LOGS"; then
     for d in /var/log/nginx /usr/local/nginx/logs /opt/nginx/logs; do
-      [ -d "$d" ] && find "$d" -type f -name '*access*' 2>/dev/null
+      [ -d "$d" ] && find "$d" -type f -mtime "-$RECENT_DAYS" -name '*access*' 2>/dev/null
     done >> "$LOGS"
   fi
 fi

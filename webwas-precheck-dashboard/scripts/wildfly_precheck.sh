@@ -1029,9 +1029,9 @@ else
     AP="$(printf '%s' "$AL" | sed -n 's/.*prefix="\([^"]*\)".*/\1/p')"; AP="${AP:-access_log.}"
     AD="$(printf '%s' "$AL" | sed -n 's/.*directory="\([^"]*\)".*/\1/p')"; AD="$(resolve "${AD:-$LOG_DIR}")"
     [ -z "$AD" ] && AD="$LOG_DIR"
-    find "$AD" -maxdepth 1 -type f -name "${AP}*" 2>/dev/null >> "$LOGS"
+    find "$AD" -maxdepth 1 -type f -mtime "-$RECENT_DAYS" -name "${AP}*" 2>/dev/null >> "$LOGS"
   fi
-  find "$LOG_DIR" -maxdepth 3 -type f -name 'access_log*' 2>/dev/null >> "$LOGS"
+  find "$LOG_DIR" -maxdepth 3 -type f -mtime "-$RECENT_DAYS" -name 'access_log*' 2>/dev/null >> "$LOGS"
 fi
 sort -u "$LOGS" | while read -r f; do [ -f "$f" ] && [[ "$f" != "$REPORT" ]] && echo "$f"; done > "$WORK/logs2.txt"; mv "$WORK/logs2.txt" "$LOGS"
 
@@ -1162,7 +1162,7 @@ awk '/<subsystem xmlns="urn:jboss:domain:logging/{f=1} f && /<file /{print} f &&
   case "$pth" in /*) f="$pth" ;; *) [ -n "$base" ] || continue; f="$base/$pth" ;; esac
   ls -d -- "$f" "$f".* 2>/dev/null
 done >> "$SLOGS_F"
-find "$LOG_DIR" -maxdepth 3 -type f -name 'server.log*' 2>/dev/null >> "$SLOGS_F"
+find "$LOG_DIR" -maxdepth 3 -type f -mtime "-$RECENT_DAYS" -name 'server.log*' 2>/dev/null >> "$SLOGS_F"
 if [ -n "$SERVER_LOG_PATHS" ]; then
   # -s 로 지정한 경로 (와일드카드 가능)
   for p in $SERVER_LOG_PATHS; do

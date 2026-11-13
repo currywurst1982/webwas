@@ -1216,18 +1216,32 @@
   }
   function abs(ms) { return ms ? new Date(ms).toLocaleString('ko-KR') : ''; }
 
-  async function loadAgents() {
+  /** 에이전트 검색: 이름·그룹·호스트·IP·버전·제품·마지막 메시지에서 찾음 */
+  function agentMatches(a, q) {
+    const hay = [a.name, a.group, a.effectiveGroup, a.hostname, a.ip, a.agentVersion, a.lastMessage,
+      ...((a.instances || []).map(x => (PRODUCTS[x.product] || x.product) + ' ' + (x.version || '')))]
+      .filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(q);
+  }
+
+  async function loadAgents(useCache) {
     let data;
-    try { data = await api('agents'); } catch (e) { $('#agents tbody').replaceChildren(h('tr', null, h('td', { colspan: '9', class: 'muted' }, '에이전트 목록을 불러오지 못했습니다: ' + e.message))); return; }
-    state.agents = data;
+    if (useCache && state.agents) {
+      data = state.agents;   // 검색 등: 네트워크 없이 캐시로 다시 그림
+    } else {
+      try { data = await api('agents'); } catch (e) { $('#agents tbody').replaceChildren(h('tr', null, h('td', { colspan: '9', class: 'muted' }, '에이전트 목록을 불러오지 못했습니다: ' + e.message))); return; }
+      state.agents = data;
+    }
     renderAgentUrl();
     const now = data.now;
+    const q = ($('#ag-q') ? $('#ag-q').value : '').trim().toLowerCase();
+    const shown = q ? data.agents.filter(a => agentMatches(a, q)) : data.agents;
     const count = {};
     data.agents.forEach(a => { count[a.state] = (count[a.state] || 0) + 1; });
     $('#agents-summary').textContent = data.agents.length
-      ? Object.entries(AGENT_STATE).filter(([k]) => count[k]).map(([k, v]) => `${v.label} ${count[k]}`).join(' · ')
+      ? Object.entries(AGENT_STATE).filter(([k]) => count[k]).map(([k, v]) => `${v.label} ${count[k]}`).join(' · ') + (q ? ` · 검색 ${shown.length}/${data.agents.length}대` : '')
       : '';
-    const rows = data.agents.map(a => {
+    const rows = shown.map(a => {
       const st = AGENT_STATE[a.state] || AGENT_STATE.never;
       const next = a.intervalHours === 0 ? '수동만' : a.lastReportAt ? rel(a.nextRunAt, now) : '설치 후 바로';
       const scriptBadge = a.scriptMatches === null || a.scriptMatches === undefined ? h('span', { class: 'zero' }, '-')
@@ -1278,7 +1292,7 @@
         actions);
     });
     if (!rows.length) rows.push(h('tr', null, h('td', { colspan: '9', class: 'muted' },
-      state.me.admin ? '등록된 에이전트가 없습니다. [에이전트 추가]로 점검할 서버(Apache·WildFly·Tomcat)에 에이전트를 설치하세요.' : '등록된 에이전트가 없습니다.')));
+      q ? `검색 결과가 없습니다 (검색어: "${q}")` : (state.me.admin ? '등록된 에이전트가 없습니다. [에이전트 추가]로 점검할 서버(Apache·WildFly·Tomcat)에 에이전트를 설치하세요.' : '등록된 에이전트가 없습니다.'))));
     $('#agents tbody').replaceChildren(...rows);
     renderReinstall(data);
     const rsel = $('#r-agent');
@@ -1380,14 +1394,15 @@
       a.updateCapable ? null : h('span', { class: 'sub warn-ink' }, ' (원격 업데이트 미지원 — 수동 재설치 필요)'),
       a.state === 'offline' || a.state === 'never' ? h('span', { class: 'sub warn-ink' }, ' (지금 오프라인 — 서버 상태부터 확인)') : null)));
     const capable = need.filter(a => a.updateCapable).length;
-    $('#reinstall-cmd').replaceChildren(
+    $('#reinstall-cmd').replaceChildren(...[
       capable ? h('div', { class: 'reinstall-remote' },
         h('p', null, h('b', null, '방법 1 — 원격 업데이트(권장): '), '서버에 들어가지 않고 버튼 한 번으로 에이전트가 대시보드에서 스크립트를 다시 받아 교체합니다(1~2분).'),
         h('button', { class: 'btn btn-primary', type: 'button', onclick: () => updateAllScripts() }, `스크립트 업데이트 요청 (${capable}대)`),
         h('p', { class: 'muted small-note' }, '에이전트 2.4.0 이상만 가능합니다. 그 이하 버전은 아래 수동 재설치가 한 번 필요합니다(이후부터 버튼 사용 가능).')) : null,
       h('p', { class: 'muted small-note', style: 'margin-top:10px' }, h('b', null, '방법 2 — 수동 재설치: '), '서버마다 sudo -i 로 root 가 된 뒤 아래 명령을 붙여 넣으세요.'),
       codeBox(REINSTALL_CMD),
-      h('p', { class: 'muted small-note' }, '확인: 설치 출력에 "대시보드에서 받음" 과 "설치 완료" 가 보여야 합니다. 대시보드 주소가 예전 주소로 나오면 실행을 멈추고 /etc/webwas-precheck-agent.conf 의 DASHBOARD_URL 부터 고치세요.'));
+      h('p', { class: 'muted small-note' }, '확인: 설치 출력에 "대시보드에서 받음" 과 "설치 완료" 가 보여야 합니다. 대시보드 주소가 예전 주소로 나오면 실행을 멈추고 /etc/webwas-precheck-agent.conf 의 DASHBOARD_URL 부터 고치세요.')
+    ].filter(Boolean));
   }
 
   async function updateAgentScripts(name) {
@@ -2215,6 +2230,8 @@
     $('#btn-refresh').addEventListener('click', refreshAll);
     $('#btn-csv').addEventListener('click', exportCsv);
     $('#btn-agents-csv').addEventListener('click', exportAgentsCsv);
+    // 검색: 이미 받아 둔 목록을 네트워크 없이 바로 다시 그림(없으면 불러옴)
+    $('#ag-q').addEventListener('input', () => loadAgents(!!state.agents));
     $$('#servers th[data-sort]').forEach(th => th.addEventListener('click', () => {
       const k = th.dataset.sort;
       state.sort = { key: k, asc: state.sort.key === k ? !state.sort.asc : k === 'status' || k === 'host' };

@@ -268,6 +268,8 @@ select option { background: var(--bg2); }
 .card-meta { color: var(--muted); font-size: 12px; }
 .card-hint { color: var(--muted); font-size: 12px; margin: -4px 0 10px; }
 .head-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ag-search { height: 34px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--card-2); color: var(--ink); font: inherit; min-width: 220px; }
+.ag-search::placeholder { color: var(--muted); }
 .alert { padding: 10px 14px; border-radius: 12px; background: var(--s-critical-bg); color: var(--s-critical-ink); border: 1px solid rgba(229,72,77,.35); }
 .alert.info { background: rgba(56,189,248,.08); color: var(--ink); border-color: var(--line-2); }
 .alert.warn { background: var(--s-warning-bg); color: var(--s-warning-ink); border-color: rgba(250,178,25,.35); }

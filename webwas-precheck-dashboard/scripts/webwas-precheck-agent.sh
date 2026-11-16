@@ -38,7 +38,7 @@
 #    TOMCAT_SERVER_LOG_PATHS=  (tomcat_precheck.sh  -s 값, catalina.out 등이 logs 폴더 밖에 있을 때)
 # =====================================================================
 
-AGENT_VERSION="2.5.0"   # 2.2.0: 서버 로그 경로(-s) / 2.3.0: Nginx / 2.3.1: 구버전 ps 호환 / 2.4.0: 대시보드 버튼으로 원격 스크립트 업데이트(update_scripts) / 2.5.0: 대시보드에서 RECENT_DAYS·RUN_TIMEOUT 지정(apply_scan_settings)
+AGENT_VERSION="2.6.0"   # 2.2.0: 서버 로그 경로(-s) / 2.3.0: Nginx / 2.3.1: 구버전 ps 호환 / 2.4.0: 대시보드 버튼으로 원격 스크립트 업데이트(update_scripts) / 2.5.0: 대시보드에서 RECENT_DAYS·RUN_TIMEOUT 지정(apply_scan_settings) / 2.6.0: keepalive 고아 프로세스 방지(부모 종료 시 자동 정지) — '점검중' 고착 방지
 CONF="${WEBWAS_PRECHECK_AGENT_CONF:-/etc/webwas-precheck-agent.conf}"
 BASE_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 ALL_PRODUCTS="apache wildfly tomcat nginx"   # 순서 고정 (스크립트 SHA-256 계산 순서 = 대시보드 Product 순서와 같음)
@@ -127,10 +127,13 @@ heartbeat() { # $1 = busy(0/1), $2 = probe(0/1, 연결 확인만)
 # (systemd 타이머는 점검이 끝날 때까지 다음 poll 을 시작하지 않으므로 이 신호가 없으면 3분 뒤 오프라인으로 보임)
 KEEPALIVE_PID=""
 keepalive_start() {
-  local sha host
+  local sha host mainpid=$$
   sha="$(script_sha)"; host="$(hostname -f 2>/dev/null || hostname)"
   (
     while sleep 60; do
+      # 에이전트 본체(부모)가 비정상 종료(kill -9·OOM 등으로 trap 이 못 돈 경우)됐으면 스스로 종료.
+      # 이 신호가 계속 나가면 대시보드가 "점검중"으로 고착되므로, 고아 프로세스가 되면 1분 안에 멈춘다.
+      kill -0 "$mainpid" 2>/dev/null || exit 0
       curl -K "$CURLCFG" -o /dev/null -X POST --data-urlencode "probe=0" --data-urlencode "hostname=$host" \
         --data-urlencode "version=$AGENT_VERSION" --data-urlencode "scriptSha256=$sha" --data-urlencode "busy=1" \
         "$DASHBOARD_URL/agent-api/heartbeat" 2>/dev/null

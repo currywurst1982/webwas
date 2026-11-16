@@ -25,6 +25,9 @@ public class ReportStore {
 
     private final Path dir;
     private final Map<String, Report> cache = new ConcurrentHashMap<>();
+    /** 마지막 all() 의 폴더 서명(파일명·크기·수정시각)과 그때 만든 정렬 목록. 폴더가 그대로면 다시 정렬·재조립하지 않고 그대로 돌려준다. */
+    private long snapshotSig = Long.MIN_VALUE;
+    private List<Report> snapshot = List.of();
 
     public ReportStore(Path dir) {
         this.dir = dir;
@@ -71,10 +74,15 @@ public class ReportStore {
             throw new IllegalStateException("리포트 폴더를 읽을 수 없습니다: " + dir, e);
         }
         cache.keySet().retainAll(seen);
+        long sig = h ^ ((long) out.size() << 32);
         version = h ^ out.size();
+        // 폴더가 지난번과 똑같으면(파일 추가·변경·삭제 없음) 정렬·불변 목록을 재사용해 CPU 를 아낀다.
+        if (sig == snapshotSig) return snapshot;
         out.sort(Comparator.comparing((Report r) -> r.checkedAt == null ? "" : r.checkedAt).reversed()
                 .thenComparing(r -> r.id));
-        return out;
+        snapshot = java.util.Collections.unmodifiableList(out);
+        snapshotSig = sig;
+        return snapshot;
     }
 
     public Report get(String id) {

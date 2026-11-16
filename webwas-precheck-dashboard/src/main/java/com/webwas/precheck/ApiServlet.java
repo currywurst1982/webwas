@@ -98,11 +98,12 @@ public class ApiServlet extends HttpServlet {
             }
             Web.json(req, resp, daily(allReports(store), days), etag(store, "daily" + days));
         } else if ((p.length == 2 || p.length == 3) && p[0].equals("reports")) {
-            List<Report> all = allReports(store);   // 한 번만 계산해 상세 찾기·지난 점검 비교에 함께 사용 (예전엔 2번 호출로 느렸음)
+            // 전체 보강(allReports)은 리포트가 많을수록 느리다(80대·수천 건이면 매 상세 열 때 전부 IP·그룹·예외 재계산).
+            // 상세·지난 점검 비교에는 보강이 필요 없으므로(diff 는 instanceKey·일시·findings 만 사용) 보강 없는 캐시 목록을 쓰고, 대상 1건만 보강한다.
+            List<Report> all = store.all();
             Report light = p[1] == null ? null : all.stream().filter(x -> x.id.equals(p[1])).findFirst().orElse(null);
             Report r = light == null ? null : store.full(light.id);
-            if (r != null && Web.exceptions(getServletContext()) != null) Web.exceptions(getServletContext()).apply(r, System.currentTimeMillis());
-            if (r != null) { r.fallbackIp = light.fallbackIp; r.group = light.group; }
+            if (r != null) enrichOne(r);   // fallbackIp·group·예외(위험 수용) 반영
             if (r == null) {
                 Web.json(resp, 404, Map.of("error", "리포트를 찾을 수 없습니다."));
             } else if (p.length == 3 && p[2].equals("raw")) {
@@ -553,22 +554,38 @@ public class ApiServlet extends HttpServlet {
         ExceptionStore ex = Web.exceptions(getServletContext());
         IpGroupRules ipg = Web.ipGroups(getServletContext());
         long now = System.currentTimeMillis();
-        for (Report r : all) {
-            r.fallbackIp = r.source == null ? null : agentIps.get(r.source);
-            // 그룹: 에이전트에 직접 지정한 라벨이 우선, 없으면 IP 자동 규칙(리포트 IP·접속 IP 로 판정)
-            String manual = r.source == null ? null : agentGroups.get(r.source);
-            if (manual != null && !manual.isEmpty()) {
-                r.group = manual;
-            } else if (ipg != null) {
-                List<String> cand = new ArrayList<>(r.ips);
-                if (r.fallbackIp != null) cand.add(r.fallbackIp);
-                r.group = ipg.matchAny(cand);
-            } else {
-                r.group = null;
-            }
-            if (ex != null) ex.apply(r, now);
-        }
+        for (Report r : all) enrichOne(r, agentIps, agentGroups, ipg, ex, now);
         return all;
+    }
+
+    /** 리포트 한 건에 접속 IP(fallbackIp)·그룹·예외(위험 수용) 반영. 상세 창처럼 1건만 필요할 때 전체를 돌지 않기 위해 분리. */
+    private void enrichOne(Report r, Map<String, String> agentIps, Map<String, String> agentGroups,
+                           IpGroupRules ipg, ExceptionStore ex, long now) {
+        r.fallbackIp = r.source == null ? null : agentIps.get(r.source);
+        // 그룹: 에이전트에 직접 지정한 라벨이 우선, 없으면 IP 자동 규칙(리포트 IP·접속 IP 로 판정)
+        String manual = r.source == null ? null : agentGroups.get(r.source);
+        if (manual != null && !manual.isEmpty()) {
+            r.group = manual;
+        } else if (ipg != null) {
+            List<String> cand = new ArrayList<>(r.ips);
+            if (r.fallbackIp != null) cand.add(r.fallbackIp);
+            r.group = ipg.matchAny(cand);
+        } else {
+            r.group = null;
+        }
+        if (ex != null) ex.apply(r, now);
+    }
+
+    /** 리포트 한 건만 보강 (상세 창용). 에이전트 IP·그룹 맵은 매번 만들지만 80대 기준 수십 μs 수준이라 전체 보강보다 훨씬 싸다. */
+    private void enrichOne(Report r) {
+        Map<String, String> agentIps = new java.util.HashMap<>();
+        Map<String, String> agentGroups = new java.util.HashMap<>();
+        for (AgentStore.Agent a : Web.agents(getServletContext()).list()) {
+            if (a.ip != null) agentIps.put(a.name, a.ip);
+            if (a.group != null && !a.group.isEmpty()) agentGroups.put(a.name, a.group);
+        }
+        enrichOne(r, agentIps, agentGroups, Web.ipGroups(getServletContext()),
+                Web.exceptions(getServletContext()), System.currentTimeMillis());
     }
 
     /** 인스턴스별 최신 리포트 중 [4] 침해 흔적에 [위험]이 있는 것 */

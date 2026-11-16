@@ -623,6 +623,12 @@ pre.raw { margin: 0; padding: 12px; background: var(--code-bg); border: 1px soli
 /* 에이전트 접속 주소 */
 .agurl-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
 .agurl-form input { flex: 1 1 320px; min-width: 0; font-family: var(--mono, monospace); }
+.scancfg-form { display: flex; flex-direction: column; gap: 10px; margin: 8px 0; }
+.scancfg-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.scancfg-row > span:first-child { flex: 0 0 150px; font-weight: 600; font-size: 13px; }
+.scancfg-row input { flex: 0 0 180px; min-width: 0; }
+.scancfg-note { color: var(--muted); font-size: 12px; }
+.scancfg-btns { display: flex; gap: 8px; flex-wrap: wrap; }
 /* 예외(위험 수용) */
 .finding.exempt { opacity: .62; }
 .finding .badge + .badge { margin-top: 4px; }

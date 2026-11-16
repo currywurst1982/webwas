@@ -97,6 +97,10 @@ public class AgentApiServlet extends HttpServlet {
                     out.put("reason", reason);
                     out.put("update", doUpdate);
                     out.put("expectedScriptSha256", getServletContext().getAttribute(AppInit.ATTR_SCRIPT_SHA));
+                    SiteSettings settings = Web.settings(getServletContext());
+                    int rd = settings.recentDays(), rt = settings.runTimeout();
+                    if (rd > 0) out.put("recentDays", rd);
+                    if (rt > 0) out.put("runTimeout", rt);
                     if (reason != null) LOG.info("[webwas-precheck] 에이전트 점검 지시: " + name + " (" + reason + ")");
                     if (doUpdate) LOG.info("[webwas-precheck] 에이전트 스크립트 업데이트 지시: " + name);
                     Web.json(resp, 200, out);

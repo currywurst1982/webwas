@@ -22,8 +22,15 @@ public class SiteSettings {
     static final Pattern URL = Pattern.compile(
             "https?://([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?|\\[[0-9A-Fa-f:.]+\\])(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?");
 
+    /** 점검 로그 조회 기간(일). 0 = 대시보드에서 지정 안 함(에이전트 설정파일/기본값 사용) */
+    static final int RECENT_DAYS_MIN = 1, RECENT_DAYS_MAX = 3650;
+    /** 점검 1건당 제한 시간(초). 0 = 대시보드에서 지정 안 함 */
+    static final int RUN_TIMEOUT_MIN = 60, RUN_TIMEOUT_MAX = 86400;
+
     private final Path file;
     private String agentUrl = "";
+    private int recentDays = 0;
+    private int runTimeout = 0;
 
     public SiteSettings(Path file) throws IOException {
         this.file = file;
@@ -34,6 +41,19 @@ public class SiteSettings {
             }
             String v = p.getProperty("agent.url", "");
             agentUrl = v.isEmpty() || URL.matcher(v).matches() ? v : "";
+            recentDays = parseRange(p.getProperty("scan.recentDays"), RECENT_DAYS_MIN, RECENT_DAYS_MAX);
+            runTimeout = parseRange(p.getProperty("scan.runTimeout"), RUN_TIMEOUT_MIN, RUN_TIMEOUT_MAX);
+        }
+    }
+
+    /** 범위를 벗어나거나 숫자가 아니면 0(지정 안 함)으로 간주 */
+    private static int parseRange(String s, int min, int max) {
+        if (s == null) return 0;
+        try {
+            int n = Integer.parseInt(s.trim());
+            return (n >= min && n <= max) ? n : 0;
+        } catch (NumberFormatException e) {
+            return 0;
         }
     }
 
@@ -59,9 +79,34 @@ public class SiteSettings {
         return agentUrl;
     }
 
+    public synchronized int recentDays() { return recentDays; }
+    public synchronized int runTimeout() { return runTimeout; }
+
+    /** 0(또는 빈 값)이면 해제. 범위를 벗어나면 IllegalArgumentException */
+    public synchronized int setRecentDays(int n) throws IOException {
+        if (n != 0 && (n < RECENT_DAYS_MIN || n > RECENT_DAYS_MAX)) {
+            throw new IllegalArgumentException("로그 조회 기간은 " + RECENT_DAYS_MIN + "~" + RECENT_DAYS_MAX + "일 사이여야 합니다. (0 = 지정 안 함)");
+        }
+        recentDays = n;
+        save();
+        return recentDays;
+    }
+
+    /** 0(또는 빈 값)이면 해제. 범위를 벗어나면 IllegalArgumentException */
+    public synchronized int setRunTimeout(int n) throws IOException {
+        if (n != 0 && (n < RUN_TIMEOUT_MIN || n > RUN_TIMEOUT_MAX)) {
+            throw new IllegalArgumentException("점검 제한 시간은 " + RUN_TIMEOUT_MIN + "~" + RUN_TIMEOUT_MAX + "초 사이여야 합니다. (0 = 지정 안 함)");
+        }
+        runTimeout = n;
+        save();
+        return runTimeout;
+    }
+
     private void save() throws IOException {
         Properties p = new Properties();
         p.setProperty("agent.url", agentUrl);
+        if (recentDays > 0) p.setProperty("scan.recentDays", String.valueOf(recentDays));
+        if (runTimeout > 0) p.setProperty("scan.runTimeout", String.valueOf(runTimeout));
         Path dir = file.toAbsolutePath().getParent();
         Files.createDirectories(dir);
         Path tmp = Files.createTempFile(dir, ".settings", ".tmp");

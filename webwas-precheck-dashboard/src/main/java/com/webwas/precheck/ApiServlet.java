@@ -27,6 +27,7 @@ import java.util.logging.Logger;
  *  POST   /api/reports               리포트 업로드 (관리자, multipart "files")
  *  DELETE /api/reports/{파일명}       리포트 삭제 (관리자, 휴지통으로 이동)
  *  POST   /api/agent-url             (관리자) 에이전트 설치 명령에 쓸 대시보드 주소: url= (비우면 브라우저 주소 사용)
+ *  POST   /api/scan-settings         (관리자) 모든 에이전트에 적용할 점검 설정: recentDays= runTimeout= (비우면 지정 안 함)
  *  GET    /api/exceptions            예외(위험 수용) 목록
  *  POST   /api/exceptions            (관리자) 예외 등록: report, section, text, scope=instance|product, reason, days=30|90|180|365
  *  DELETE /api/exceptions/{id}       (관리자) 예외 해제
@@ -174,7 +175,10 @@ public class ApiServlet extends HttpServlet {
             Object av = getServletContext().getAttribute(AppInit.ATTR_AGENT_VERSION);
             String expectedAgent = av == null ? null : av.toString();
             out.put("expectedAgentVersion", expectedAgent);
-            out.put("agentUrl", Web.settings(getServletContext()).agentUrl());
+            SiteSettings st = Web.settings(getServletContext());
+            out.put("agentUrl", st.agentUrl());
+            out.put("scanRecentDays", st.recentDays());
+            out.put("scanRunTimeout", st.runTimeout());
             LatestVersions lv = Web.latest(getServletContext());
             List<Report> latestReports = ConfigIssues.latestPerInstance(allReports(Web.reports(getServletContext())));
             IpGroupRules ipg = Web.ipGroups(getServletContext());
@@ -278,6 +282,19 @@ public class ApiServlet extends HttpServlet {
                 String u = Web.settings(getServletContext()).setAgentUrl(req.getParameter("url"));
                 LOG.info("[webwas-precheck] 에이전트 접속 주소: " + (u.isEmpty() ? "(브라우저 주소 사용)" : u) + " by " + Web.user(req));
                 Web.json(resp, 200, Map.of("agentUrl", u));
+            } catch (IllegalArgumentException e) {
+                Web.json(resp, 400, Map.of("error", e.getMessage()));
+            }
+        } else if (p.length == 1 && p[0].equals("scan-settings")) {
+            try {
+                SiteSettings st = Web.settings(getServletContext());
+                int rd = parseIntParam(req.getParameter("recentDays"));
+                int rt = parseIntParam(req.getParameter("runTimeout"));
+                st.setRecentDays(rd);
+                st.setRunTimeout(rt);
+                LOG.info("[webwas-precheck] 점검 설정 변경: recentDays=" + (rd == 0 ? "(지정 안 함)" : rd)
+                        + " runTimeout=" + (rt == 0 ? "(지정 안 함)" : rt) + " by " + Web.user(req));
+                Web.json(resp, 200, Map.of("scanRecentDays", st.recentDays(), "scanRunTimeout", st.runTimeout()));
             } catch (IllegalArgumentException e) {
                 Web.json(resp, 400, Map.of("error", e.getMessage()));
             }
@@ -435,6 +452,16 @@ public class ApiServlet extends HttpServlet {
     private static LatestVersion requireProduct(Product p, LatestVersions lvs) {
         if (p == null) throw new IllegalArgumentException("제품(product)을 지정하세요: apache | wildfly | tomcat");
         return lvs.get(p);
+    }
+
+    /** 빈 값이면 0(지정 안 함). 숫자가 아니면 오류. */
+    private static int parseIntParam(String s) {
+        if (s == null || s.trim().isEmpty()) return 0;
+        try {
+            return Integer.parseInt(s.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("숫자만 입력하세요. (비우면 '지정 안 함')");
+        }
     }
 
     private static int parseHours(String s) {

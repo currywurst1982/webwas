@@ -273,6 +273,30 @@
           <div id="agurl-check"></div>
         </article>
 
+        <article class="card admin-only" aria-labelledby="scancfg-title">
+          <div class="card-head"><h2 id="scancfg-title">점검 설정(모든 에이전트 공통)</h2><span class="card-meta" id="scancfg-meta"></span></div>
+          <p class="card-hint">점검 서버에 SSH로 접속해 설정 파일(<code>/etc/webwas-precheck-agent.conf</code>)을 고치지 않아도, 여기에서 값을 저장하면
+            다음 점검(에이전트가 1분마다 대시보드에 접속)부터 모든 에이전트에 자동 적용됩니다. 비워 두면 대시보드가 지정하지 않고 각 서버의 설정 파일/기본값을 씁니다.
+            <strong>에이전트 2.5.0 이상</strong>에서만 적용됩니다(아래 [에이전트 관리]에서 [스크립트 업데이트] 버튼으로 올릴 수 있습니다).</p>
+          <form id="scancfg-form" class="scancfg-form">
+            <label class="scancfg-row">
+              <span>로그 조회 기간(일)</span>
+              <input id="scancfg-days" type="number" min="1" max="3650" inputmode="numeric" placeholder="예: 180 (비우면 지정 안 함)">
+              <span class="scancfg-note">점검 스크립트가 최근 며칠치 로그를 볼지. 1~3650</span>
+            </label>
+            <label class="scancfg-row">
+              <span>점검 제한 시간(초)</span>
+              <input id="scancfg-timeout" type="number" min="60" max="86400" inputmode="numeric" placeholder="예: 7200 (비우면 지정 안 함)">
+              <span class="scancfg-note">제품 하나 점검이 이 시간을 넘으면 중단. 60~86400</span>
+            </label>
+            <div class="scancfg-btns">
+              <button class="btn btn-primary" type="submit">저장</button>
+              <button class="btn" type="button" id="scancfg-clear">둘 다 비우기(지정 안 함)</button>
+            </div>
+          </form>
+          <div id="scancfg-check"></div>
+        </article>
+
         <article class="card">
           <div class="card-head">
             <div><h2 id="agents-title">에이전트 관리</h2><div class="card-meta" id="agents-summary"></div></div>

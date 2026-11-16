@@ -28,4 +28,47 @@ class SiteSettingsTest {
         assertEquals("", s.setAgentUrl(""), "비우면 브라우저 주소 사용");
         assertEquals("", new SiteSettings(f).agentUrl());
     }
+
+    @Test
+    void scanSettings() throws Exception {
+        Path f = tmp.resolve("settings.properties");
+        SiteSettings s = new SiteSettings(f);
+        assertEquals(0, s.recentDays(), "기본값은 지정 안 함(0)");
+        assertEquals(0, s.runTimeout());
+
+        assertEquals(180, s.setRecentDays(180));
+        assertEquals(7200, s.setRunTimeout(7200));
+        // 다시 읽어도 유지
+        SiteSettings s2 = new SiteSettings(f);
+        assertEquals(180, s2.recentDays());
+        assertEquals(7200, s2.runTimeout());
+
+        // 경계값 허용
+        assertEquals(1, s.setRecentDays(1));
+        assertEquals(3650, s.setRecentDays(3650));
+        assertEquals(60, s.setRunTimeout(60));
+        assertEquals(86400, s.setRunTimeout(86400));
+
+        // 0 = 해제
+        assertEquals(0, s.setRecentDays(0));
+        assertEquals(0, s.setRunTimeout(0));
+        // settings.properties 를 다시 읽으면 지정 안 함 상태
+        SiteSettings s3 = new SiteSettings(f);
+        assertEquals(0, s3.recentDays());
+        assertEquals(0, s3.runTimeout());
+
+        // 범위 밖은 거부 (저장 안 됨)
+        for (int bad : new int[] {-1, 3651, 100000}) {
+            assertThrows(IllegalArgumentException.class, () -> s.setRecentDays(bad));
+        }
+        for (int bad : new int[] {-1, 59, 86401, 100000}) {
+            assertThrows(IllegalArgumentException.class, () -> s.setRunTimeout(bad));
+        }
+
+        // 파일에 저장된 범위 밖 값은 읽을 때 0으로 간주
+        java.nio.file.Files.writeString(f, "scan.recentDays=99999\nscan.runTimeout=1\n");
+        SiteSettings s4 = new SiteSettings(f);
+        assertEquals(0, s4.recentDays(), "범위 밖 저장값은 무시");
+        assertEquals(0, s4.runTimeout());
+    }
 }

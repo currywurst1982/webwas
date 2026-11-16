@@ -1233,6 +1233,7 @@
       state.agents = data;
     }
     renderAgentUrl();
+    renderScanCfg();
     const now = data.now;
     const q = ($('#ag-q') ? $('#ag-q').value : '').trim().toLowerCase();
     const shown = q ? data.agents.filter(a => agentMatches(a, q)) : data.agents;
@@ -1365,6 +1366,33 @@
       if (state.agents) state.agents.agentUrl = r.agentUrl;
       $('#agurl-input').value = r.agentUrl;
       renderAgentUrl();
+    } catch (e) { alert(e.message); }
+  }
+
+  function renderScanCfg() {
+    const rd = (state.agents && state.agents.scanRecentDays) || 0;
+    const rt = (state.agents && state.agents.scanRunTimeout) || 0;
+    const di = $('#scancfg-days'), ti = $('#scancfg-timeout');
+    if (di && document.activeElement !== di) di.value = rd > 0 ? rd : '';
+    if (ti && document.activeElement !== ti) ti.value = rt > 0 ? rt : '';
+    const meta = $('#scancfg-meta');
+    if (meta) meta.textContent = (rd > 0 || rt > 0) ? '대시보드에서 지정함' : '지정 안 함(서버 설정 파일 사용)';
+    const chk = $('#scancfg-check');
+    if (chk) chk.replaceChildren(
+      h('p', { class: 'muted small-note' },
+        rd > 0 ? `로그 조회 기간: 모든 에이전트가 최근 ${rd}일치 로그를 봅니다. ` : '로그 조회 기간: 지정 안 함(각 서버 설정/기본값). ',
+        rt > 0 ? `제한 시간: 제품 하나 점검이 ${rt}초를 넘으면 중단합니다.` : '제한 시간: 지정 안 함(각 서버 설정/기본값).'),
+      h('p', { class: 'muted small-note' }, '저장 후 각 에이전트의 다음 점검(최대 1분 뒤 heartbeat)부터 반영됩니다. 2.5.0 미만 에이전트는 이 값을 무시하고 자기 설정 파일을 씁니다.'));
+  }
+
+  async function saveScanCfg(clear) {
+    try {
+      const body = clear
+        ? new URLSearchParams({ recentDays: '', runTimeout: '' })
+        : new URLSearchParams({ recentDays: $('#scancfg-days').value.trim(), runTimeout: $('#scancfg-timeout').value.trim() });
+      const r = await api('scan-settings', { method: 'POST', body });
+      if (state.agents) { state.agents.scanRecentDays = r.scanRecentDays; state.agents.scanRunTimeout = r.scanRunTimeout; }
+      renderScanCfg();
     } catch (e) { alert(e.message); }
   }
 
@@ -2257,6 +2285,8 @@
     $('#agurl-form').addEventListener('submit', ev => { ev.preventDefault(); saveAgentUrl($('#agurl-input').value); });
     $('#ipg-form').addEventListener('submit', addIpGroup);
     $('#agurl-clear').addEventListener('click', () => saveAgentUrl(''));
+    $('#scancfg-form').addEventListener('submit', ev => { ev.preventDefault(); saveScanCfg(false); });
+    $('#scancfg-clear').addEventListener('click', () => saveScanCfg(true));
     $('#d-reset-instance').addEventListener('click', async () => {
       if (!current) return;
       const label = `${PRODUCTS[current.product] || current.product} ${current.host}` + (current.binary ? ` (${current.binary})` : '');

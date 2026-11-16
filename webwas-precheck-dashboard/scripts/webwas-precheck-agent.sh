@@ -38,7 +38,7 @@
 #    TOMCAT_SERVER_LOG_PATHS=  (tomcat_precheck.sh  -s 값, catalina.out 등이 logs 폴더 밖에 있을 때)
 # =====================================================================
 
-AGENT_VERSION="2.4.0"   # 2.2.0: 서버 로그 경로(-s) / 2.3.0: Nginx / 2.3.1: 구버전 ps 호환 / 2.4.0: 대시보드 버튼으로 원격 스크립트 업데이트(update_scripts)
+AGENT_VERSION="2.5.0"   # 2.2.0: 서버 로그 경로(-s) / 2.3.0: Nginx / 2.3.1: 구버전 ps 호환 / 2.4.0: 대시보드 버튼으로 원격 스크립트 업데이트(update_scripts) / 2.5.0: 대시보드에서 RECENT_DAYS·RUN_TIMEOUT 지정(apply_scan_settings)
 CONF="${WEBWAS_PRECHECK_AGENT_CONF:-/etc/webwas-precheck-agent.conf}"
 BASE_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 ALL_PRODUCTS="apache wildfly tomcat nginx"   # 순서 고정 (스크립트 SHA-256 계산 순서 = 대시보드 Product 순서와 같음)
@@ -185,6 +185,16 @@ update_scripts() {
   heartbeat 0 >/dev/null 2>&1 || true   # 새 스크립트 해시를 바로 보고(화면이 '같음'으로 갱신되도록)
 }
 
+# heartbeat 응답($WORK/resp)에 대시보드가 지정한 값이 있으면 설정파일 값보다 우선 적용.
+# 대시보드에서 비워 두면(값 없음) 설정파일/기본값을 그대로 씀.
+apply_scan_settings() {
+  local v
+  v="$(grep -oE '"recentDays":[0-9]+' "$WORK/resp" 2>/dev/null | head -n1 | grep -oE '[0-9]+')"
+  [ -n "$v" ] && [ "$v" -gt 0 ] 2>/dev/null && RECENT_DAYS="$v"
+  v="$(grep -oE '"runTimeout":[0-9]+' "$WORK/resp" 2>/dev/null | head -n1 | grep -oE '[0-9]+')"
+  [ -n "$v" ] && [ "$v" -gt 0 ] 2>/dev/null && RUN_TIMEOUT="$v"
+}
+
 do_run() {
   local marker="$WORK/marker" rc=0 one n_made n_sent msg products p args cve lp slp script done_list="" fail_list=""
   : > "$marker"; sleep 1
@@ -262,6 +272,7 @@ case "${1:-poll}" in
     fi
     if [ "${1:-poll}" = "run" ]; then
       heartbeat 1 >/dev/null
+      apply_scan_settings
       do_run
       exit 0
     fi
@@ -271,10 +282,11 @@ case "${1:-poll}" in
       log "heartbeat 실패(HTTP ${code:-없음}): $(head -c 300 "$WORK/resp" 2>/dev/null) $(cat "$WORK/curl.err" 2>/dev/null)"
       exit 1
     fi
-    # 응답 플래그를 먼저 읽음 (update_scripts 가 $WORK/resp 를 덮어쓰므로)
+    # 응답 플래그·설정을 먼저 읽음 (update_scripts 가 $WORK/resp 를 덮어쓰므로)
     do_upd=0; do_chk=0
     grep -q '"update":true' "$WORK/resp" && do_upd=1
     grep -q '"run":true' "$WORK/resp" && do_chk=1
+    apply_scan_settings
     [ "$do_upd" = 1 ] && update_scripts
     [ "$do_chk" = 1 ] && do_run
     ;;

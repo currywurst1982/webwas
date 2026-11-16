@@ -161,9 +161,28 @@ class AgentStoreTest {
         s.runFinished("web01", t + 60_000, 1, 0, "리포트가 만들어지지 않음");
         assertNull(s.heartbeat("web01", t + 10 * 60_000, "h", null, null, null, false));
         assertEquals("schedule", s.heartbeat("web01", t + 31 * 60_000, "h", null, null, null, false));
-        // 결과가 2시간 넘게 오지 않으면 실행 중 상태 해제 후 다시 지시
-        long later = t + 31 * 60_000 + AgentStore.RUN_TIMEOUT_MILLIS + 1;
+        // 지시 직후(유예 시간 안) busy=0 으로 접속해도 '점검 중'이 바로 풀리지 않음
+        assertNull(s.heartbeat("web01", t + 31 * 60_000 + 60_000, "h", null, null, null, false));
+        assertEquals("running", s.get("web01").state(t + 31 * 60_000 + 60_000));
+        // busy=0(=실행 중 아님)인데 유예 시간이 지나면 '점검 중'을 해제하고 다시 지시 (2시간 안 기다림)
+        long later = t + 31 * 60_000 + AgentStore.BUSY_IDLE_CLEAR_MILLIS + 1;
         assertEquals("schedule", s.heartbeat("web01", later, "h", null, null, null, false));
+    }
+
+    @Test
+    void busyKeepaliveThenIdleClearsStuckRunning() throws Exception {
+        // 점검이 끝났는데도(고아 keepalive 등으로) busy=1 이 계속 오면 '점검 중'이 유지되지만,
+        // busy=0 접속이 유예 시간 뒤에 오면 해제된다.
+        AgentStore s = new AgentStore(dir.resolve("a.properties"));
+        s.create("web01", 0);                 // 수동 모드(자동 지시 없음)
+        long t = 1_000_000_000_000L;
+        s.heartbeat("web01", t, "h", null, "2.6.0", "sha", true);          // busy=1 → 점검 중 시작
+        assertEquals("running", s.get("web01").state(t + 1000));
+        s.heartbeat("web01", t + 2 * 60_000, "h", null, "2.6.0", "sha", true);  // 2분 뒤 busy=1 (아직 점검 중)
+        assertEquals("running", s.get("web01").state(t + 2 * 60_000));
+        // 6분 뒤 busy=0 (에이전트: 실행 중 아님) → 유예(5분) 지났으므로 해제
+        s.heartbeat("web01", t + 6 * 60_000, "h", null, "2.6.0", "sha", false);
+        assertEquals("online", s.get("web01").state(t + 6 * 60_000));
     }
 
     @Test

@@ -32,8 +32,15 @@ public class AgentStore {
     private static final SecureRandom RANDOM = new SecureRandom();
     /** 마지막 접속 후 이 시간이 지나면 오프라인 */
     public static final long OFFLINE_MILLIS = 3 * 60 * 1000L;
-    /** "실행" 응답 후 이 시간 안에 결과가 없으면 실패로 보고 다시 실행 가능 */
+    /** "실행" 응답 후 이 시간 안에 결과가 없으면 실패로 보고 다시 실행 가능 (신호를 못 보내는 옛 에이전트의 '점검 중' 표시 상한) */
     public static final long RUN_TIMEOUT_MILLIS = 2 * 60 * 60 * 1000L;
+    /**
+     * 에이전트가 busy=0(="지금 점검 중 아님")으로 접속했는데도 '점검 중'으로 남아 있으면, 이 유예 시간 뒤 해제한다.
+     * busy=0 은 에이전트 본인이 "실행 중이 아니다"라고 알리는 신호이므로(점검 중에는 busy=1 만 보냄),
+     * 결과 신호가 유실됐거나 보조 프로세스가 비정상 종료된 경우 2시간을 기다리지 않고 빨리 '점검 중'을 푼다.
+     * 유예를 두는 이유: 막 점검을 지시한 직후 에이전트가 busy=1 을 보내기 전의 짧은 창에서 잘못 해제하지 않기 위함.
+     */
+    public static final long BUSY_IDLE_CLEAR_MILLIS = 5 * 60 * 1000L;
     /** lastSeen 만 바뀐 경우 파일 저장 간격 */
     private static final long PERSIST_SEEN_MILLIS = 10 * 60 * 1000L;
 
@@ -355,10 +362,11 @@ public class AgentStore {
         } else if (busy) {
             if (a.runStartedAt == 0) a.runStartedAt = now;
         } else {
-            boolean stale = a.runStartedAt > 0 && now - a.runStartedAt >= RUN_TIMEOUT_MILLIS;
+            // busy=0 = 에이전트가 "지금 실행 중이 아니다"라고 알림. '점검 중'으로 남아 있으면 유예 시간 뒤 해제.
+            boolean stale = a.runStartedAt > 0 && now - a.runStartedAt >= BUSY_IDLE_CLEAR_MILLIS;
             if (stale) {
                 a.runStartedAt = 0;
-                a.lastMessage = "점검 결과가 " + (RUN_TIMEOUT_MILLIS / 3_600_000L) + "시간 안에 오지 않았습니다.";
+                a.lastMessage = "점검이 끝났다는 신호 없이 종료된 것으로 보여 '점검 중' 상태를 해제했습니다.";
                 changed = true;
             }
             if (a.runStartedAt == 0) {

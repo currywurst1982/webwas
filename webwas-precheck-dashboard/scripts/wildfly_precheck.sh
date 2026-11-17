@@ -55,6 +55,7 @@ while getopts "H:d:l:s:C:m:h" opt; do
     *) echo "알 수 없는 옵션입니다. -h 로 사용법을 확인하세요."; exit 1 ;;
   esac
 done
+[[ "$RECENT_DAYS" =~ ^[0-9]+$ ]] || RECENT_DAYS=30
 case "$MAX_LOG_SCAN_MB" in ''|*[!0-9]*) MAX_LOG_SCAN_MB=0 ;; esac
 MAX_LOG_SCAN_BYTES=$(( MAX_LOG_SCAN_MB * 1024 * 1024 ))
 
@@ -1065,7 +1066,11 @@ else
   fi
   find "$LOG_DIR" -maxdepth 3 -type f -mtime "-$RECENT_DAYS" -name 'access_log*' 2>/dev/null >> "$LOGS"
 fi
-sort -u "$LOGS" | while read -r f; do [ -f "$f" ] && [[ "$f" != "$REPORT" ]] && echo "$f"; done > "$WORK/logs2.txt"; mv "$WORK/logs2.txt" "$LOGS"
+# -l 로 지정한 글롭은 날짜 필터를 안 거치므로, 최근 RECENT_DAYS 일 안에 수정된 파일만 남긴다.
+sort -u "$LOGS" | while read -r f; do
+  [ -f "$f" ] || continue; [[ "$f" == "$REPORT" ]] && continue
+  if [ "$RECENT_DAYS" -gt 0 ]; then find "$f" -maxdepth 0 -mtime "-$RECENT_DAYS" 2>/dev/null; else echo "$f"; fi
+done > "$WORK/logs2.txt"; mv "$WORK/logs2.txt" "$LOGS"
 
 if [ ! -s "$LOGS" ]; then
   warn "접근 로그 파일을 찾지 못했습니다. 로그 기반 점검을 건너뜁니다. (WildFly 는 기본값으로 접근 로그를 남기지 않음)"

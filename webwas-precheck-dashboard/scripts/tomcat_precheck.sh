@@ -1503,9 +1503,13 @@ else
     AP="$(attr "$v" prefix)"; AP="${AP:-localhost_access_log}"
     find "$AD" -maxdepth 1 -type f -name "${AP}*" 2>/dev/null
   done >> "$LOGS"
-  find "$LOG_DIR" -maxdepth 2 -type f -name '*access_log*' 2>/dev/null >> "$LOGS"
+  find "$LOG_DIR" -maxdepth 2 -type f -mtime "-$RECENT_DAYS" -name '*access_log*' 2>/dev/null >> "$LOGS"
 fi
-sort -u "$LOGS" | while read -r f; do [ -f "$f" ] && [[ "$f" != "$REPORT" ]] && echo "$f"; done > "$WORK/logs2.txt"; mv "$WORK/logs2.txt" "$LOGS"
+# 자동 탐지·-l 글롭 모두 최근 RECENT_DAYS 일 안에 수정된 파일만 남긴다 (오래된 회전 로그 제외).
+sort -u "$LOGS" | while read -r f; do
+  [ -f "$f" ] || continue; [[ "$f" == "$REPORT" ]] && continue
+  if [ "$RECENT_DAYS" -gt 0 ]; then find "$f" -maxdepth 0 -mtime "-$RECENT_DAYS" 2>/dev/null; else echo "$f"; fi
+done > "$WORK/logs2.txt"; mv "$WORK/logs2.txt" "$LOGS"
 
 if [ ! -s "$LOGS" ]; then
   warn "접근 로그 파일을 찾지 못했습니다. 로그 기반 점검을 건너뜁니다. (server.xml 의 AccessLogValve 설정 확인)"

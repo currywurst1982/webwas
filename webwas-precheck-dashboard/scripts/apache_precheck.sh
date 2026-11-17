@@ -59,6 +59,7 @@ while getopts "b:d:l:A:C:m:h" opt; do
     *) echo "알 수 없는 옵션입니다. -h 로 사용법을 확인하세요."; exit 1 ;;
   esac
 done
+[[ "$RECENT_DAYS" =~ ^[0-9]+$ ]] || RECENT_DAYS=30
 case "$MAX_LOG_SCAN_MB" in ''|*[!0-9]*) MAX_LOG_SCAN_MB=0 ;; esac
 MAX_LOG_SCAN_BYTES=$(( MAX_LOG_SCAN_MB * 1024 * 1024 ))
 

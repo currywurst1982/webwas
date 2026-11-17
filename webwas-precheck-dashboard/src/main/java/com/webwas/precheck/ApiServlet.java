@@ -208,6 +208,8 @@ public class ApiServlet extends HttpServlet {
                         && ReportParser.compareVersions(a.agentVersion, expectedAgent) < 0);
                 // 원격 스크립트 업데이트(버튼) 지원 여부: 에이전트 2.4.0 이상
                 m.put("updateCapable", a.agentVersion != null && ReportParser.compareVersions(a.agentVersion, "2.4.0") >= 0);
+                // 점검 중단(버튼) 지원 여부: 에이전트 2.7.0 이상
+                m.put("abortCapable", a.agentVersion != null && ReportParser.compareVersions(a.agentVersion, "2.7.0") >= 0);
                 Map<String, Boolean> each = new LinkedHashMap<>();
                 a.versions.forEach((prod, v) -> each.put(prod.id, lv.isUpToDate(prod, v)));
                 m.put("versionUpToDate", each);
@@ -435,6 +437,14 @@ public class ApiServlet extends HttpServlet {
                 agents.requestRun(p[1]);
                 LOG.info("[webwas-precheck] 에이전트 점검 요청: " + p[1] + " by " + by);
                 Web.json(resp, 200, Map.of("requested", 1));
+            } else if (p.length == 3 && p[2].equals("abort")) {
+                boolean ok = agents.requestAbort(p[1]);
+                LOG.info("[webwas-precheck] 에이전트 점검 중단 요청: " + p[1] + " → " + (ok ? "요청됨" : "점검 중 아님") + " by " + by);
+                Web.json(resp, 200, Map.of("requested", ok));
+            } else if (p.length == 3 && p[2].equals("scan-settings")) {
+                agents.setScanSettings(p[1], parseIntParam(req.getParameter("recentDays")), parseIntParam(req.getParameter("runTimeout")));
+                LOG.info("[webwas-precheck] 에이전트 점검 설정: " + p[1] + " by " + by);
+                Web.json(resp, 200, Map.of("ok", true));
             } else if (p.length == 3 && p[2].equals("token")) {
                 String token = agents.rotateToken(p[1]);
                 LOG.info("[webwas-precheck] 에이전트 토큰 재발급: " + p[1] + " by " + by);

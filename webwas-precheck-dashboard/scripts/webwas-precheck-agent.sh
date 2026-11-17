@@ -38,7 +38,7 @@
 #    TOMCAT_SERVER_LOG_PATHS=  (tomcat_precheck.sh  -s 값, catalina.out 등이 logs 폴더 밖에 있을 때)
 # =====================================================================
 
-AGENT_VERSION="2.6.1"   # 2.2.0: 서버 로그 경로(-s) / 2.3.0: Nginx / 2.3.1: 구버전 ps 호환 / 2.4.0: 대시보드 버튼으로 원격 스크립트 업데이트(update_scripts) / 2.5.0: 대시보드에서 RECENT_DAYS·RUN_TIMEOUT 지정(apply_scan_settings) / 2.6.0: keepalive 고아 프로세스 방지 — '점검중' 고착 방지 / 2.6.1: 일부 제품만 시간초과·실패해도 리포트를 보냈으면 '성공'으로 표시(정상 점검 시 '중단됨' 문구 사라짐)
+AGENT_VERSION="2.7.0"   # 2.4.0: 원격 스크립트 업데이트 / 2.5.0: RECENT_DAYS·RUN_TIMEOUT 원격 지정 / 2.6.0: keepalive 고아 방지 / 2.6.1: 리포트 보냈으면 '성공' 표시 / 2.7.0: 대시보드 [점검 중단] 버튼(abort)으로 진행 중 점검 강제 종료
 CONF="${WEBWAS_PRECHECK_AGENT_CONF:-/etc/webwas-precheck-agent.conf}"
 BASE_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 ALL_PRODUCTS="apache wildfly tomcat nginx"   # 순서 고정 (스크립트 SHA-256 계산 순서 = 대시보드 Product 순서와 같음)
@@ -125,6 +125,13 @@ heartbeat() { # $1 = busy(0/1), $2 = probe(0/1, 연결 확인만)
 
 # 점검이 오래 걸려도(수 분) 대시보드에 "오프라인"으로 보이지 않도록, 점검하는 동안 1분마다 "점검 중" 신호를 보냄.
 # (systemd 타이머는 점검이 끝날 때까지 다음 poll 을 시작하지 않으므로 이 신호가 없으면 3분 뒤 오프라인으로 보임)
+# 프로세스와 그 자식(손자 포함) 전체를 신호로 종료. (점검 중단 시 timeout→bash→grep 트리까지 정리)
+kill_tree() {
+  local pid="$1" sig="${2:-TERM}" ch
+  for ch in $(pgrep -P "$pid" 2>/dev/null); do kill_tree "$ch" "$sig"; done
+  kill -"$sig" "$pid" 2>/dev/null
+}
+
 KEEPALIVE_PID=""
 keepalive_start() {
   local sha host mainpid=$$
@@ -134,9 +141,15 @@ keepalive_start() {
       # 에이전트 본체(부모)가 비정상 종료(kill -9·OOM 등으로 trap 이 못 돈 경우)됐으면 스스로 종료.
       # 이 신호가 계속 나가면 대시보드가 "점검중"으로 고착되므로, 고아 프로세스가 되면 1분 안에 멈춘다.
       kill -0 "$mainpid" 2>/dev/null || exit 0
-      curl -K "$CURLCFG" -o /dev/null -X POST --data-urlencode "probe=0" --data-urlencode "hostname=$host" \
+      curl -K "$CURLCFG" -o "$WORK/ka_resp" -X POST --data-urlencode "probe=0" --data-urlencode "hostname=$host" \
         --data-urlencode "version=$AGENT_VERSION" --data-urlencode "scriptSha256=$sha" --data-urlencode "busy=1" \
         "$DASHBOARD_URL/agent-api/heartbeat" 2>/dev/null
+      # 대시보드가 '점검 중단'을 지시하면(abort:true) 지금 돌고 있는 점검을 강제 종료한다.
+      if grep -q '"abort":true' "$WORK/ka_resp" 2>/dev/null; then
+        : > "$WORK/abort"
+        c="$(cat "$WORK/child" 2>/dev/null)"
+        if [ -n "$c" ]; then kill_tree "$c" TERM; sleep 2; kill_tree "$c" KILL; fi
+      fi
     done
   ) </dev/null >/dev/null 2>&1 &
   KEEPALIVE_PID=$!
@@ -201,6 +214,7 @@ apply_scan_settings() {
 do_run() {
   local marker="$WORK/marker" rc=0 one n_made n_sent msg products p args cve lp slp script done_list="" fail_list=""
   : > "$marker"; sleep 1
+  rm -f "$WORK/abort" "$WORK/child"   # 이전 흔적 제거 (중단 표시)
   keepalive_start
   products="$(detect_products)"
   if [ -z "$products" ]; then
@@ -229,12 +243,16 @@ do_run() {
     [ -n "$slp" ] && args+=(-s "$slp")
     cve="$(fetch_cve "$p")"
     log "점검 시작: $script ${args[*]}${cve:+ (CVE 목록: $cve)}"
+    # 점검을 백그라운드 자식으로 돌리고 그 PID 를 기록 → keepalive 가 '점검 중단' 지시를 받으면 이 PID 트리를 죽일 수 있음.
     if command -v timeout >/dev/null 2>&1; then
-      PRECHECK_NO_SUDO=1 PRECHECK_CVE_DB="$cve" timeout "$RUN_TIMEOUT" bash "$script" "${args[@]}" </dev/null >"$WORK/run_$p.log" 2>&1
+      PRECHECK_NO_SUDO=1 PRECHECK_CVE_DB="$cve" timeout "$RUN_TIMEOUT" bash "$script" "${args[@]}" </dev/null >"$WORK/run_$p.log" 2>&1 &
     else
-      PRECHECK_NO_SUDO=1 PRECHECK_CVE_DB="$cve" bash "$script" "${args[@]}" </dev/null >"$WORK/run_$p.log" 2>&1
+      PRECHECK_NO_SUDO=1 PRECHECK_CVE_DB="$cve" bash "$script" "${args[@]}" </dev/null >"$WORK/run_$p.log" 2>&1 &
     fi
-    one=$?
+    echo $! > "$WORK/child"
+    wait "$(cat "$WORK/child")"; one=$?
+    rm -f "$WORK/child"
+    if [ -f "$WORK/abort" ]; then fail_list="$fail_list $p(중단됨)"; rc=130; break; fi
     if [ "$one" -eq 0 ]; then done_list="$done_list $p"; else fail_list="$fail_list $p(exit=$one)"; rc=$one; fi
   done
   # 이번 실행에서 만들어진 리포트(제품·인스턴스가 여러 개면 여러 개)를 outbox 로 옮김
@@ -250,7 +268,10 @@ do_run() {
   # 그래서 다음 점검에서 그 제품까지 정상 완료되면 '중단됨' 문구가 자동으로 사라진다.
   local done_disp
   done_disp="$(echo $done_list | sed 's/^ *//; s/  */, /g')"
-  if [ "$n_made" -eq 0 ]; then
+  if [ -f "$WORK/abort" ]; then
+    if [ "$n_sent" -gt 0 ]; then msg="관리자 요청으로 중단 (리포트 ${n_sent}개는 전송${done_disp:+: ${done_disp}})"
+    else msg="관리자 요청으로 점검을 중단했습니다"; fi
+  elif [ "$n_made" -eq 0 ]; then
     if [ "$rc" -eq 124 ]; then msg="점검 시간 초과(${RUN_TIMEOUT}초)로 중단됨:${fail_list}"
     else msg="리포트가 만들어지지 않음 (${products}): $(for p in $products; do tail -n 2 "$WORK/run_$p.log"; done | tr '\n' ' ' | cut -c1-300)"
     fi

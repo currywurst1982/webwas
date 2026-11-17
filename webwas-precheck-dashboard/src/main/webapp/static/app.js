@@ -1263,6 +1263,11 @@
           title: a.state === 'offline' ? '에이전트가 오프라인이면 요청만 저장되고, 다시 접속할 때 시작합니다' : null,
           onclick: () => agentRun(a.name, a.state) },
           a.state === 'running' ? '점검 중' : a.state === 'requested' || a.pendingRun ? '요청됨' : '지금 점검'),
+        a.state === 'running' && a.abortCapable
+          ? h('button', { class: 'btn small btn-danger', type: 'button', disabled: a.pendingAbort || null,
+              title: '진행 중인 점검을 강제로 종료합니다 (에이전트의 다음 신호 때, 최대 1분). 이미 만든 리포트는 전송됩니다.',
+              onclick: () => agentAbort(a.name) }, a.pendingAbort ? '중단 요청됨' : '점검 중단')
+          : null,
         h('select', { 'aria-label': `${a.name} 점검 주기`, onchange: e => agentInterval(a.name, e.target.value) },
           ...INTERVALS.map(([v, l]) => h('option', { value: String(v), selected: v === a.intervalHours || null }, l))),
         (a.scriptMatches === false || a.agentOutdated) && a.updateCapable
@@ -1271,6 +1276,12 @@
               onclick: () => updateAgentScripts(a.name) }, a.pendingUpdate ? '업데이트 요청됨' : '스크립트 업데이트')
           : null,
         h('button', { class: 'btn small', type: 'button', onclick: () => agentGroup(a.name, a.group) }, '그룹'),
+        h('button', { class: 'btn small', type: 'button',
+          title: (a.recentDays > 0 || a.runTimeout > 0)
+            ? `이 서버 전용 설정 사용${a.recentDays > 0 ? ' · 조회 ' + a.recentDays + '일' : ''}${a.runTimeout > 0 ? ' · 제한 ' + a.runTimeout + '초' : ''} (비우면 공통값)`
+            : '이 서버만 다른 로그 조회 기간·점검 제한 시간을 줍니다 (비우면 공통값)',
+          onclick: () => agentScanSettings(a.name, a.recentDays || 0, a.runTimeout || 0) },
+          (a.recentDays > 0 || a.runTimeout > 0) ? '점검설정 •' : '점검설정'),
         h('button', { class: 'btn small', type: 'button', onclick: () => agentToken(a.name) }, '토큰 재발급'),
         h('button', { class: 'btn small btn-danger', type: 'button', title: '이 에이전트가 보낸 점검 기록과 상태를 초기화 (등록·토큰은 유지)',
           onclick: () => resetRecords('agent', a.name, `${a.name} 에이전트 기록 초기화`, { agentState: 'true' }) }, '기록 초기화'),
@@ -1511,6 +1522,24 @@
       await api('agents/' + encodeURIComponent(name) + '/group', { method: 'POST', body: new URLSearchParams({ group: v }) });
       await loadAgents();
       await load(); // 서버 목록·필터에도 반영
+    } catch (e) { alert(e.message); }
+  }
+  async function agentAbort(name) {
+    if (!confirm(`${name}에서 지금 진행 중인 점검을 중단할까요?\n\n에이전트가 다음 신호(최대 1분) 때 점검을 강제 종료합니다. 이미 만들어진 리포트는 전송됩니다.`)) return;
+    try {
+      const r = await api('agents/' + encodeURIComponent(name) + '/abort', { method: 'POST' });
+      await loadAgents();
+      if (!r.requested) alert(`${name}는 지금 점검 중이 아닙니다.`);
+    } catch (e) { alert(e.message); }
+  }
+  async function agentScanSettings(name, rd, rt) {
+    const d = prompt(`${name} 전용 '로그 조회 기간(일)'. 비우면 공통값을 씁니다. (1~3650)`, rd > 0 ? String(rd) : '');
+    if (d === null) return;
+    const t = prompt(`${name} 전용 '점검 제한 시간(초)'. 비우면 공통값을 씁니다. (60~86400)\n\n점검이 오래 걸리는 서버만 여기서 짧게 주면, 그 서버 점검이 그 시간을 넘으면 자동 종료됩니다.`, rt > 0 ? String(rt) : '');
+    if (t === null) return;
+    try {
+      await api('agents/' + encodeURIComponent(name) + '/scan-settings', { method: 'POST', body: new URLSearchParams({ recentDays: d.trim(), runTimeout: t.trim() }) });
+      await loadAgents();
     } catch (e) { alert(e.message); }
   }
 

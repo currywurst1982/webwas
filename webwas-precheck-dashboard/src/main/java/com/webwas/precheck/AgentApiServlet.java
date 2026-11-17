@@ -102,9 +102,13 @@ public class AgentApiServlet extends HttpServlet {
                     out.put("update", doUpdate);
                     out.put("expectedScriptSha256", getServletContext().getAttribute(AppInit.ATTR_SCRIPT_SHA));
                     SiteSettings settings = Web.settings(getServletContext());
-                    int rd = settings.recentDays(), rt = settings.runTimeout();
+                    // 이 에이전트 전용값(설정돼 있으면)이 공통값보다 우선
+                    int rd = agents.effectiveRecentDays(name, settings.recentDays());
+                    int rt = agents.effectiveRunTimeout(name, settings.runTimeout());
                     if (rd > 0) out.put("recentDays", rd);
                     if (rt > 0) out.put("runTimeout", rt);
+                    // 점검 중단 요청: 소모하지 않고(idempotent) 점검이 끝날 때까지 계속 내려준다. keepalive(점검 중 busy 신호)가 받아 중단.
+                    if (agents.isAbortPending(name)) out.put("abort", true);
                     if (reason != null) LOG.info("[webwas-precheck] 에이전트 점검 지시: " + name + " (" + reason + ")");
                     if (doUpdate) LOG.info("[webwas-precheck] 에이전트 스크립트 업데이트 지시: " + name);
                     Web.json(resp, 200, out);

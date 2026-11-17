@@ -60,6 +60,9 @@ public class AgentStore {
         public Map<Product, String> versions = new java.util.EnumMap<>(Product.class);
         public boolean pendingRun;           // 관리자가 "지금 점검" 요청
         public boolean pendingUpdate;        // 관리자가 "스크립트 업데이트" 요청 → 다음 heartbeat 때 에이전트가 스크립트 다시 받음
+        public boolean pendingAbort;         // 관리자가 "점검 중단" 요청 (점검이 끝나면 자동 해제)
+        public int recentDays;               // 이 에이전트 전용 로그 조회 기간(일). 0 = 공통값 사용
+        public int runTimeout;               // 이 에이전트 전용 점검 제한 시간(초). 0 = 공통값 사용
         public long runStartedAt;            // 에이전트에게 실행하라고 응답한 시각 (0 = 실행 중 아님)
         public long lastRunAt;               // 마지막 실행 완료 시각
         public int lastExit = -1;
@@ -72,6 +75,7 @@ public class AgentStore {
             a.name = name; a.group = group; a.tokenHash = tokenHash; a.intervalHours = intervalHours; a.createdAt = createdAt;
             a.lastSeen = lastSeen; a.lastSeenPersisted = lastSeenPersisted; a.hostname = hostname; a.ip = ip;
             a.agentVersion = agentVersion; a.scriptSha256 = scriptSha256; a.pendingRun = pendingRun; a.pendingUpdate = pendingUpdate;
+            a.pendingAbort = pendingAbort; a.recentDays = recentDays; a.runTimeout = runTimeout;
             a.versions = new java.util.EnumMap<>(Product.class);
             a.versions.putAll(versions);
             a.runStartedAt = runStartedAt; a.lastRunAt = lastRunAt; a.lastExit = lastExit;
@@ -124,6 +128,9 @@ public class AgentStore {
             m.put("scriptMatches", scriptSha256 == null || expectedSha == null ? null : scriptSha256.equals(expectedSha));
             m.put("pendingRun", pendingRun);
             m.put("pendingUpdate", pendingUpdate);
+            m.put("pendingAbort", pendingAbort);
+            m.put("recentDays", recentDays);
+            m.put("runTimeout", runTimeout);
             m.put("runStartedAt", runStartedAt);
             m.put("lastRunAt", lastRunAt);
             m.put("lastExit", lastExit);
@@ -283,6 +290,52 @@ public class AgentStore {
     }
 
     /**
+     * 점검 중단 요청. 점검 중(runStartedAt>0)일 때만 의미가 있으므로 그때만 세운다.
+     * 소모하지 않는다(idempotent): 점검이 실제로 끝날 때(runFinished) 또는 상태가 풀릴 때 지워진다.
+     * 점검 중 heartbeat 는 busy=1 뿐이라, 매번 abort=true 를 돌려줘도 keepalive 가 반복해서 중단 시도(무해).
+     */
+    public synchronized boolean requestAbort(String name) throws IOException {
+        Agent a = agents.get(name);
+        if (a == null) throw new IllegalArgumentException("에이전트가 없습니다.");
+        if (a.runStartedAt == 0) return false;   // 점검 중이 아니면 중단할 것이 없음
+        a.pendingAbort = true;
+        a.pendingRun = false;   // 대기 중인 '지금 점검' 요청이 있으면 취소 (중단 직후 바로 재실행 방지)
+        save();
+        return true;
+    }
+
+    /** heartbeat 때 중단 요청 여부 (소모하지 않음). */
+    public synchronized boolean isAbortPending(String name) {
+        Agent a = name == null ? null : agents.get(name);
+        return a != null && a.pendingAbort;
+    }
+
+    /** 이 에이전트 전용 점검 설정(0 = 공통값 사용). 범위 검증은 SiteSettings 와 동일. */
+    public synchronized void setScanSettings(String name, int recentDays, int runTimeout) throws IOException {
+        Agent a = agents.get(name);
+        if (a == null) throw new IllegalArgumentException("에이전트가 없습니다.");
+        if (recentDays != 0 && (recentDays < SiteSettings.RECENT_DAYS_MIN || recentDays > SiteSettings.RECENT_DAYS_MAX)) {
+            throw new IllegalArgumentException("로그 조회 기간은 " + SiteSettings.RECENT_DAYS_MIN + "~" + SiteSettings.RECENT_DAYS_MAX + "일 사이여야 합니다. (0 = 공통값)");
+        }
+        if (runTimeout != 0 && (runTimeout < SiteSettings.RUN_TIMEOUT_MIN || runTimeout > SiteSettings.RUN_TIMEOUT_MAX)) {
+            throw new IllegalArgumentException("점검 제한 시간은 " + SiteSettings.RUN_TIMEOUT_MIN + "~" + SiteSettings.RUN_TIMEOUT_MAX + "초 사이여야 합니다. (0 = 공통값)");
+        }
+        a.recentDays = recentDays;
+        a.runTimeout = runTimeout;
+        save();
+    }
+
+    /** 이 에이전트에 실제로 적용할 값 = 전용값(>0)이 있으면 그것, 없으면 공통값(globalValue). 둘 다 0 이면 0(지정 안 함). */
+    public synchronized int effectiveRecentDays(String name, int globalValue) {
+        Agent a = name == null ? null : agents.get(name);
+        return a != null && a.recentDays > 0 ? a.recentDays : globalValue;
+    }
+    public synchronized int effectiveRunTimeout(String name, int globalValue) {
+        Agent a = name == null ? null : agents.get(name);
+        return a != null && a.runTimeout > 0 ? a.runTimeout : globalValue;
+    }
+
+    /**
      * 에이전트의 점검 상태만 초기화 (등록·토큰·주기·접속 정보는 유지).
      * 마지막 점검 시각이 없어지므로 자동 점검 주기가 있으면 다음 접속(1분 안) 때 바로 다시 점검함.
      */
@@ -366,6 +419,7 @@ public class AgentStore {
             boolean stale = a.runStartedAt > 0 && now - a.runStartedAt >= BUSY_IDLE_CLEAR_MILLIS;
             if (stale) {
                 a.runStartedAt = 0;
+                a.pendingAbort = false;
                 a.lastMessage = "점검이 끝났다는 신호 없이 종료된 것으로 보여 '점검 중' 상태를 해제했습니다.";
                 changed = true;
             }
@@ -445,6 +499,7 @@ public class AgentStore {
     public synchronized void runFinished(String name, long now, int exit, int reports, String message) throws IOException {
         Agent a = require(name);
         a.runStartedAt = 0;
+        a.pendingAbort = false;   // 점검이 끝났으니 중단 요청도 해제
         a.lastRunAt = now;
         a.lastSeen = now;
         a.lastExit = exit;
@@ -492,6 +547,8 @@ public class AgentStore {
             }
             a.pendingRun = "true".equals(p.getProperty(n + ".pendingRun"));
             a.pendingUpdate = "true".equals(p.getProperty(n + ".pendingUpdate"));
+            a.recentDays = (int) num(p, n + ".recentDays", 0);
+            a.runTimeout = (int) num(p, n + ".runTimeout", 0);
             a.runStartedAt = num(p, n + ".runStartedAt", 0);
             a.lastRunAt = num(p, n + ".lastRunAt", 0);
             a.lastExit = (int) num(p, n + ".lastExit", -1);
@@ -526,6 +583,8 @@ public class AgentStore {
             a.versions.forEach((prod, v) -> p.setProperty(n + ".version." + prod.id, v));
             p.setProperty(n + ".pendingRun", String.valueOf(a.pendingRun));
             p.setProperty(n + ".pendingUpdate", String.valueOf(a.pendingUpdate));
+            if (a.recentDays > 0) p.setProperty(n + ".recentDays", String.valueOf(a.recentDays));
+            if (a.runTimeout > 0) p.setProperty(n + ".runTimeout", String.valueOf(a.runTimeout));
             p.setProperty(n + ".runStartedAt", String.valueOf(a.runStartedAt));
             p.setProperty(n + ".lastRunAt", String.valueOf(a.lastRunAt));
             p.setProperty(n + ".lastExit", String.valueOf(a.lastExit));

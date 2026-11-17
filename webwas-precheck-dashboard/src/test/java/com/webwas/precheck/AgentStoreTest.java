@@ -170,6 +170,51 @@ class AgentStoreTest {
     }
 
     @Test
+    void abortOnlyWhenRunningAndClearedOnFinish() throws Exception {
+        AgentStore s = new AgentStore(dir.resolve("a.properties"));
+        s.create("web01", 24);
+        long t = 1_000_000_000_000L;
+        // 점검 중이 아니면 중단할 것이 없음
+        assertFalse(s.requestAbort("web01"));
+        assertFalse(s.isAbortPending("web01"));
+        // 점검 지시 → runStartedAt 설정됨
+        assertEquals("schedule", s.heartbeat("web01", t, "h", null, "2.7.0", "sha", false));
+        assertTrue(s.get("web01").runStartedAt > 0);
+        // 이제 중단 요청 가능, idempotent(소모 안 됨)
+        assertTrue(s.requestAbort("web01"));
+        assertTrue(s.isAbortPending("web01"));
+        assertTrue(s.isAbortPending("web01"), "다시 물어도 유지(idempotent)");
+        // 점검이 끝나면 중단 요청도 해제
+        s.runFinished("web01", t + 5000, 130, 0, "관리자 요청으로 점검을 중단했습니다");
+        assertFalse(s.isAbortPending("web01"));
+        assertEquals(0, s.get("web01").runStartedAt);
+    }
+
+    @Test
+    void perAgentScanSettingsOverrideGlobal() throws Exception {
+        AgentStore s = new AgentStore(dir.resolve("a.properties"));
+        s.create("web01", 24);
+        // 전용값 없음 → 공통값 사용
+        assertEquals(30, s.effectiveRecentDays("web01", 30));
+        assertEquals(3600, s.effectiveRunTimeout("web01", 3600));
+        // 전용값 지정 → 전용값 우선
+        s.setScanSettings("web01", 180, 1200);
+        assertEquals(180, s.effectiveRecentDays("web01", 30));
+        assertEquals(1200, s.effectiveRunTimeout("web01", 3600));
+        // 0 = 해제 → 다시 공통값
+        s.setScanSettings("web01", 0, 0);
+        assertEquals(30, s.effectiveRecentDays("web01", 30));
+        // 범위 밖 거부
+        assertThrows(IllegalArgumentException.class, () -> s.setScanSettings("web01", 5000, 0));
+        assertThrows(IllegalArgumentException.class, () -> s.setScanSettings("web01", 0, 30));
+        // 저장·재적재 유지
+        s.setScanSettings("web01", 90, 1800);
+        AgentStore s2 = new AgentStore(dir.resolve("a.properties"));
+        assertEquals(90, s2.effectiveRecentDays("web01", 30));
+        assertEquals(1800, s2.effectiveRunTimeout("web01", 3600));
+    }
+
+    @Test
     void busyKeepaliveThenIdleClearsStuckRunning() throws Exception {
         // 점검이 끝났는데도(고아 keepalive 등으로) busy=1 이 계속 오면 '점검 중'이 유지되지만,
         // busy=0 접속이 유예 시간 뒤에 오면 해제된다.

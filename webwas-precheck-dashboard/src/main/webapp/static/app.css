@@ -629,6 +629,7 @@ pre.raw { margin: 0; padding: 12px; background: var(--code-bg); border: 1px soli
 .scancfg-row input { flex: 0 0 180px; min-width: 0; }
 .scancfg-note { color: var(--muted); font-size: 12px; }
 .scancfg-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.hist-sort { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
 /* 예외(위험 수용) */
 .finding.exempt { opacity: .62; }
 .finding .badge + .badge { margin-top: 4px; }

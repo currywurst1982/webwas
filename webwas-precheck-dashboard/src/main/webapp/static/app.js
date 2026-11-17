@@ -801,6 +801,19 @@
     );
   }
 
+  function historySortDir() {
+    try { return localStorage.getItem('historySortDir') === 'asc' ? 'asc' : 'desc'; } catch (e) { return 'desc'; }
+  }
+  function sortByCheckedAt(arr, dir) {
+    const a = arr.slice();
+    a.sort((x, y) => {
+      const cx = x.checkedAt || '', cy = y.checkedAt || '';
+      if (cx !== cy) return (cx < cy ? -1 : 1) * (dir === 'asc' ? 1 : -1);
+      return (x.id < y.id ? -1 : 1) * (dir === 'asc' ? 1 : -1); // 동시각이면 id 로 안정 정렬
+    });
+    return a;
+  }
+
   async function renderHistory(r) {
     const panel = $('[data-panel="history"]');
     panel.replaceChildren(h('p', { class: 'muted' }, '점검 이력을 불러오는 중…'));
@@ -808,16 +821,28 @@
     try { same = (await apiCached('reports?instance=' + encodeURIComponent(r.instanceKey))).data; }
     catch (e) { panel.replaceChildren(h('p', { class: 'muted' }, '점검 이력을 불러오지 못했습니다: ' + e.message)); return; }
     if (!current || current.id !== r.id) return; // 그 사이 다른 리포트를 열었음
+
+    const tbody = h('tbody', null);
+    const fill = () => tbody.replaceChildren(...sortByCheckedAt(same, historySortDir()).map(x =>
+      h('tr', { class: 'row', onclick: () => openDetail(x.id) },
+        h('td', null, x.checkedAt + (x.id === r.id ? ' (현재)' : '')),
+        h('td', null, badge(x.status)), h('td', null, x.version || '-'),
+        h('td', { class: 'num' }, String(x.counts.risk)), h('td', { class: 'num' }, String(x.counts.warn)),
+        h('td', { class: 'num' }, String(x.counts.ok)), h('td', { class: 'num' }, String(cveTotal(x))),
+        h('td', { class: 'mono' }, x.id))));
+    const sel = h('select', { 'aria-label': '점검 일시 정렬', onchange: e => {
+      try { localStorage.setItem('historySortDir', e.target.value); } catch (err) { /* 무시 */ }
+      fill();
+    } },
+      h('option', { value: 'desc', selected: historySortDir() === 'desc' || null }, '점검 일시 ↓ 최신 먼저'),
+      h('option', { value: 'asc', selected: historySortDir() === 'asc' || null }, '점검 일시 ↑ 오래된 먼저'));
+    fill();
     panel.replaceChildren(
       h('p', { class: 'muted' }, '같은 호스트·제품·설치 폴더(실행 파일)·인스턴스 구분의 점검 기록입니다. 재시작해도 같은 인스턴스로 묶입니다. 패치 전/후 비교에 사용하세요.'),
+      h('div', { class: 'hist-sort' }, h('span', { class: 'muted small-note' }, `총 ${same.length}회 · 정렬: `), sel),
       h('table', { class: 'servers' },
         h('thead', null, h('tr', null, ...['점검 일시', '판정', '버전', '위험', '주의', '양호', '해당 CVE', '파일'].map(t => h('th', null, t)))),
-        h('tbody', null, ...same.map(x => h('tr', { class: 'row', onclick: () => openDetail(x.id) },
-          h('td', null, x.checkedAt + (x.id === r.id ? ' (현재)' : '')),
-          h('td', null, badge(x.status)), h('td', null, x.version || '-'),
-          h('td', { class: 'num' }, String(x.counts.risk)), h('td', { class: 'num' }, String(x.counts.warn)),
-          h('td', { class: 'num' }, String(x.counts.ok)), h('td', { class: 'num' }, String(cveTotal(x))),
-          h('td', { class: 'mono' }, x.id))))));
+        tbody));
   }
 
   /** 지난 점검 대비: 같은 서버의 바로 전 점검과 비교 (ReportDiff) */

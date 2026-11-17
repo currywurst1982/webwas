@@ -63,6 +63,7 @@ public class AgentStore {
         public boolean pendingAbort;         // 관리자가 "점검 중단" 요청 (점검이 끝나면 자동 해제)
         public int recentDays;               // 이 에이전트 전용 로그 조회 기간(일). 0 = 공통값 사용
         public int runTimeout;               // 이 에이전트 전용 점검 제한 시간(초). 0 = 공통값 사용
+        public int maxLogScanMb;             // 이 에이전트 전용 로그 최대 스캔 크기(MB). 0 = 공통값 사용
         public long runStartedAt;            // 에이전트에게 실행하라고 응답한 시각 (0 = 실행 중 아님)
         public long lastRunAt;               // 마지막 실행 완료 시각
         public int lastExit = -1;
@@ -75,7 +76,7 @@ public class AgentStore {
             a.name = name; a.group = group; a.tokenHash = tokenHash; a.intervalHours = intervalHours; a.createdAt = createdAt;
             a.lastSeen = lastSeen; a.lastSeenPersisted = lastSeenPersisted; a.hostname = hostname; a.ip = ip;
             a.agentVersion = agentVersion; a.scriptSha256 = scriptSha256; a.pendingRun = pendingRun; a.pendingUpdate = pendingUpdate;
-            a.pendingAbort = pendingAbort; a.recentDays = recentDays; a.runTimeout = runTimeout;
+            a.pendingAbort = pendingAbort; a.recentDays = recentDays; a.runTimeout = runTimeout; a.maxLogScanMb = maxLogScanMb;
             a.versions = new java.util.EnumMap<>(Product.class);
             a.versions.putAll(versions);
             a.runStartedAt = runStartedAt; a.lastRunAt = lastRunAt; a.lastExit = lastExit;
@@ -131,6 +132,7 @@ public class AgentStore {
             m.put("pendingAbort", pendingAbort);
             m.put("recentDays", recentDays);
             m.put("runTimeout", runTimeout);
+            m.put("maxLogScanMb", maxLogScanMb);
             m.put("runStartedAt", runStartedAt);
             m.put("lastRunAt", lastRunAt);
             m.put("lastExit", lastExit);
@@ -311,7 +313,7 @@ public class AgentStore {
     }
 
     /** 이 에이전트 전용 점검 설정(0 = 공통값 사용). 범위 검증은 SiteSettings 와 동일. */
-    public synchronized void setScanSettings(String name, int recentDays, int runTimeout) throws IOException {
+    public synchronized void setScanSettings(String name, int recentDays, int runTimeout, int maxLogScanMb) throws IOException {
         Agent a = agents.get(name);
         if (a == null) throw new IllegalArgumentException("에이전트가 없습니다.");
         if (recentDays != 0 && (recentDays < SiteSettings.RECENT_DAYS_MIN || recentDays > SiteSettings.RECENT_DAYS_MAX)) {
@@ -320,8 +322,12 @@ public class AgentStore {
         if (runTimeout != 0 && (runTimeout < SiteSettings.RUN_TIMEOUT_MIN || runTimeout > SiteSettings.RUN_TIMEOUT_MAX)) {
             throw new IllegalArgumentException("점검 제한 시간은 " + SiteSettings.RUN_TIMEOUT_MIN + "~" + SiteSettings.RUN_TIMEOUT_MAX + "초 사이여야 합니다. (0 = 공통값)");
         }
+        if (maxLogScanMb != 0 && (maxLogScanMb < SiteSettings.MAX_LOG_SCAN_MB_MIN || maxLogScanMb > SiteSettings.MAX_LOG_SCAN_MB_MAX)) {
+            throw new IllegalArgumentException("로그 최대 스캔 크기는 " + SiteSettings.MAX_LOG_SCAN_MB_MIN + "~" + SiteSettings.MAX_LOG_SCAN_MB_MAX + "MB 사이여야 합니다. (0 = 공통값)");
+        }
         a.recentDays = recentDays;
         a.runTimeout = runTimeout;
+        a.maxLogScanMb = maxLogScanMb;
         save();
     }
 
@@ -333,6 +339,10 @@ public class AgentStore {
     public synchronized int effectiveRunTimeout(String name, int globalValue) {
         Agent a = name == null ? null : agents.get(name);
         return a != null && a.runTimeout > 0 ? a.runTimeout : globalValue;
+    }
+    public synchronized int effectiveMaxLogScanMb(String name, int globalValue) {
+        Agent a = name == null ? null : agents.get(name);
+        return a != null && a.maxLogScanMb > 0 ? a.maxLogScanMb : globalValue;
     }
 
     /**
@@ -549,6 +559,7 @@ public class AgentStore {
             a.pendingUpdate = "true".equals(p.getProperty(n + ".pendingUpdate"));
             a.recentDays = (int) num(p, n + ".recentDays", 0);
             a.runTimeout = (int) num(p, n + ".runTimeout", 0);
+            a.maxLogScanMb = (int) num(p, n + ".maxLogScanMb", 0);
             a.runStartedAt = num(p, n + ".runStartedAt", 0);
             a.lastRunAt = num(p, n + ".lastRunAt", 0);
             a.lastExit = (int) num(p, n + ".lastExit", -1);
@@ -585,6 +596,7 @@ public class AgentStore {
             p.setProperty(n + ".pendingUpdate", String.valueOf(a.pendingUpdate));
             if (a.recentDays > 0) p.setProperty(n + ".recentDays", String.valueOf(a.recentDays));
             if (a.runTimeout > 0) p.setProperty(n + ".runTimeout", String.valueOf(a.runTimeout));
+            if (a.maxLogScanMb > 0) p.setProperty(n + ".maxLogScanMb", String.valueOf(a.maxLogScanMb));
             p.setProperty(n + ".runStartedAt", String.valueOf(a.runStartedAt));
             p.setProperty(n + ".lastRunAt", String.valueOf(a.lastRunAt));
             p.setProperty(n + ".lastExit", String.valueOf(a.lastExit));

@@ -180,6 +180,7 @@ public class ApiServlet extends HttpServlet {
             out.put("agentUrl", st.agentUrl());
             out.put("scanRecentDays", st.recentDays());
             out.put("scanRunTimeout", st.runTimeout());
+            out.put("scanMaxLogScanMb", st.maxLogScanMb());
             LatestVersions lv = Web.latest(getServletContext());
             List<Report> latestReports = ConfigIssues.latestPerInstance(allReports(Web.reports(getServletContext())));
             IpGroupRules ipg = Web.ipGroups(getServletContext());
@@ -293,11 +294,15 @@ public class ApiServlet extends HttpServlet {
                 SiteSettings st = Web.settings(getServletContext());
                 int rd = parseIntParam(req.getParameter("recentDays"));
                 int rt = parseIntParam(req.getParameter("runTimeout"));
+                int ms = parseIntParam(req.getParameter("maxLogScanMb"));
                 st.setRecentDays(rd);
                 st.setRunTimeout(rt);
+                st.setMaxLogScanMb(ms);
                 LOG.info("[webwas-precheck] 점검 설정 변경: recentDays=" + (rd == 0 ? "(지정 안 함)" : rd)
-                        + " runTimeout=" + (rt == 0 ? "(지정 안 함)" : rt) + " by " + Web.user(req));
-                Web.json(resp, 200, Map.of("scanRecentDays", st.recentDays(), "scanRunTimeout", st.runTimeout()));
+                        + " runTimeout=" + (rt == 0 ? "(지정 안 함)" : rt)
+                        + " maxLogScanMb=" + (ms == 0 ? "(무제한)" : ms) + " by " + Web.user(req));
+                Web.json(resp, 200, Map.of("scanRecentDays", st.recentDays(), "scanRunTimeout", st.runTimeout(),
+                        "scanMaxLogScanMb", st.maxLogScanMb()));
             } catch (IllegalArgumentException e) {
                 Web.json(resp, 400, Map.of("error", e.getMessage()));
             }
@@ -442,7 +447,8 @@ public class ApiServlet extends HttpServlet {
                 LOG.info("[webwas-precheck] 에이전트 점검 중단 요청: " + p[1] + " → " + (ok ? "요청됨" : "점검 중 아님") + " by " + by);
                 Web.json(resp, 200, Map.of("requested", ok));
             } else if (p.length == 3 && p[2].equals("scan-settings")) {
-                agents.setScanSettings(p[1], parseIntParam(req.getParameter("recentDays")), parseIntParam(req.getParameter("runTimeout")));
+                agents.setScanSettings(p[1], parseIntParam(req.getParameter("recentDays")),
+                        parseIntParam(req.getParameter("runTimeout")), parseIntParam(req.getParameter("maxLogScanMb")));
                 LOG.info("[webwas-precheck] 에이전트 점검 설정: " + p[1] + " by " + by);
                 Web.json(resp, 200, Map.of("ok", true));
             } else if (p.length == 3 && p[2].equals("token")) {

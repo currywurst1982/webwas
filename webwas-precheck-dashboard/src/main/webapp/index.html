@@ -290,6 +290,11 @@
               <input id="scancfg-timeout" type="number" min="60" max="86400" inputmode="numeric" placeholder="예: 7200 (비우면 지정 안 함)">
               <span class="scancfg-note">제품 하나 점검이 이 시간을 넘으면 중단. 60~86400</span>
             </label>
+            <label class="scancfg-row">
+              <span>로그 최대 스캔 크기(MB)</span>
+              <input id="scancfg-maxlog" type="number" min="10" max="1000000" inputmode="numeric" placeholder="예: 500 (비우면 무제한)">
+              <span class="scancfg-note">로그 1개가 이 크기를 넘으면 <b>끝부분만</b> 점검(경고 표시). 거대 로그로 점검이 느릴 때. 비우면 전체. 10~1000000</span>
+            </label>
             <div class="scancfg-btns">
               <button class="btn btn-primary" type="submit">저장</button>
               <button class="btn" type="button" id="scancfg-clear">둘 다 비우기(지정 안 함)</button>

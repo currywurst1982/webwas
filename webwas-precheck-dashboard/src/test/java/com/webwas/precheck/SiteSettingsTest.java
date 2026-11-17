@@ -36,12 +36,18 @@ class SiteSettingsTest {
         assertEquals(0, s.recentDays(), "기본값은 지정 안 함(0)");
         assertEquals(0, s.runTimeout());
 
+        assertEquals(0, s.maxLogScanMb());
         assertEquals(180, s.setRecentDays(180));
         assertEquals(7200, s.setRunTimeout(7200));
+        assertEquals(500, s.setMaxLogScanMb(500));
         // 다시 읽어도 유지
         SiteSettings s2 = new SiteSettings(f);
         assertEquals(180, s2.recentDays());
         assertEquals(7200, s2.runTimeout());
+        assertEquals(500, s2.maxLogScanMb());
+        // 범위 밖·해제
+        assertThrows(IllegalArgumentException.class, () -> s.setMaxLogScanMb(5));
+        assertEquals(0, s.setMaxLogScanMb(0));
 
         // 경계값 허용
         assertEquals(1, s.setRecentDays(1));

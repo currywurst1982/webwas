@@ -1277,11 +1277,11 @@
           : null,
         h('button', { class: 'btn small', type: 'button', onclick: () => agentGroup(a.name, a.group) }, '그룹'),
         h('button', { class: 'btn small', type: 'button',
-          title: (a.recentDays > 0 || a.runTimeout > 0)
-            ? `이 서버 전용 설정 사용${a.recentDays > 0 ? ' · 조회 ' + a.recentDays + '일' : ''}${a.runTimeout > 0 ? ' · 제한 ' + a.runTimeout + '초' : ''} (비우면 공통값)`
-            : '이 서버만 다른 로그 조회 기간·점검 제한 시간을 줍니다 (비우면 공통값)',
-          onclick: () => agentScanSettings(a.name, a.recentDays || 0, a.runTimeout || 0) },
-          (a.recentDays > 0 || a.runTimeout > 0) ? '점검설정 •' : '점검설정'),
+          title: (a.recentDays > 0 || a.runTimeout > 0 || a.maxLogScanMb > 0)
+            ? `이 서버 전용 설정 사용${a.recentDays > 0 ? ' · 조회 ' + a.recentDays + '일' : ''}${a.runTimeout > 0 ? ' · 제한 ' + a.runTimeout + '초' : ''}${a.maxLogScanMb > 0 ? ' · 로그 ' + a.maxLogScanMb + 'MB' : ''} (비우면 공통값)`
+            : '이 서버만 다른 로그 조회 기간·점검 제한 시간·로그 최대 스캔 크기를 줍니다 (비우면 공통값)',
+          onclick: () => agentScanSettings(a.name, a.recentDays || 0, a.runTimeout || 0, a.maxLogScanMb || 0) },
+          (a.recentDays > 0 || a.runTimeout > 0 || a.maxLogScanMb > 0) ? '점검설정 •' : '점검설정'),
         h('button', { class: 'btn small', type: 'button', onclick: () => agentToken(a.name) }, '토큰 재발급'),
         h('button', { class: 'btn small btn-danger', type: 'button', title: '이 에이전트가 보낸 점검 기록과 상태를 초기화 (등록·토큰은 유지)',
           onclick: () => resetRecords('agent', a.name, `${a.name} 에이전트 기록 초기화`, { agentState: 'true' }) }, '기록 초기화'),
@@ -1383,26 +1383,30 @@
   function renderScanCfg() {
     const rd = (state.agents && state.agents.scanRecentDays) || 0;
     const rt = (state.agents && state.agents.scanRunTimeout) || 0;
-    const di = $('#scancfg-days'), ti = $('#scancfg-timeout');
+    const ms = (state.agents && state.agents.scanMaxLogScanMb) || 0;
+    const di = $('#scancfg-days'), ti = $('#scancfg-timeout'), mi = $('#scancfg-maxlog');
     if (di && document.activeElement !== di) di.value = rd > 0 ? rd : '';
     if (ti && document.activeElement !== ti) ti.value = rt > 0 ? rt : '';
+    if (mi && document.activeElement !== mi) mi.value = ms > 0 ? ms : '';
     const meta = $('#scancfg-meta');
-    if (meta) meta.textContent = (rd > 0 || rt > 0) ? '대시보드에서 지정함' : '지정 안 함(서버 설정 파일 사용)';
+    if (meta) meta.textContent = (rd > 0 || rt > 0 || ms > 0) ? '대시보드에서 지정함' : '지정 안 함(서버 설정 파일 사용)';
     const chk = $('#scancfg-check');
     if (chk) chk.replaceChildren(
       h('p', { class: 'muted small-note' },
-        rd > 0 ? `로그 조회 기간: 모든 에이전트가 최근 ${rd}일치 로그를 봅니다. ` : '로그 조회 기간: 지정 안 함(각 서버 설정/기본값). ',
-        rt > 0 ? `제한 시간: 제품 하나 점검이 ${rt}초를 넘으면 중단합니다.` : '제한 시간: 지정 안 함(각 서버 설정/기본값).'),
-      h('p', { class: 'muted small-note' }, '저장 후 각 에이전트의 다음 점검(최대 1분 뒤 heartbeat)부터 반영됩니다. 2.5.0 미만 에이전트는 이 값을 무시하고 자기 설정 파일을 씁니다.'));
+        rd > 0 ? `로그 조회 기간: 최근 ${rd}일치 로그만. ` : '로그 조회 기간: 지정 안 함. ',
+        rt > 0 ? `제한 시간: 제품 하나가 ${rt}초를 넘으면 중단. ` : '제한 시간: 지정 안 함. ',
+        ms > 0 ? `로그 최대 스캔: ${ms}MB 넘는 로그는 끝부분만 점검(경고 표시).` : '로그 최대 스캔: 무제한(전체).'),
+      ms > 0 ? h('p', { class: 'muted small-note warn-ink' }, '※ 끝부분만 본 로그는 앞쪽(오래전)에 묻힌 공격 흔적을 놓칠 수 있어, 리포트에 경고가 함께 표시됩니다. 근본 해결은 로그 회전(rotate)입니다.') : null,
+      h('p', { class: 'muted small-note' }, '저장 후 각 에이전트의 다음 점검(최대 1분 뒤)부터 반영. 로그 최대 스캔은 에이전트 2.8.0 이상에서만 적용됩니다.'));
   }
 
   async function saveScanCfg(clear) {
     try {
       const body = clear
-        ? new URLSearchParams({ recentDays: '', runTimeout: '' })
-        : new URLSearchParams({ recentDays: $('#scancfg-days').value.trim(), runTimeout: $('#scancfg-timeout').value.trim() });
+        ? new URLSearchParams({ recentDays: '', runTimeout: '', maxLogScanMb: '' })
+        : new URLSearchParams({ recentDays: $('#scancfg-days').value.trim(), runTimeout: $('#scancfg-timeout').value.trim(), maxLogScanMb: $('#scancfg-maxlog').value.trim() });
       const r = await api('scan-settings', { method: 'POST', body });
-      if (state.agents) { state.agents.scanRecentDays = r.scanRecentDays; state.agents.scanRunTimeout = r.scanRunTimeout; }
+      if (state.agents) { state.agents.scanRecentDays = r.scanRecentDays; state.agents.scanRunTimeout = r.scanRunTimeout; state.agents.scanMaxLogScanMb = r.scanMaxLogScanMb; }
       renderScanCfg();
     } catch (e) { alert(e.message); }
   }
@@ -1532,13 +1536,15 @@
       if (!r.requested) alert(`${name}는 지금 점검 중이 아닙니다.`);
     } catch (e) { alert(e.message); }
   }
-  async function agentScanSettings(name, rd, rt) {
+  async function agentScanSettings(name, rd, rt, ms) {
     const d = prompt(`${name} 전용 '로그 조회 기간(일)'. 비우면 공통값을 씁니다. (1~3650)`, rd > 0 ? String(rd) : '');
     if (d === null) return;
     const t = prompt(`${name} 전용 '점검 제한 시간(초)'. 비우면 공통값을 씁니다. (60~86400)\n\n점검이 오래 걸리는 서버만 여기서 짧게 주면, 그 서버 점검이 그 시간을 넘으면 자동 종료됩니다.`, rt > 0 ? String(rt) : '');
     if (t === null) return;
+    const g = prompt(`${name} 전용 '로그 최대 스캔 크기(MB)'. 비우면 공통값을 씁니다. (10~1000000)\n\n거대 로그 때문에 느린 서버만 여기서 상한을 주면, 그보다 큰 로그는 끝부분만 점검합니다(경고 표시). 앞쪽에 묻힌 흔적은 놓칠 수 있습니다 — 근본은 로그 회전(rotate).`, ms > 0 ? String(ms) : '');
+    if (g === null) return;
     try {
-      await api('agents/' + encodeURIComponent(name) + '/scan-settings', { method: 'POST', body: new URLSearchParams({ recentDays: d.trim(), runTimeout: t.trim() }) });
+      await api('agents/' + encodeURIComponent(name) + '/scan-settings', { method: 'POST', body: new URLSearchParams({ recentDays: d.trim(), runTimeout: t.trim(), maxLogScanMb: g.trim() }) });
       await loadAgents();
     } catch (e) { alert(e.message); }
   }

@@ -197,21 +197,26 @@ class AgentStoreTest {
         // 전용값 없음 → 공통값 사용
         assertEquals(30, s.effectiveRecentDays("web01", 30));
         assertEquals(3600, s.effectiveRunTimeout("web01", 3600));
+        assertEquals(500, s.effectiveMaxLogScanMb("web01", 500));
         // 전용값 지정 → 전용값 우선
-        s.setScanSettings("web01", 180, 1200);
+        s.setScanSettings("web01", 180, 1200, 300);
         assertEquals(180, s.effectiveRecentDays("web01", 30));
         assertEquals(1200, s.effectiveRunTimeout("web01", 3600));
+        assertEquals(300, s.effectiveMaxLogScanMb("web01", 500));
         // 0 = 해제 → 다시 공통값
-        s.setScanSettings("web01", 0, 0);
+        s.setScanSettings("web01", 0, 0, 0);
         assertEquals(30, s.effectiveRecentDays("web01", 30));
+        assertEquals(500, s.effectiveMaxLogScanMb("web01", 500));
         // 범위 밖 거부
-        assertThrows(IllegalArgumentException.class, () -> s.setScanSettings("web01", 5000, 0));
-        assertThrows(IllegalArgumentException.class, () -> s.setScanSettings("web01", 0, 30));
+        assertThrows(IllegalArgumentException.class, () -> s.setScanSettings("web01", 5000, 0, 0));
+        assertThrows(IllegalArgumentException.class, () -> s.setScanSettings("web01", 0, 30, 0));
+        assertThrows(IllegalArgumentException.class, () -> s.setScanSettings("web01", 0, 0, 5));
         // 저장·재적재 유지
-        s.setScanSettings("web01", 90, 1800);
+        s.setScanSettings("web01", 90, 1800, 200);
         AgentStore s2 = new AgentStore(dir.resolve("a.properties"));
         assertEquals(90, s2.effectiveRecentDays("web01", 30));
         assertEquals(1800, s2.effectiveRunTimeout("web01", 3600));
+        assertEquals(200, s2.effectiveMaxLogScanMb("web01", 500));
     }
 
     @Test

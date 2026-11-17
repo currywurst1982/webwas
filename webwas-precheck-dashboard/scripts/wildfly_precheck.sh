@@ -41,18 +41,49 @@ JBOSS_HOME_ARG=""
 RECENT_DAYS=30
 LOG_PATHS=""
 SERVER_LOG_PATHS=""
+MAX_LOG_SCAN_MB=0          # 로그 1개당 최대 스캔 크기(MB). 0 = 무제한(전체). -m 로 지정.
 ORIG_ARGS=("$@")
-while getopts "H:d:l:s:C:h" opt; do
+while getopts "H:d:l:s:C:m:h" opt; do
   case "$opt" in
     H) JBOSS_HOME_ARG="$OPTARG" ;;
     d) RECENT_DAYS="$OPTARG" ;;
     l) LOG_PATHS="$OPTARG" ;;
     s) SERVER_LOG_PATHS="$OPTARG" ;;
     C) PRECHECK_CVE_DB="$(readlink -f "$OPTARG")"; export PRECHECK_CVE_DB ;;
+    m) MAX_LOG_SCAN_MB="$OPTARG" ;;
     h) sed -n '2,/^# =\{10,\}$/p' "$0"; exit 0 ;;
     *) echo "알 수 없는 옵션입니다. -h 로 사용법을 확인하세요."; exit 1 ;;
   esac
 done
+case "$MAX_LOG_SCAN_MB" in ''|*[!0-9]*) MAX_LOG_SCAN_MB=0 ;; esac
+MAX_LOG_SCAN_BYTES=$(( MAX_LOG_SCAN_MB * 1024 * 1024 ))
+
+# 로그 1개를 스캔용으로 출력. 평문이 상한을 넘으면 '끝부분'만(tail), 압축이 상한을 넘으면 건너뜀. 상한 0 = 무제한.
+logcat() {
+  local f="$1" sz
+  case "$f" in
+    *.gz|*.bz2|*.xz|*.zip|*.Z)
+      if [ "$MAX_LOG_SCAN_BYTES" -gt 0 ]; then sz=$(stat -c%s "$f" 2>/dev/null || echo 0); [ "$sz" -gt "$MAX_LOG_SCAN_BYTES" ] && return 0; fi
+      zcat -f -- "$f" 2>/dev/null ;;
+    *)
+      if [ "$MAX_LOG_SCAN_BYTES" -gt 0 ]; then
+        sz=$(stat -c%s "$f" 2>/dev/null || echo 0)
+        [ "$sz" -gt "$MAX_LOG_SCAN_BYTES" ] && { tail -c "$MAX_LOG_SCAN_BYTES" -- "$f" 2>/dev/null; return 0; }
+      fi
+      cat -- "$f" 2>/dev/null ;;
+  esac
+}
+# 상한을 넘겨 일부만 본 로그가 있으면 경고 한 번. (파일 목록을 표준입력으로 받음)
+log_cap_note() {
+  [ "$MAX_LOG_SCAN_BYTES" -gt 0 ] || return 0
+  local f sz capped=""
+  while IFS= read -r f; do
+    [ -f "$f" ] || continue
+    sz=$(stat -c%s "$f" 2>/dev/null || echo 0)
+    [ "$sz" -gt "$MAX_LOG_SCAN_BYTES" ] && capped="$capped $f"
+  done
+  [ -n "$capped" ] && warn "로그가 최대 스캔 크기(${MAX_LOG_SCAN_MB}MB)를 넘겨 일부만 점검함(평문은 끝부분, 압축은 건너뜀):${capped} → 전체 점검하려면 로그 회전(rotate) 또는 최대 크기 상향 필요. 이 로그에 묻힌 오래된 공격 흔적은 놓칠 수 있음"
+}
 
 SELF="$(readlink -f "$0")"
 
@@ -91,6 +122,7 @@ if [ -z "$JBOSS_HOME_ARG" ] && [ -z "${PRECHECK_PID:-}" ]; then
       PASS=(-d "$RECENT_DAYS")
       [ -n "$LOG_PATHS" ] && PASS+=(-l "$LOG_PATHS")
       [ -n "$SERVER_LOG_PATHS" ] && PASS+=(-s "$SERVER_LOG_PATHS")
+      [ "$MAX_LOG_SCAN_MB" -gt 0 ] && PASS+=(-m "$MAX_LOG_SCAN_MB")
       PRECHECK_NO_SUDO=1 PRECHECK_PID="$pid" bash "$SELF" "${PASS[@]}" </dev/null
     done <<< "$INSTANCES"
     echo ""; echo "[안내] 전체 인스턴스 점검 완료. 리포트 파일 목록:"
@@ -1042,7 +1074,8 @@ if [ ! -s "$LOGS" ]; then
 else
   info "점검 대상 접근 로그: $(wc -l < "$LOGS")개"
   head -n 10 "$LOGS" | show
-  zg() { while read -r f; do zgrep -hE "$1" "$f" 2>/dev/null; done < "$LOGS"; }
+  log_cap_note < "$LOGS"
+  zg() { while read -r f; do logcat "$f" | grep -hE "$1" 2>/dev/null; done < "$LOGS"; }
 
   zg '(\.%2e|%2e\.|%2e%2e|%252e|\.\./|\.\.%2f|%c0%ae)' > "$WORK/trav.txt"
   T_ALL=$(wc -l < "$WORK/trav.txt"); T_200=$(grep -cE '" 200 ' "$WORK/trav.txt")
@@ -1184,14 +1217,15 @@ if [ -z "$SLOGS" ]; then
 else
   info "점검 대상 WildFly 로그: $(printf '%s\n' "$SLOGS" | wc -l)개"
   printf '%s\n' "$SLOGS" | head -n 10 | show
-  GAD="$(printf '%s\n' "$SLOGS" | xargs -r zgrep -hE 'InvokerTransformer|TemplatesImpl|ysoserial|ChainedTransformer|JdbcRowSetImpl|\$\{jndi:(ldap|rmi|dns)' 2>/dev/null | grep -vE 'serialFilter|VM Arguments|-Djdk\.serial' | head -n 5)"
+  log_cap_note <<< "$SLOGS"
+  GAD="$(while IFS= read -r f; do logcat "$f"; done <<< "$SLOGS" | grep -hE 'InvokerTransformer|TemplatesImpl|ysoserial|ChainedTransformer|JdbcRowSetImpl|\$\{jndi:(ldap|rmi|dns)' 2>/dev/null | grep -vE 'serialFilter|VM Arguments|-Djdk\.serial' | head -n 5)"
   if [ -n "$GAD" ]; then
     risk "server.log 에 역직렬화 공격 도구·JNDI 주입 흔적 → 침해 시도/성공 여부 상세 분석 필요"
     printf '%s\n' "$GAD" | cut -c1-200 | show
   else
     ok "server.log 에 역직렬화 공격·JNDI 주입 흔적 없음"
   fi
-  DEP="$(printf '%s\n' "$SLOGS" | xargs -r zgrep -hE 'WFLYSRV0010: (Deployed|배포)|WFLYSRV0016: Replaced deployment' 2>/dev/null | tail -n 10)"
+  DEP="$(while IFS= read -r f; do logcat "$f"; done <<< "$SLOGS" | grep -hE 'WFLYSRV0010: (Deployed|배포)|WFLYSRV0016: Replaced deployment' 2>/dev/null | tail -n 10)"
   [ -n "$DEP" ] && { info "최근 배포 기록 (server.log, 최근 10건) → 배포 이력과 대조"; printf '%s\n' "$DEP" | cut -c1-200 | show; }
 fi
 

@@ -38,7 +38,7 @@
 #    TOMCAT_SERVER_LOG_PATHS=  (tomcat_precheck.sh  -s 값, catalina.out 등이 logs 폴더 밖에 있을 때)
 # =====================================================================
 
-AGENT_VERSION="2.7.0"   # 2.4.0: 원격 스크립트 업데이트 / 2.5.0: RECENT_DAYS·RUN_TIMEOUT 원격 지정 / 2.6.0: keepalive 고아 방지 / 2.6.1: 리포트 보냈으면 '성공' 표시 / 2.7.0: 대시보드 [점검 중단] 버튼(abort)으로 진행 중 점검 강제 종료
+AGENT_VERSION="2.8.0"   # 2.4.0: 원격 스크립트 업데이트 / 2.5.0: RECENT_DAYS·RUN_TIMEOUT 원격 지정 / 2.6.0: keepalive 고아 방지 / 2.6.1: 리포트 보냈으면 '성공' 표시 / 2.7.0: [점검 중단] 버튼(abort) / 2.8.0: 로그 최대 스캔 크기(-m, MAX_LOG_SCAN_MB) — 거대 로그는 끝부분만 점검(경고)
 CONF="${WEBWAS_PRECHECK_AGENT_CONF:-/etc/webwas-precheck-agent.conf}"
 BASE_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 ALL_PRODUCTS="apache wildfly tomcat nginx"   # 순서 고정 (스크립트 SHA-256 계산 순서 = 대시보드 Product 순서와 같음)
@@ -209,6 +209,8 @@ apply_scan_settings() {
   [ -n "$v" ] && [ "$v" -gt 0 ] 2>/dev/null && RECENT_DAYS="$v"
   v="$(grep -oE '"runTimeout":[0-9]+' "$WORK/resp" 2>/dev/null | head -n1 | grep -oE '[0-9]+')"
   [ -n "$v" ] && [ "$v" -gt 0 ] 2>/dev/null && RUN_TIMEOUT="$v"
+  v="$(grep -oE '"maxLogScanMb":[0-9]+' "$WORK/resp" 2>/dev/null | head -n1 | grep -oE '[0-9]+')"
+  [ -n "$v" ] && [ "$v" -gt 0 ] 2>/dev/null && MAX_LOG_SCAN_MB="$v"
 }
 
 do_run() {
@@ -228,6 +230,7 @@ do_run() {
     script="$BASE_DIR/${p}_precheck.sh"
     args=()
     [ -n "${RECENT_DAYS:-}" ] && args+=(-d "$RECENT_DAYS")
+    [ -n "${MAX_LOG_SCAN_MB:-}" ] && [ "$MAX_LOG_SCAN_MB" -gt 0 ] 2>/dev/null && args+=(-m "$MAX_LOG_SCAN_MB")
     case "$p" in
       apache) lp="${APACHE_LOG_PATHS:-${LOG_PATHS:-}}" ;;
       wildfly) lp="${WILDFLY_LOG_PATHS:-}" ;;

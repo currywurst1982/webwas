@@ -26,11 +26,14 @@ public class SiteSettings {
     static final int RECENT_DAYS_MIN = 1, RECENT_DAYS_MAX = 3650;
     /** 점검 1건당 제한 시간(초). 0 = 대시보드에서 지정 안 함 */
     static final int RUN_TIMEOUT_MIN = 60, RUN_TIMEOUT_MAX = 86400;
+    /** 로그 1개당 최대 스캔 크기(MB). 넘는 로그는 끝부분만 점검. 0 = 무제한(전체) */
+    static final int MAX_LOG_SCAN_MB_MIN = 10, MAX_LOG_SCAN_MB_MAX = 1_000_000;
 
     private final Path file;
     private String agentUrl = "";
     private int recentDays = 0;
     private int runTimeout = 0;
+    private int maxLogScanMb = 0;
 
     public SiteSettings(Path file) throws IOException {
         this.file = file;
@@ -43,6 +46,7 @@ public class SiteSettings {
             agentUrl = v.isEmpty() || URL.matcher(v).matches() ? v : "";
             recentDays = parseRange(p.getProperty("scan.recentDays"), RECENT_DAYS_MIN, RECENT_DAYS_MAX);
             runTimeout = parseRange(p.getProperty("scan.runTimeout"), RUN_TIMEOUT_MIN, RUN_TIMEOUT_MAX);
+            maxLogScanMb = parseRange(p.getProperty("scan.maxLogScanMb"), MAX_LOG_SCAN_MB_MIN, MAX_LOG_SCAN_MB_MAX);
         }
     }
 
@@ -81,6 +85,17 @@ public class SiteSettings {
 
     public synchronized int recentDays() { return recentDays; }
     public synchronized int runTimeout() { return runTimeout; }
+    public synchronized int maxLogScanMb() { return maxLogScanMb; }
+
+    /** 0(또는 빈 값)이면 해제(무제한). 범위를 벗어나면 IllegalArgumentException */
+    public synchronized int setMaxLogScanMb(int n) throws IOException {
+        if (n != 0 && (n < MAX_LOG_SCAN_MB_MIN || n > MAX_LOG_SCAN_MB_MAX)) {
+            throw new IllegalArgumentException("로그 최대 스캔 크기는 " + MAX_LOG_SCAN_MB_MIN + "~" + MAX_LOG_SCAN_MB_MAX + "MB 사이여야 합니다. (0 = 무제한)");
+        }
+        maxLogScanMb = n;
+        save();
+        return maxLogScanMb;
+    }
 
     /** 0(또는 빈 값)이면 해제. 범위를 벗어나면 IllegalArgumentException */
     public synchronized int setRecentDays(int n) throws IOException {
@@ -107,6 +122,7 @@ public class SiteSettings {
         p.setProperty("agent.url", agentUrl);
         if (recentDays > 0) p.setProperty("scan.recentDays", String.valueOf(recentDays));
         if (runTimeout > 0) p.setProperty("scan.runTimeout", String.valueOf(runTimeout));
+        if (maxLogScanMb > 0) p.setProperty("scan.maxLogScanMb", String.valueOf(maxLogScanMb));
         Path dir = file.toAbsolutePath().getParent();
         Files.createDirectories(dir);
         Path tmp = Files.createTempFile(dir, ".settings", ".tmp");

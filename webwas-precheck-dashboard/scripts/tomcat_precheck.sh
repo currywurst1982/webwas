@@ -1636,6 +1636,10 @@ if [ -n "$SERVER_LOG_PATHS" ]; then
     warn "-s 옵션으로 지정한 서버 로그 경로에 파일이 없습니다: $SERVER_LOG_PATHS (경로·와일드카드 확인)"
   fi
 fi
+# -s 경로는 날짜 필터를 안 거치므로, 최근 RECENT_DAYS 일 안에 수정된 파일만 남긴다 (오래된 회전 로그 제외).
+if [ -n "$CLOGS" ] && [ "$RECENT_DAYS" -gt 0 ]; then
+  CLOGS="$(printf '%s\n' "$CLOGS" | while read -r f; do [ -f "$f" ] && find "$f" -maxdepth 0 -mtime "-$RECENT_DAYS" 2>/dev/null; done)"
+fi
 if [ -z "$CLOGS" ]; then
   warn "catalina 로그를 찾지 못했습니다. Tomcat 로그 기반 공격 흔적 점검을 건너뜁니다. (찾아본 곳: $LOG_DIR)"
   detail "→ 다른 곳에 있으면 -s 옵션(에이전트는 설정 파일의 TOMCAT_SERVER_LOG_PATHS)으로 지정하세요. 예: -s '/applog/tomcat/catalina.out*'"

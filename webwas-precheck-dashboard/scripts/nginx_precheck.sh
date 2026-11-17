@@ -874,11 +874,12 @@ else
     done >> "$LOGS"
   fi
 fi
+# 최근 RECENT_DAYS 일 안에 수정된 파일만 (-l 로 직접 지정한 글롭은 날짜 필터를 안 거치므로 여기서 거름)
 sort -u "$LOGS" | while read -r f; do
   [ -f "$f" ] || continue
   [[ "$f" == "$WORK"* || "$f" == "$REPORT" ]] && continue
   case "$(basename "$f")" in *error*|*.pid) continue ;; esac
-  echo "$f"
+  if [ "$RECENT_DAYS" -gt 0 ]; then find "$f" -maxdepth 0 -mtime "-$RECENT_DAYS" 2>/dev/null; else echo "$f"; fi
 done > "$WORK/logs2.txt"
 mv "$WORK/logs2.txt" "$LOGS"
 

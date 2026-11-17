@@ -1209,7 +1209,12 @@ if [ -n "$SERVER_LOG_PATHS" ]; then
     warn "-s 옵션으로 지정한 서버 로그 경로에 파일이 없습니다: $SERVER_LOG_PATHS (경로·와일드카드 확인)"
   fi
 fi
-SLOGS="$(sort -u "$SLOGS_F" | while read -r f; do [ -f "$f" ] && echo "$f"; done)"
+# 모든 출처(로깅 설정 경로·-s 경로·find)를 합친 뒤, 최근 RECENT_DAYS 일 안에 '수정된' 파일만 남긴다.
+# (로깅 설정 경로의 "$f".* 글롭과 -s 경로는 날짜 필터를 안 거치므로, 여기서 한 번에 거른다 → 오래된 회전 로그 제외)
+SLOGS="$(sort -u "$SLOGS_F" | while read -r f; do
+  [ -f "$f" ] || continue
+  if [ "$RECENT_DAYS" -gt 0 ]; then find "$f" -maxdepth 0 -mtime "-$RECENT_DAYS" 2>/dev/null; else echo "$f"; fi
+done)"
 if [ -z "$SLOGS" ]; then
   warn "server.log 를 찾지 못했습니다. WildFly 로그 기반 공격 흔적 점검을 건너뜁니다. (찾아본 곳: $LOG_DIR 아래 3단계, 로깅 설정의 파일 경로)"
   detail "→ 로그 위치는 WildFly 시작 옵션 -Djboss.server.log.dir 과 standalone.xml 의 logging 설정(<file path=...>)을 확인하세요."

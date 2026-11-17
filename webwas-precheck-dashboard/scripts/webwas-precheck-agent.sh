@@ -38,7 +38,7 @@
 #    TOMCAT_SERVER_LOG_PATHS=  (tomcat_precheck.sh  -s 값, catalina.out 등이 logs 폴더 밖에 있을 때)
 # =====================================================================
 
-AGENT_VERSION="2.6.0"   # 2.2.0: 서버 로그 경로(-s) / 2.3.0: Nginx / 2.3.1: 구버전 ps 호환 / 2.4.0: 대시보드 버튼으로 원격 스크립트 업데이트(update_scripts) / 2.5.0: 대시보드에서 RECENT_DAYS·RUN_TIMEOUT 지정(apply_scan_settings) / 2.6.0: keepalive 고아 프로세스 방지(부모 종료 시 자동 정지) — '점검중' 고착 방지
+AGENT_VERSION="2.6.1"   # 2.2.0: 서버 로그 경로(-s) / 2.3.0: Nginx / 2.3.1: 구버전 ps 호환 / 2.4.0: 대시보드 버튼으로 원격 스크립트 업데이트(update_scripts) / 2.5.0: 대시보드에서 RECENT_DAYS·RUN_TIMEOUT 지정(apply_scan_settings) / 2.6.0: keepalive 고아 프로세스 방지 — '점검중' 고착 방지 / 2.6.1: 일부 제품만 시간초과·실패해도 리포트를 보냈으면 '성공'으로 표시(정상 점검 시 '중단됨' 문구 사라짐)
 CONF="${WEBWAS_PRECHECK_AGENT_CONF:-/etc/webwas-precheck-agent.conf}"
 BASE_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 ALL_PRODUCTS="apache wildfly tomcat nginx"   # 순서 고정 (스크립트 SHA-256 계산 순서 = 대시보드 Product 순서와 같음)
@@ -244,10 +244,20 @@ do_run() {
   done < <(find /tmp -maxdepth 1 -type f \( -name 'apache_precheck_*.txt' -o -name 'wildfly_precheck_*.txt' -o -name 'tomcat_precheck_*.txt' -o -name 'nginx_precheck_*.txt' \) -newer "$marker" 2>/dev/null)
   n_sent="$(flush_outbox)"
 
-  if [ "$rc" -eq 124 ]; then msg="점검 시간 초과(${RUN_TIMEOUT}초)로 중단됨:${fail_list}"
-  elif [ "$n_made" -eq 0 ]; then msg="리포트가 만들어지지 않음 (${products}): $(for p in $products; do tail -n 2 "$WORK/run_$p.log"; done | tr '\n' ' ' | cut -c1-300)"
-  elif [ "$n_sent" -lt "$n_made" ]; then msg="리포트 ${n_made}개 중 ${n_sent}개만 전송됨 (나머지는 다음에 재전송)"
-  else msg="리포트 ${n_sent}개 전송 완료 (${products// /, })${fail_list:+ / 오류:$fail_list}"
+  # 메시지는 "실제 성공"을 앞세운다. 리포트를 하나라도 만들어 전송했으면(= 정상 점검됨)
+  # 일부 제품이 시간 초과/실패했어도 '성공'으로 표시하고 실패는 뒤에 덧붙인다.
+  # (예: WildFly 1개만 시간 초과이고 Apache/Tomcat 은 정상이면 '중단됨'이 아니라 '전송 완료 … / 일부 미완료: wildfly')
+  # 그래서 다음 점검에서 그 제품까지 정상 완료되면 '중단됨' 문구가 자동으로 사라진다.
+  local done_disp
+  done_disp="$(echo $done_list | sed 's/^ *//; s/  */, /g')"
+  if [ "$n_made" -eq 0 ]; then
+    if [ "$rc" -eq 124 ]; then msg="점검 시간 초과(${RUN_TIMEOUT}초)로 중단됨:${fail_list}"
+    else msg="리포트가 만들어지지 않음 (${products}): $(for p in $products; do tail -n 2 "$WORK/run_$p.log"; done | tr '\n' ' ' | cut -c1-300)"
+    fi
+  elif [ "$n_sent" -lt "$n_made" ]; then
+    msg="리포트 ${n_made}개 중 ${n_sent}개만 전송됨 (나머지는 다음에 재전송)${fail_list:+ / 일부 미완료:${fail_list}}"
+  else
+    msg="리포트 ${n_sent}개 전송 완료${done_disp:+ (${done_disp})}${fail_list:+ / 일부 미완료:${fail_list}}"
   fi
   log "점검 종료(exit=$rc): $msg"
   keepalive_stop

@@ -87,12 +87,16 @@ public class AgentApiServlet extends HttpServlet {
         try {
             switch (p) {
                 case "/heartbeat" -> {
+                    boolean busy = "1".equals(req.getParameter("busy"));
+                    boolean probe = "1".equals(req.getParameter("probe"));
                     String reason = agents.heartbeat(name, now, limit(req.getParameter("hostname"), 255), ip,
                             limit(req.getParameter("version"), 40), limit(req.getParameter("scriptSha256"), 64),
-                            "1".equals(req.getParameter("busy")), "1".equals(req.getParameter("probe")),
-                            latest.skipUpToDate() ? latest : null);
+                            busy, probe, latest.skipUpToDate() ? latest : null);
                     Map<String, Object> out = new LinkedHashMap<>();
-                    boolean doUpdate = agents.takePendingUpdate(name);
+                    // 점검 중(busy)·설치 확인(probe) heartbeat 에서는 업데이트 플래그를 소모하지 않는다.
+                    // 그때 에이전트는 응답을 버리므로(점검이 끝날 때까지 스크립트를 안 받음), 소모하면 요청이 유실돼 영영 업데이트가 안 됨.
+                    // 점검이 끝난 뒤의 정식 poll(busy=0)에서 플래그를 받아 실제로 교체한다.
+                    boolean doUpdate = !busy && !probe && agents.takePendingUpdate(name);
                     out.put("run", reason != null);
                     out.put("reason", reason);
                     out.put("update", doUpdate);

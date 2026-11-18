@@ -434,6 +434,9 @@
       th.classList.toggle('sorted', th.dataset.sort === state.sort.key);
       th.classList.toggle('asc', th.dataset.sort === state.sort.key && state.sort.asc);
     });
+    // 점검 일시 정렬 드롭다운을 현재 정렬 상태와 맞춤 (다른 열로 정렬 중이면 안내 항목 표시)
+    const srvSort = $('#srv-sort');
+    if (srvSort) srvSort.value = state.sort.key === 'checkedAt' ? ('checkedAt-' + (state.sort.asc ? 'asc' : 'desc')) : 'other';
     const shown = list.slice(0, state.tableLimit);
     const rows = shown.map(r => {
       const num = v => h('td', { class: 'num' + (v ? '' : ' zero') }, String(v));
@@ -2325,6 +2328,12 @@
       state.sort = { key: k, asc: state.sort.key === k ? !state.sort.asc : k === 'status' || k === 'host' };
       render();
     }));
+    const srvSort = $('#srv-sort');
+    if (srvSort) srvSort.addEventListener('change', e => {
+      if (e.target.value === 'other') return;
+      state.sort = { key: 'checkedAt', asc: e.target.value === 'checkedAt-asc' };
+      render();
+    });
     $$('dialog [data-close]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
     // 상세 창: 아래로 내려가면 "건수 요약으로" 버튼 표시
     const dBody = $('#detail .dialog-body');

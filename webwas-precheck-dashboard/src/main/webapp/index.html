@@ -224,7 +224,19 @@
         </div>
 
         <article class="card">
-          <div class="card-head"><h2>서버별 점검 결과</h2><span class="card-meta">행을 누르면 상세 결과가 열립니다</span></div>
+          <div class="card-head">
+            <h2>서버별 점검 결과</h2>
+            <div class="head-right">
+              <label class="srv-sort-wrap">정렬:
+                <select id="srv-sort" aria-label="점검 일시 정렬">
+                  <option value="checkedAt-desc">점검 일시 ↓ 최신 먼저</option>
+                  <option value="checkedAt-asc">점검 일시 ↑ 오래된 먼저</option>
+                  <option value="other" hidden>다른 열 기준 정렬 중</option>
+                </select>
+              </label>
+              <span class="card-meta">행을 누르면 상세 결과가 열립니다 · 열 머리글을 눌러도 정렬됩니다</span>
+            </div>
+          </div>
           <div class="table-scroll">
             <table class="servers" id="servers">
               <thead><tr>
